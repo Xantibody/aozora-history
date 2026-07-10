@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - name: Set version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Format check
+        run: pnpm run fmt:check
+      - name: Lint
+        run: pnpm run lint
+      - name: Type check
+        run: pnpm run typecheck
+      - name: Test
+        run: pnpm run test
+      - name: Package
+        run: pnpm run package:firefox
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: aozora-history-v*.xpi
+          generate_release_notes: true
+
+  publish-amo:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - name: Set version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Package
+        run: |
+          pnpm run package:firefox
+          pnpm run package:source
+
+      - name: Publish to AMO
+        uses: browser-actions/release-firefox-addon@v0.2.1
+        with:
+          addon-id: aozora-history@example.com
+          addon-path: aozora-history-v${{ env.VERSION }}.xpi
+          source-path: aozora-history-source-v${{ env.VERSION }}.zip
+          license: MIT
+          release-note: "See https://github.com/Xantibody/aozora-history/releases/tag/${{ github.ref_name }}"
+          approval-note: "Build instructions are in SOURCE_BUILD.md inside the source archive."
+          auth-api-issuer: ${{ secrets.AMO_JWT_ISSUER }}
+          auth-api-secret: ${{ secrets.AMO_JWT_SECRET }}

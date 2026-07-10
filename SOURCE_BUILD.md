@@ -1,0 +1,28 @@
+# Build instructions (for AMO reviewers)
+
+This extension is bundled with esbuild (no minification). The submitted
+xpi contains the exact contents of the `dist/` directory produced by the
+steps below.
+
+## Requirements
+
+- Node.js 24
+- pnpm 10
+
+## Build
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run build
+```
+
+This produces:
+
+- `dist/content.js` — bundled from `src/content.ts`
+- `dist/background.js` — bundled from `src/background.ts`
+- `dist/dashboard.js` — bundled from `src/dashboard/index.ts`
+- `dist/manifest.json` — copied from `manifest.firefox.json`
+- `dist/dashboard.html` — copied from `src/dashboard/dashboard.html`
+
+There are no runtime dependencies; everything in the bundles comes from
+the TypeScript sources in `src/`.
