@@ -68,3 +68,42 @@ describe("addTransfer", () => {
     expect(addTransfer([transfer], transfer)).toEqual([transfer, transfer]);
   });
 });
+
+describe("HistoryStoreのコメント", () => {
+  it("初期状態は空", async () => {
+    const store = new HistoryStore(fakeStorage());
+
+    expect(await store.loadComments()).toEqual({});
+  });
+
+  it("キーごとにコメントを保存・上書きできる", async () => {
+    const store = new HistoryStore(fakeStorage());
+
+    await store.setComment("transfer:2", "積立へ");
+    await store.setComment("change:133331:20", "給料");
+    await store.setComment("transfer:2", "積立へ移動");
+
+    expect(await store.loadComments()).toEqual({
+      "transfer:2": "積立へ移動",
+      "change:133331:20": "給料",
+    });
+  });
+
+  it("空文字を保存するとコメントを削除する", async () => {
+    const store = new HistoryStore(fakeStorage());
+    await store.setComment("transfer:2", "積立へ");
+
+    await store.setComment("transfer:2", "");
+
+    expect(await store.loadComments()).toEqual({});
+  });
+
+  it("前後の空白だけのコメントも削除として扱う", async () => {
+    const store = new HistoryStore(fakeStorage());
+    await store.setComment("transfer:2", "積立へ");
+
+    await store.setComment("transfer:2", "   ");
+
+    expect(await store.loadComments()).toEqual({});
+  });
+});

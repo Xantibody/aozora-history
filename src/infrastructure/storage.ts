@@ -7,6 +7,9 @@ export interface StorageArea {
 
 const SNAPSHOTS_KEY = "balanceSnapshots";
 const TRANSFERS_KEY = "transferRecords";
+const COMMENTS_KEY = "comments";
+
+export type Comments = Record<string, string>;
 
 export function addTransfer(
   transfers: TransferRecord[],
@@ -40,5 +43,22 @@ export class HistoryStore {
   async recordTransfer(transfer: TransferRecord): Promise<void> {
     const transfers = await this.loadTransfers();
     await this.storage.set({ [TRANSFERS_KEY]: addTransfer(transfers, transfer) });
+  }
+
+  async loadComments(): Promise<Comments> {
+    const items = await this.storage.get(COMMENTS_KEY);
+    return (items[COMMENTS_KEY] as Comments | undefined) ?? {};
+  }
+
+  /** 空のコメントは削除として扱う */
+  async setComment(key: string, text: string): Promise<void> {
+    const comments = await this.loadComments();
+    const trimmed = text.trim();
+    if (trimmed === "") {
+      delete comments[key];
+    } else {
+      comments[key] = trimmed;
+    }
+    await this.storage.set({ [COMMENTS_KEY]: comments });
   }
 }
