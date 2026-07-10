@@ -100,6 +100,57 @@ describe("setupContentScript", () => {
     ]);
   });
 
+  describe("振替直後のコメント入力", () => {
+    async function confirmTransfer() {
+      document.body.innerHTML = transferHtml;
+      document.getElementById("sp-account-account-to-account-confirm")!.click();
+      await vi.runAllTimersAsync();
+    }
+
+    it("記録後にコメント入力パネルを表示する", async () => {
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      expect(panel.textContent).toContain("振替を記録しました");
+      expect(panel.querySelector("input")).not.toBeNull();
+    });
+
+    it("保存すると振替と同じキーでコメントを保存しパネルを閉じる", async () => {
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      panel.querySelector("input")!.value = "家賃の移動";
+      panel.querySelector<HTMLButtonElement>("button.save")!.click();
+      await vi.runAllTimersAsync();
+
+      expect(await store.loadComments()).toEqual({ "transfer:42": "家賃の移動" });
+      expect(document.getElementById("aozora-history-comment")).toBeNull();
+    });
+
+    it("閉じるボタンで保存せずに閉じる", async () => {
+      await confirmTransfer();
+
+      document
+        .getElementById("aozora-history-comment")!
+        .querySelector<HTMLButtonElement>("button.close")!
+        .click();
+      await vi.runAllTimersAsync();
+
+      expect(await store.loadComments()).toEqual({});
+      expect(document.getElementById("aozora-history-comment")).toBeNull();
+    });
+
+    it("記録に失敗した場合はパネルを出さない", async () => {
+      document.body.innerHTML = transferHtml;
+      document.querySelector<HTMLInputElement>("input.input-amount")!.value = "";
+
+      document.getElementById("sp-account-account-to-account-confirm")!.click();
+      await vi.runAllTimersAsync();
+
+      expect(document.getElementById("aozora-history-comment")).toBeNull();
+    });
+  });
+
   it("金額が不正なまま確認を押しても記録しない", async () => {
     document.body.innerHTML = transferHtml;
     document.querySelector<HTMLInputElement>("input.input-amount")!.value = "";
