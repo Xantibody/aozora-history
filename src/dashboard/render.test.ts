@@ -221,6 +221,64 @@ describe("renderDashboard", () => {
     });
   });
 
+  describe("期間フィルタ", () => {
+    function setPeriod(name: "period-from" | "period-to", value: string) {
+      const input = root.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+      input.value = value;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    it("開始日以降だけに絞り込む", () => {
+      render(root);
+
+      setPeriod("period-from", "2026-07-10");
+
+      // 7/8の振替30,000円は範囲外、7/10の振替5,000円は範囲内
+      const rows = [...root.querySelectorAll(".transfers tbody tr")];
+      expect(rows).toHaveLength(1);
+      expect(rows[0].textContent).toContain("5,000円");
+    });
+
+    it("終了日までに絞り込み、残高推移にも適用する", () => {
+      render(root);
+
+      setPeriod("period-to", "2026-07-09");
+
+      expect(root.querySelectorAll(".transfers tbody tr")).toHaveLength(1);
+      // スナップショットは7/9分だけになる
+      expect(root.querySelectorAll(".snapshots tbody tr")).toHaveLength(1);
+    });
+
+    it("残高変動にも期間を適用する", () => {
+      render(root);
+
+      setPeriod("period-to", "2026-07-09");
+
+      expect(root.querySelector(".changes")!.textContent).toContain("まだ記録がありません");
+    });
+
+    it("期間をクリアすると全件に戻る", () => {
+      render(root);
+      setPeriod("period-from", "2026-07-10");
+
+      root.querySelector<HTMLButtonElement>(".period button")!.click();
+
+      expect(root.querySelectorAll(".transfers tbody tr")).toHaveLength(2);
+    });
+
+    it("期間を変えてもタブの選択は保持する", () => {
+      render(root);
+      [...root.querySelectorAll<HTMLButtonElement>(".transfers .tab")]
+        .find((t) => t.textContent === "02: 積立")!
+        .click();
+
+      setPeriod("period-from", "2026-07-01");
+
+      const active = root.querySelector(".transfers .tab.active")!;
+      expect(active.textContent).toBe("02: 積立");
+    });
+  });
+
   it("口座名のHTMLをそのまま解釈しない", () => {
     const malicious: BalanceSnapshot = {
       takenAt: 1,

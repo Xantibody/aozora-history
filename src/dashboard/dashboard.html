@@ -72,6 +72,35 @@
       .empty {
         color: var(--muted);
       }
+      .period {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 1.5rem;
+      }
+      .period-label {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .period input[type="date"] {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: inherit;
+        font: inherit;
+        font-size: 0.9rem;
+        padding: 0.2rem 0.5rem;
+      }
+      .period-clear {
+        background: none;
+        border: none;
+        color: var(--accent);
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.9rem;
+        text-decoration: underline;
+      }
       .tabs {
         display: flex;
         flex-wrap: wrap;

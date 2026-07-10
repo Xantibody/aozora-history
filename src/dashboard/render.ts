@@ -118,12 +118,67 @@ function tabAccounts(data: DashboardData): AccountRef[] {
   return accounts;
 }
 
+/** "YYYY-MM-DD" をローカル時刻の日付境界(エポックミリ秒)に変換する */
+function dayStart(value: string): number | null {
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d).getTime();
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export function renderDashboard(
   root: HTMLElement,
   data: DashboardData,
   handlers: DashboardHandlers,
 ): void {
   let selectedFromId: string | null = null;
+  let periodFrom: number | null = null;
+  let periodToExclusive: number | null = null;
+  let periodFromValue = "";
+  let periodToValue = "";
+
+  const inPeriod = (ms: number): boolean => {
+    if (periodFrom !== null && ms < periodFrom) return false;
+    if (periodToExclusive !== null && ms >= periodToExclusive) return false;
+    return true;
+  };
+
+  const periodSection = (): HTMLElement => {
+    const node = el("div", "period");
+    node.append(el("span", "period-label", "期間:"));
+
+    const fromInput = document.createElement("input");
+    fromInput.type = "date";
+    fromInput.name = "period-from";
+    fromInput.value = periodFromValue;
+    fromInput.addEventListener("change", () => {
+      periodFromValue = fromInput.value;
+      periodFrom = fromInput.value === "" ? null : dayStart(fromInput.value);
+      draw();
+    });
+
+    const toInput = document.createElement("input");
+    toInput.type = "date";
+    toInput.name = "period-to";
+    toInput.value = periodToValue;
+    toInput.addEventListener("change", () => {
+      periodToValue = toInput.value;
+      const start = toInput.value === "" ? null : dayStart(toInput.value);
+      periodToExclusive = start === null ? null : start + DAY_MS;
+      draw();
+    });
+
+    const clear = el("button", "period-clear", "クリア");
+    clear.addEventListener("click", () => {
+      periodFrom = periodToExclusive = null;
+      periodFromValue = periodToValue = "";
+      draw();
+    });
+
+    node.append(fromInput, el("span", "period-separator", "〜"), toInput, clear);
+    return node;
+  };
 
   const commentInput = (key: string): HTMLElement => {
     const input = document.createElement("input");
@@ -152,7 +207,9 @@ export function renderDashboard(
     }
     node.append(tabs);
 
-    const filtered = sortTransfersDesc(transfersFrom(data.transfers, selectedFromId));
+    const filtered = sortTransfersDesc(transfersFrom(data.transfers, selectedFromId)).filter((t) =>
+      inPeriod(t.transferredAt),
+    );
     if (filtered.length === 0) {
       node.append(el("p", "empty", "まだ記録がありません"));
       return node;
@@ -184,9 +241,9 @@ export function renderDashboard(
 
   const changesSection = (): HTMLElement => {
     const node = section("changes", "残高変動");
-    const changes = detectBalanceChanges(data.snapshots, data.transfers).toSorted(
-      (a, b) => b.toTakenAt - a.toTakenAt,
-    );
+    const changes = detectBalanceChanges(data.snapshots, data.transfers)
+      .filter((c) => inPeriod(c.toTakenAt))
+      .toSorted((a, b) => b.toTakenAt - a.toTakenAt);
     if (changes.length === 0) {
       node.append(el("p", "empty", "まだ記録がありません"));
       return node;
@@ -205,12 +262,13 @@ export function renderDashboard(
 
   const snapshotsSection = (): HTMLElement => {
     const node = section("snapshots", "残高推移");
-    if (data.snapshots.length === 0) {
+    const visible = data.snapshots.filter((s) => inPeriod(s.takenAt));
+    if (visible.length === 0) {
       node.append(el("p", "empty", "まだ記録がありません"));
       return node;
     }
-    const columns = balanceSeries(data.snapshots);
-    const rows = data.snapshots.toReversed().map((snapshot): Cell[] => {
+    const columns = balanceSeries(visible);
+    const rows = visible.toReversed().map((snapshot): Cell[] => {
       const byId = new Map(snapshot.accounts.map((a) => [a.id, a.balance]));
       return [
         formatDateTime(snapshot.takenAt),
@@ -234,6 +292,7 @@ export function renderDashboard(
 
     const latest = latestSnapshot(data.snapshots);
     if (latest !== null) root.append(balancesSection(latest));
+    root.append(periodSection());
     root.append(transfersSection());
     root.append(changesSection());
     root.append(snapshotsSection());
