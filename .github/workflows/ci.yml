@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Install dependencies
+        run: nix develop --command pnpm install --frozen-lockfile
+
+      - name: Format check (oxfmt)
+        run: nix develop --command pnpm fmt:check
+
+      - name: Lint (oxlint)
+        run: nix develop --command pnpm lint
+
+      - name: Test (vitest)
+        run: nix develop --command pnpm test
