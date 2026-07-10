@@ -7,14 +7,20 @@
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "lint": "oxlint",
+    "typecheck": "tsgo --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify": "pnpm run fmt:check && pnpm run lint && pnpm run typecheck && pnpm run test",
+    "build:content": "esbuild src/content.ts --bundle --outfile=dist/content.js --format=iife",
+    "build:background": "esbuild src/background.ts --bundle --outfile=dist/background.js --format=iife",
+    "build:dashboard": "esbuild src/dashboard/index.ts --bundle --outfile=dist/dashboard.js --format=iife",
+    "build:assets": "cp manifest.firefox.json dist/manifest.json && cp src/dashboard/dashboard.html dist/",
+    "build": "pnpm run build:content && pnpm run build:background && pnpm run build:dashboard && pnpm run build:assets",
+    "package:local": "pnpm run build && cd dist && zip -r ../aozora-history-local.xpi ."
   },
   "devDependencies": {
     "esbuild": "^0.28.1",
     "jsdom": "^29.1.1",
-    "oxfmt": "^0.58.0",
-    "oxlint": "^1.73.0",
     "vitest": "^4.1.10"
   }
 }

@@ -22,6 +22,9 @@
           packages = with pkgs; [
             nodejs_24
             pnpm
+            typescript-go
+            oxfmt
+            oxlint
           ];
         };
       }

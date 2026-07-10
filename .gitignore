@@ -3,6 +3,7 @@ dist/
 .direnv/
 coverage/
 .DS_Store
+*.xpi
 
 # 実際の口座情報を含むローカル保存ページ
 sample/
