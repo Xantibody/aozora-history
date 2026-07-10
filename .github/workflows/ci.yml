@@ -10,17 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
 
-      - uses: DeterminateSystems/nix-installer-action@v16
-
-      - name: Install dependencies
-        run: nix develop --command pnpm install --frozen-lockfile
-
-      - name: Format check (oxfmt)
-        run: nix develop --command pnpm fmt:check
-
-      - name: Lint (oxlint)
-        run: nix develop --command pnpm lint
-
-      - name: Test (vitest)
-        run: nix develop --command pnpm test
+      - name: Format check
+        run: pnpm run fmt:check
+      - name: Lint
+        run: pnpm run lint
+      - name: Test
+        run: pnpm run test
