@@ -2,8 +2,9 @@ import { parseAccountsPage, parseTransferForm } from "./domain/parser.ts";
 import type { HistoryStore } from "./infrastructure/storage.ts";
 
 const CONFIRM_BUTTON_ID = "sp-account-account-to-account-confirm";
-// SPAの再描画が落ち着いてからパースするための待ち時間
-const DEBOUNCE_MS = 300;
+// DOM変化からパースまでの待ち時間。変化のたびに延長するとチャットボット等で
+// 変化し続けるページで永遠に実行されないため、保留中は再スケジュールしない
+const CAPTURE_DELAY_MS = 300;
 
 export function setupContentScript(
   doc: Document,
@@ -19,8 +20,11 @@ export function setupContentScript(
   };
 
   const scheduleCapture = () => {
-    clearTimeout(timer);
-    timer = setTimeout(captureSnapshot, DEBOUNCE_MS);
+    if (timer !== undefined) return;
+    timer = setTimeout(() => {
+      timer = undefined;
+      captureSnapshot();
+    }, CAPTURE_DELAY_MS);
   };
 
   const onClick = (event: Event) => {

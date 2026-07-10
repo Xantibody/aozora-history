@@ -110,6 +110,20 @@ describe("setupContentScript", () => {
     expect(await store.loadTransfers()).toEqual([]);
   });
 
+  it("DOMの変化が続いていてもスナップショットを保存する", async () => {
+    document.body.innerHTML = accountsHtml;
+    const ticker = document.createElement("div");
+    document.body.append(ticker);
+
+    // チャットボット等でDOMがデバウンス間隔より短い周期で変化し続ける状況
+    for (let i = 0; i < 20; i++) {
+      ticker.textContent = String(i);
+      await vi.advanceTimersByTimeAsync(100);
+    }
+
+    expect(await store.loadSnapshots()).toHaveLength(1);
+  });
+
   it("口座一覧のないページでは何も保存しない", async () => {
     document.body.innerHTML = "<p>別のページ</p>";
 
