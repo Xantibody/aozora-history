@@ -4,6 +4,7 @@ dist/
 coverage/
 .DS_Store
 *.xpi
+aozora-history-source-v*.zip
 
 # 実際の口座情報を含むローカル保存ページ
 sample/

@@ -1,6 +1,6 @@
 {
   "name": "aozora-history",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,7 +16,9 @@
     "build:dashboard": "esbuild src/dashboard/index.ts --bundle --outfile=dist/dashboard.js --format=iife",
     "build:assets": "cp manifest.firefox.json dist/manifest.json && cp src/dashboard/dashboard.html dist/",
     "build": "pnpm run build:content && pnpm run build:background && pnpm run build:dashboard && pnpm run build:assets",
-    "package:local": "pnpm run build && cd dist && zip -r ../aozora-history-local.xpi ."
+    "package:local": "pnpm run build && cd dist && zip -r ../aozora-history-local.xpi .",
+    "package:firefox": "pnpm run build && cd dist && zip -r ../aozora-history-v${VERSION:?}.xpi .",
+    "package:source": "git archive -o aozora-history-source-v${VERSION:?}.zip HEAD"
   },
   "devDependencies": {
     "esbuild": "^0.28.1",
