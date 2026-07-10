@@ -133,6 +133,24 @@ function dayStart(value: string): number | null {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** "YYYY-MM" をその月の[開始, 翌月開始)に変換する */
+function monthBounds(value: string): [number, number] | null {
+  const [y, m] = value.split("-").map(Number);
+  if (!y || !m) return null;
+  return [new Date(y, m - 1, 1).getTime(), new Date(y, m, 1).getTime()];
+}
+
+function shiftMonth(value: string, delta: number): string {
+  const [y, m] = value.split("-").map(Number);
+  const shifted = new Date(y, m - 1 + delta, 1);
+  return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}`;
+}
+
+function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+}
+
 export function renderDashboard(
   root: HTMLElement,
   data: DashboardData,
@@ -143,6 +161,7 @@ export function renderDashboard(
   let periodToExclusive: number | null = null;
   let periodFromValue = "";
   let periodToValue = "";
+  let monthValue = "";
 
   const inPeriod = (ms: number): boolean => {
     if (periodFrom !== null && ms < periodFrom) return false;
@@ -150,17 +169,60 @@ export function renderDashboard(
     return true;
   };
 
+  /** 月選択と日付指定は排他。残っている方の入力から境界を計算し直す */
+  const applyBounds = (): void => {
+    const bounds = monthValue === "" ? null : monthBounds(monthValue);
+    if (bounds !== null) {
+      [periodFrom, periodToExclusive] = bounds;
+      return;
+    }
+    periodFrom = periodFromValue === "" ? null : dayStart(periodFromValue);
+    const toStart = periodToValue === "" ? null : dayStart(periodToValue);
+    periodToExclusive = toStart === null ? null : toStart + DAY_MS;
+  };
+
+  const selectMonth = (value: string): void => {
+    monthValue = value;
+    periodFromValue = periodToValue = "";
+    applyBounds();
+    draw();
+  };
+
   const periodSection = (): HTMLElement => {
     const node = el("div", "period");
-    node.append(el("span", "period-label", "期間:"));
+
+    const monthGroup = el("div", "month-nav");
+    const prev = el("button", "month-prev", "◀");
+    prev.title = "前の月";
+    prev.addEventListener("click", () => {
+      selectMonth(shiftMonth(monthValue === "" ? currentMonth() : monthValue, -1));
+    });
+
+    const monthInput = document.createElement("input");
+    monthInput.type = "month";
+    monthInput.name = "period-month";
+    monthInput.value = monthValue;
+    monthInput.addEventListener("change", () => selectMonth(monthInput.value));
+
+    const next = el("button", "month-next", "▶");
+    next.title = "次の月";
+    next.addEventListener("click", () => {
+      selectMonth(shiftMonth(monthValue === "" ? currentMonth() : monthValue, 1));
+    });
+
+    monthGroup.append(prev, monthInput, next);
+    node.append(el("span", "period-label", "表示月:"), monthGroup);
+
+    const detail = el("div", "period-detail");
 
     const fromInput = document.createElement("input");
     fromInput.type = "date";
     fromInput.name = "period-from";
     fromInput.value = periodFromValue;
     fromInput.addEventListener("change", () => {
+      monthValue = "";
       periodFromValue = fromInput.value;
-      periodFrom = fromInput.value === "" ? null : dayStart(fromInput.value);
+      applyBounds();
       draw();
     });
 
@@ -169,20 +231,23 @@ export function renderDashboard(
     toInput.name = "period-to";
     toInput.value = periodToValue;
     toInput.addEventListener("change", () => {
+      monthValue = "";
       periodToValue = toInput.value;
-      const start = toInput.value === "" ? null : dayStart(toInput.value);
-      periodToExclusive = start === null ? null : start + DAY_MS;
+      applyBounds();
       draw();
     });
 
     const clear = el("button", "period-clear", "クリア");
-    clear.addEventListener("click", () => {
-      periodFrom = periodToExclusive = null;
-      periodFromValue = periodToValue = "";
-      draw();
-    });
+    clear.addEventListener("click", () => selectMonth(""));
 
-    node.append(fromInput, el("span", "period-separator", "〜"), toInput, clear);
+    detail.append(
+      el("span", "period-label", "詳細指定:"),
+      fromInput,
+      el("span", "period-separator", "〜"),
+      toInput,
+      clear,
+    );
+    node.append(detail);
     return node;
   };
 

@@ -233,6 +233,12 @@ describe("renderDashboard", () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
+    function setMonth(value: string) {
+      const input = root.querySelector<HTMLInputElement>('input[name="period-month"]')!;
+      input.value = value;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
     it("開始日以降だけに絞り込む", () => {
       render(root);
 
@@ -266,8 +272,79 @@ describe("renderDashboard", () => {
       render(root);
       setPeriod("period-from", "2026-07-10");
 
-      root.querySelector<HTMLButtonElement>(".period button")!.click();
+      root.querySelector<HTMLButtonElement>(".period .period-clear")!.click();
 
+      expect(root.querySelectorAll(".transfers tbody tr")).toHaveLength(2);
+    });
+
+    it("月を選択するとその月の記録だけ表示する", () => {
+      render(root);
+
+      setMonth("2026-07");
+      expect(root.querySelectorAll(".transfers tbody tr")).toHaveLength(2);
+
+      setMonth("2026-06");
+      expect(root.querySelectorAll(".transfers tbody tr")).toHaveLength(0);
+      expect(root.querySelector(".snapshots")!.textContent).toContain("まだ記録がありません");
+    });
+
+    it("前の月・次の月ボタンで月を移動する", () => {
+      render(root);
+      setMonth("2026-07");
+
+      root.querySelector<HTMLButtonElement>(".period .month-next")!.click();
+
+      expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe(
+        "2026-08",
+      );
+      expect(root.querySelectorAll(".transfers tbody tr")).toHaveLength(0);
+
+      root.querySelector<HTMLButtonElement>(".period .month-prev")!.click();
+      root.querySelector<HTMLButtonElement>(".period .month-prev")!.click();
+
+      expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe(
+        "2026-06",
+      );
+    });
+
+    it("年をまたぐ月の移動もできる", () => {
+      render(root);
+      setMonth("2026-01");
+
+      root.querySelector<HTMLButtonElement>(".period .month-prev")!.click();
+
+      expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe(
+        "2025-12",
+      );
+    });
+
+    it("日付を指定すると月の選択は解除する", () => {
+      render(root);
+      setMonth("2026-06");
+
+      setPeriod("period-from", "2026-07-10");
+
+      expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe("");
+      expect(root.querySelectorAll(".transfers tbody tr")).toHaveLength(1);
+    });
+
+    it("月を選択すると日付の指定は解除する", () => {
+      render(root);
+      setPeriod("period-from", "2026-07-10");
+
+      setMonth("2026-07");
+
+      expect(root.querySelector<HTMLInputElement>('input[name="period-from"]')!.value).toBe("");
+      expect(root.querySelectorAll(".transfers tbody tr")).toHaveLength(2);
+    });
+
+    it("クリアで月も日付も解除する", () => {
+      render(root);
+      setMonth("2026-06");
+
+      root.querySelector<HTMLButtonElement>(".period .period-clear")!.click();
+
+      expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe("");
       expect(root.querySelectorAll(".transfers tbody tr")).toHaveLength(2);
     });
 

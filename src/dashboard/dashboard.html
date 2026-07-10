@@ -76,8 +76,40 @@
         align-items: center;
         display: flex;
         flex-wrap: wrap;
-        gap: 0.5rem;
+        gap: 0.5rem 1.5rem;
         margin-top: 1.5rem;
+      }
+      .month-nav {
+        align-items: center;
+        display: inline-flex;
+        gap: 0.3rem;
+      }
+      .month-nav button {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: inherit;
+        cursor: pointer;
+        font: inherit;
+        padding: 0.2rem 0.6rem;
+      }
+      .month-nav input[type="month"] {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: inherit;
+        font: inherit;
+        font-size: 1rem;
+        padding: 0.2rem 0.5rem;
+      }
+      .period-detail {
+        align-items: center;
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .period-detail .period-label {
+        font-size: 0.8rem;
       }
       .period-label {
         color: var(--muted);
