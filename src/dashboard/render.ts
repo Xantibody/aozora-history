@@ -434,12 +434,42 @@ export function renderDashboard(
     return node;
   };
 
+  let view: "dashboard" | "settings" = "dashboard";
+
+  const settingsView = (): HTMLElement => {
+    const node = el("div", "settings-view");
+    const back = el("button", "back-button", "← ダッシュボードに戻る");
+    back.addEventListener("click", () => {
+      view = "dashboard";
+      draw();
+    });
+    node.append(back, syncSection());
+    return node;
+  };
+
+  const settingsButton = (): HTMLElement => {
+    const button = el("button", "settings-button", "⚙");
+    button.title = "設定";
+    button.setAttribute("aria-label", "設定");
+    button.addEventListener("click", () => {
+      view = "settings";
+      draw();
+    });
+    return button;
+  };
+
   const draw = (): void => {
     root.replaceChildren();
 
+    if (view === "settings") {
+      root.append(settingsView());
+      return;
+    }
+
+    root.append(settingsButton());
+
     if (data.snapshots.length === 0 && data.transfers.length === 0) {
       root.append(el("p", "empty", "まだ記録がありません"));
-      root.append(syncSection());
       return;
     }
 
@@ -449,7 +479,6 @@ export function renderDashboard(
     root.append(transfersSection());
     root.append(changesSection());
     root.append(snapshotsSection());
-    root.append(syncSection());
   };
 
   draw();

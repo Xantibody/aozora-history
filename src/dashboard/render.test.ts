@@ -361,7 +361,7 @@ describe("renderDashboard", () => {
     });
   });
 
-  describe("R2同期", () => {
+  describe("設定画面 (R2同期)", () => {
     const savedConfig = {
       accountId: "abc123",
       bucket: "aozora",
@@ -370,22 +370,45 @@ describe("renderDashboard", () => {
       secretAccessKey: "SECRET",
     };
 
+    function openSettings() {
+      root.querySelector<HTMLButtonElement>("button.settings-button")!.click();
+    }
+
     function syncInput(name: string): HTMLInputElement {
       return root.querySelector<HTMLInputElement>(`.sync input[name="${name}"]`)!;
     }
 
-    it("保存済みの同期設定を表示する", () => {
+    it("ダッシュボードには同期設定を表示しない", () => {
+      render(root);
+
+      expect(root.querySelector(".sync")).toBeNull();
+      expect(root.querySelector("button.settings-button")).not.toBeNull();
+    });
+
+    it("歯車ボタンで設定画面に切り替わる", () => {
       render(root, data({ syncConfig: savedConfig }));
 
+      openSettings();
+
+      expect(root.querySelector(".settings-view")).not.toBeNull();
+      expect(root.querySelector(".balances")).toBeNull();
       expect(syncInput("sync-account-id").value).toBe("abc123");
-      expect(syncInput("sync-bucket").value).toBe("aozora");
-      expect(syncInput("sync-access-key-id").value).toBe("AKID");
-      expect(syncInput("sync-secret").value).toBe("SECRET");
       expect(syncInput("sync-secret").type).toBe("password");
+    });
+
+    it("戻るボタンでダッシュボードに戻る", () => {
+      render(root);
+      openSettings();
+
+      root.querySelector<HTMLButtonElement>("button.back-button")!.click();
+
+      expect(root.querySelector(".settings-view")).toBeNull();
+      expect(root.querySelector(".balances")).not.toBeNull();
     });
 
     it("設定を保存すると入力値を渡し結果を表示する", async () => {
       const { onSaveSyncConfig } = render(root);
+      openSettings();
 
       syncInput("sync-account-id").value = "acc";
       syncInput("sync-bucket").value = "bkt";
@@ -407,6 +430,7 @@ describe("renderDashboard", () => {
 
     it("今すぐ同期を押すと結果を表示する", async () => {
       const { onSyncNow } = render(root, data({ syncConfig: savedConfig }));
+      openSettings();
 
       root.querySelector<HTMLButtonElement>(".sync button.sync-now")!.click();
       await vi.waitFor(() => {
@@ -416,8 +440,10 @@ describe("renderDashboard", () => {
       expect(onSyncNow).toHaveBeenCalled();
     });
 
-    it("記録が空でも同期セクションは表示する", () => {
+    it("記録が空でも設定画面を開ける", () => {
       render(root, data({ snapshots: [], transfers: [] }));
+
+      openSettings();
 
       expect(root.querySelector(".sync")).not.toBeNull();
     });
