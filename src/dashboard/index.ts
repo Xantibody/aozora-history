@@ -1,18 +1,23 @@
+import { type FetchLike, R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
 import { HistoryStore } from "../infrastructure/storage.ts";
 import { renderDashboard } from "./render.ts";
+
+const fetchFn: FetchLike = (url, init) => fetch(url, init);
 
 async function main(): Promise<void> {
   const root = document.getElementById("app");
   if (root === null) return;
 
   const store = new HistoryStore(browser.storage.local);
-  const [snapshots, transfers, comments] = await Promise.all([
+  const [snapshots, transfers, comments, syncConfig] = await Promise.all([
     store.loadSnapshots(),
     store.loadTransfers(),
     store.loadComments(),
+    store.loadSyncConfig(),
   ]);
 
-  const data = { snapshots, transfers, comments };
+  const data = { snapshots, transfers, comments, syncConfig };
+
   renderDashboard(root, data, {
     onCommentChange: (key, text) => {
       // 再描画時に最新のコメントが出るようローカルにも反映する
@@ -23,6 +28,32 @@ async function main(): Promise<void> {
         data.comments[key] = trimmed;
       }
       void store.setComment(key, text);
+    },
+
+    onSaveSyncConfig: async (config) => {
+      if (!config.accountId || !config.bucket || !config.accessKeyId || !config.secretAccessKey) {
+        return "すべての項目を入力してください";
+      }
+      await store.saveSyncConfig(config);
+      data.syncConfig = config;
+      return "設定を保存しました";
+    },
+
+    onSyncNow: async () => {
+      if (data.syncConfig === null) {
+        return "先に同期設定を保存してください";
+      }
+      try {
+        const client = new R2Client(data.syncConfig, fetchFn, () => new Date());
+        const merged = await syncWithR2(store, client);
+        data.snapshots = merged.snapshots;
+        data.transfers = merged.transfers;
+        data.comments = merged.comments;
+        return `同期しました（スナップショット${merged.snapshots.length}件・振替${merged.transfers.length}件）`;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return `同期に失敗しました: ${message}`;
+      }
     },
   });
 }

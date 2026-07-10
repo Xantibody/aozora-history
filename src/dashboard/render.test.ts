@@ -46,12 +46,17 @@ const transfers: TransferRecord[] = [
 ];
 
 function data(overrides: Partial<DashboardData> = {}): DashboardData {
-  return { snapshots, transfers, comments: {}, ...overrides };
+  return { snapshots, transfers, comments: {}, syncConfig: null, ...overrides };
 }
 
-function render(root: HTMLElement, d = data(), onCommentChange = vi.fn()) {
-  renderDashboard(root, d, { onCommentChange });
-  return onCommentChange;
+function render(root: HTMLElement, d = data()) {
+  const handlers = {
+    onCommentChange: vi.fn<(key: string, text: string) => void>(),
+    onSaveSyncConfig: vi.fn(async () => "保存しました"),
+    onSyncNow: vi.fn(async () => "同期しました"),
+  };
+  renderDashboard(root, d, handlers);
+  return handlers;
 }
 
 describe("formatYen", () => {
@@ -186,7 +191,7 @@ describe("renderDashboard", () => {
     });
 
     it("振替のコメントを編集するとキー付きで通知する", () => {
-      const onCommentChange = render(root);
+      const { onCommentChange } = render(root);
 
       const input = root.querySelector<HTMLInputElement>(".transfers input.comment")!;
       input.value = "定期積立";
@@ -199,7 +204,7 @@ describe("renderDashboard", () => {
     });
 
     it("残高変動のコメントも編集できる", () => {
-      const onCommentChange = render(root);
+      const { onCommentChange } = render(root);
 
       const input = root.querySelector<HTMLInputElement>(".changes input.comment")!;
       input.value = "給料";
@@ -276,6 +281,68 @@ describe("renderDashboard", () => {
 
       const active = root.querySelector(".transfers .tab.active")!;
       expect(active.textContent).toBe("02: 積立");
+    });
+  });
+
+  describe("R2同期", () => {
+    const savedConfig = {
+      accountId: "abc123",
+      bucket: "aozora",
+      objectKey: "aozora-history.json",
+      accessKeyId: "AKID",
+      secretAccessKey: "SECRET",
+    };
+
+    function syncInput(name: string): HTMLInputElement {
+      return root.querySelector<HTMLInputElement>(`.sync input[name="${name}"]`)!;
+    }
+
+    it("保存済みの同期設定を表示する", () => {
+      render(root, data({ syncConfig: savedConfig }));
+
+      expect(syncInput("sync-account-id").value).toBe("abc123");
+      expect(syncInput("sync-bucket").value).toBe("aozora");
+      expect(syncInput("sync-access-key-id").value).toBe("AKID");
+      expect(syncInput("sync-secret").value).toBe("SECRET");
+      expect(syncInput("sync-secret").type).toBe("password");
+    });
+
+    it("設定を保存すると入力値を渡し結果を表示する", async () => {
+      const { onSaveSyncConfig } = render(root);
+
+      syncInput("sync-account-id").value = "acc";
+      syncInput("sync-bucket").value = "bkt";
+      syncInput("sync-access-key-id").value = "ak";
+      syncInput("sync-secret").value = "sk";
+      root.querySelector<HTMLButtonElement>(".sync button.save-config")!.click();
+      await vi.waitFor(() => {
+        expect(root.querySelector(".sync .sync-status")!.textContent).toBe("保存しました");
+      });
+
+      expect(onSaveSyncConfig).toHaveBeenCalledWith({
+        accountId: "acc",
+        bucket: "bkt",
+        objectKey: "aozora-history.json",
+        accessKeyId: "ak",
+        secretAccessKey: "sk",
+      });
+    });
+
+    it("今すぐ同期を押すと結果を表示する", async () => {
+      const { onSyncNow } = render(root, data({ syncConfig: savedConfig }));
+
+      root.querySelector<HTMLButtonElement>(".sync button.sync-now")!.click();
+      await vi.waitFor(() => {
+        expect(root.querySelector(".sync .sync-status")!.textContent).toBe("同期しました");
+      });
+
+      expect(onSyncNow).toHaveBeenCalled();
+    });
+
+    it("記録が空でも同期セクションは表示する", () => {
+      render(root, data({ snapshots: [], transfers: [] }));
+
+      expect(root.querySelector(".sync")).not.toBeNull();
     });
   });
 

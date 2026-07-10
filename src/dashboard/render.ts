@@ -12,17 +12,23 @@ import {
   type TransferRecord,
   transfersFrom,
 } from "../domain/ledger.ts";
+import type { SyncConfig } from "../infrastructure/r2sync.ts";
 import type { Comments } from "../infrastructure/storage.ts";
 
 export interface DashboardData {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
   comments: Comments;
+  syncConfig: SyncConfig | null;
 }
 
 export interface DashboardHandlers {
   onCommentChange(key: string, text: string): void;
+  onSaveSyncConfig(config: SyncConfig): Promise<string>;
+  onSyncNow(): Promise<string>;
 }
+
+const DEFAULT_OBJECT_KEY = "aozora-history.json";
 
 export function formatYen(amount: number): string {
   return `${amount.toLocaleString("ja-JP")}円`;
@@ -282,11 +288,93 @@ export function renderDashboard(
     return node;
   };
 
+  let syncStatus = "";
+
+  const syncField = (
+    label: string,
+    name: string,
+    value: string,
+    type = "text",
+  ): [HTMLElement, HTMLInputElement] => {
+    const row = el("label", "sync-field");
+    row.append(el("span", undefined, label));
+    const input = document.createElement("input");
+    input.type = type;
+    input.name = name;
+    input.value = value;
+    row.append(input);
+    return [row, input];
+  };
+
+  const syncSection = (): HTMLElement => {
+    const node = section("sync", "同期 (Cloudflare R2)");
+    const config = data.syncConfig;
+
+    const [accountRow, accountInput] = syncField(
+      "アカウントID",
+      "sync-account-id",
+      config?.accountId ?? "",
+    );
+    const [bucketRow, bucketInput] = syncField("バケット", "sync-bucket", config?.bucket ?? "");
+    const [keyRow, keyInput] = syncField(
+      "オブジェクトキー",
+      "sync-object-key",
+      config?.objectKey ?? DEFAULT_OBJECT_KEY,
+    );
+    const [akRow, akInput] = syncField(
+      "アクセスキーID",
+      "sync-access-key-id",
+      config?.accessKeyId ?? "",
+    );
+    const [skRow, skInput] = syncField(
+      "シークレットアクセスキー",
+      "sync-secret",
+      config?.secretAccessKey ?? "",
+      "password",
+    );
+
+    const form = el("div", "sync-form");
+    form.append(accountRow, bucketRow, keyRow, akRow, skRow);
+    node.append(form);
+
+    const showStatus = (message: string): void => {
+      syncStatus = message;
+      draw();
+    };
+
+    const save = el("button", "save-config", "設定を保存");
+    save.addEventListener("click", () => {
+      void handlers
+        .onSaveSyncConfig({
+          accountId: accountInput.value.trim(),
+          bucket: bucketInput.value.trim(),
+          objectKey: keyInput.value.trim() === "" ? DEFAULT_OBJECT_KEY : keyInput.value.trim(),
+          accessKeyId: akInput.value.trim(),
+          secretAccessKey: skInput.value.trim(),
+        })
+        .then(showStatus);
+    });
+
+    const syncNow = el("button", "sync-now", "今すぐ同期");
+    syncNow.addEventListener("click", () => {
+      syncStatus = "同期中…";
+      draw();
+      void handlers.onSyncNow().then(showStatus);
+    });
+
+    const buttons = el("div", "sync-buttons");
+    buttons.append(save, syncNow);
+    node.append(buttons);
+    node.append(el("p", "sync-status", syncStatus));
+    return node;
+  };
+
   const draw = (): void => {
     root.replaceChildren();
 
     if (data.snapshots.length === 0 && data.transfers.length === 0) {
       root.append(el("p", "empty", "まだ記録がありません"));
+      root.append(syncSection());
       return;
     }
 
@@ -296,6 +384,7 @@ export function renderDashboard(
     root.append(transfersSection());
     root.append(changesSection());
     root.append(snapshotsSection());
+    root.append(syncSection());
   };
 
   draw();
