@@ -2,3 +2,7 @@ node_modules/
 dist/
 .direnv/
 coverage/
+.DS_Store
+
+# 実際の口座情報を含むローカル保存ページ
+sample/
