@@ -43,6 +43,19 @@ PC・モバイルのFirefox間で記録を共有できる。
 注意: 認証情報は `browser.storage.local` に平文で保存されるため、
 このバケット専用のAPIトークンを使うこと。
 
+## インポート / エクスポート
+
+R2上のオブジェクトは素のJSON(`{snapshots, transfers, comments}`)なので、
+Cloudflareダッシュボードや wrangler でそのまま取得できる。
+
+```sh
+npx wrangler r2 object get <バケット名>/aozora-history.json --file aozora-history.json
+```
+
+設定画面(歯車ボタン)の「インポート / エクスポート」で、
+このファイルを読み込んで現在の記録とマージしたり、
+逆に現在の記録を同じ形式のJSONとしてダウンロードしたりできる。
+
 既知の制限: 振替は「確認」ボタン押下時点で記録するため、
 確認画面でキャンセルした振替も記録されることがある。
 
