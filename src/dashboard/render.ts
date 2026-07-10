@@ -26,6 +26,7 @@ export interface DashboardHandlers {
   onCommentChange(key: string, text: string): void;
   onSaveSyncConfig(config: SyncConfig): Promise<string>;
   onSyncNow(): Promise<string>;
+  onImportFile(text: string): Promise<string>;
 }
 
 const DEFAULT_OBJECT_KEY = "aozora-history.json";
@@ -435,6 +436,55 @@ export function renderDashboard(
   };
 
   let view: "dashboard" | "settings" = "dashboard";
+  let importStatus = "";
+
+  const importExportSection = (): HTMLElement => {
+    const node = section("import-export", "インポート / エクスポート");
+
+    const exportLink = document.createElement("a");
+    exportLink.className = "export";
+    exportLink.download = "aozora-history.json";
+    exportLink.textContent = "JSONをエクスポート";
+    const ledger = {
+      snapshots: data.snapshots,
+      transfers: data.transfers,
+      comments: data.comments,
+    };
+    exportLink.href = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(ledger))}`;
+    node.append(exportLink);
+
+    const importRow = el("label", "import-row");
+    importRow.append(el("span", undefined, "JSONをインポート(現在の記録とマージ):"));
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.name = "import-file";
+    fileInput.accept = ".json,application/json";
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (file === undefined) return;
+      importStatus = "読み込み中…";
+      draw();
+      void file
+        .text()
+        .then((text) => handlers.onImportFile(text))
+        .then((message) => {
+          importStatus = message;
+          draw();
+        });
+    });
+    importRow.append(fileInput);
+    node.append(importRow);
+
+    node.append(
+      el(
+        "p",
+        "note",
+        "R2上のオブジェクトやエクスポートしたファイルと同じ形式のJSONを読み込めます。",
+      ),
+    );
+    node.append(el("p", "import-status", importStatus));
+    return node;
+  };
 
   const settingsView = (): HTMLElement => {
     const node = el("div", "settings-view");
@@ -443,7 +493,7 @@ export function renderDashboard(
       view = "dashboard";
       draw();
     });
-    node.append(back, syncSection());
+    node.append(back, syncSection(), importExportSection());
     return node;
   };
 

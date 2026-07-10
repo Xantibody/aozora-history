@@ -54,6 +54,7 @@ function render(root: HTMLElement, d = data()) {
     onCommentChange: vi.fn<(key: string, text: string) => void>(),
     onSaveSyncConfig: vi.fn(async () => "保存しました"),
     onSyncNow: vi.fn(async () => "同期しました"),
+    onImportFile: vi.fn(async () => "読み込みました"),
   };
   renderDashboard(root, d, handlers);
   return handlers;
@@ -446,6 +447,52 @@ describe("renderDashboard", () => {
       openSettings();
 
       expect(root.querySelector(".sync")).not.toBeNull();
+    });
+  });
+
+  describe("インポート / エクスポート", () => {
+    function openSettings() {
+      root.querySelector<HTMLButtonElement>("button.settings-button")!.click();
+    }
+
+    it("エクスポートリンクがR2オブジェクトと同じ形式で現在のデータを含む", () => {
+      render(root, data({ comments: { "transfer:1": "メモ" } }));
+      openSettings();
+
+      const link = root.querySelector<HTMLAnchorElement>("a.export")!;
+
+      expect(link.download).toBe("aozora-history.json");
+      const prefix = "data:application/json;charset=utf-8,";
+      expect(link.href.startsWith(prefix)).toBe(true);
+      const json = JSON.parse(decodeURIComponent(link.href.slice(prefix.length)));
+      expect(json).toEqual({ snapshots, transfers, comments: { "transfer:1": "メモ" } });
+    });
+
+    it("JSONファイルを選ぶと内容を渡して結果を表示する", async () => {
+      const { onImportFile } = render(root);
+      openSettings();
+
+      const input = root.querySelector<HTMLInputElement>('input[name="import-file"]')!;
+      const file = new File(['{"transfers":[]}'], "aozora-history.json", {
+        type: "application/json",
+      });
+      Object.defineProperty(input, "files", { value: [file] });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+
+      await vi.waitFor(() => {
+        expect(root.querySelector(".import-status")!.textContent).toBe("読み込みました");
+      });
+      expect(onImportFile).toHaveBeenCalledWith('{"transfers":[]}');
+    });
+
+    it("ファイル未選択のchangeでは何もしない", () => {
+      const { onImportFile } = render(root);
+      openSettings();
+
+      const input = root.querySelector<HTMLInputElement>('input[name="import-file"]')!;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+
+      expect(onImportFile).not.toHaveBeenCalled();
     });
   });
 

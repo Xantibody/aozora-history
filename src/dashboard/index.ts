@@ -1,3 +1,5 @@
+import { mergeLedgers } from "../domain/merge.ts";
+import { parseLedgerJson } from "../domain/serialization.ts";
 import { type FetchLike, R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
 import { HistoryStore } from "../infrastructure/storage.ts";
 import { renderDashboard } from "./render.ts";
@@ -37,6 +39,26 @@ async function main(): Promise<void> {
       await store.saveSyncConfig(config);
       data.syncConfig = config;
       return "設定を保存しました";
+    },
+
+    onImportFile: async (text) => {
+      try {
+        const imported = parseLedgerJson(text);
+        const local = {
+          snapshots: data.snapshots,
+          transfers: data.transfers,
+          comments: data.comments,
+        };
+        const merged = mergeLedgers(local, imported);
+        await store.replaceLedger(merged);
+        data.snapshots = merged.snapshots;
+        data.transfers = merged.transfers;
+        data.comments = merged.comments;
+        return `読み込みました（スナップショット${merged.snapshots.length}件・振替${merged.transfers.length}件）`;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return `読み込みに失敗しました: ${message}`;
+      }
     },
 
     onSyncNow: async () => {

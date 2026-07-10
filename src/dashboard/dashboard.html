@@ -245,10 +245,27 @@
         border-color: var(--accent);
         color: light-dark(#fff, #16191d);
       }
-      .sync-status {
+      .sync-status,
+      .import-status {
         color: var(--muted);
         font-size: 0.9rem;
         min-height: 1.2em;
+      }
+      a.export {
+        color: var(--accent);
+        display: inline-block;
+        margin-bottom: 0.8rem;
+      }
+      .import-row {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        font-size: 0.9rem;
+        gap: 0.6rem;
+      }
+      .note {
+        color: var(--muted);
+        font-size: 0.85rem;
       }
     </style>
   </head>
