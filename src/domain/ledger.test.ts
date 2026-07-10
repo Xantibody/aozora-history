@@ -307,7 +307,10 @@ describe("detectBalanceChanges", () => {
 
   it("変化のない口座は含めない", () => {
     const s1 = snapshot(10, [wallet, { id: "101", name: "積立", balance: 50000 }]);
-    const s2 = snapshot(20, [{ ...wallet, balance: 90000 }, { id: "101", name: "積立", balance: 50000 }]);
+    const s2 = snapshot(20, [
+      { ...wallet, balance: 90000 },
+      { id: "101", name: "積立", balance: 50000 },
+    ]);
 
     const changes = detectBalanceChanges([s1, s2], []);
 
