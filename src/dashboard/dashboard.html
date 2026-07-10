@@ -72,6 +72,56 @@
       .empty {
         color: var(--muted);
       }
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-bottom: 0.8rem;
+      }
+      .tab {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        color: inherit;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.9rem;
+        padding: 0.25rem 0.9rem;
+      }
+      .tab.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: light-dark(#fff, #16191d);
+      }
+      .destination-summary {
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin-bottom: 0.6rem;
+      }
+      .summary-item {
+        display: inline-block;
+        margin-left: 0.8rem;
+        font-variant-numeric: tabular-nums;
+      }
+      input.comment {
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        color: inherit;
+        font: inherit;
+        font-size: 0.9rem;
+        padding: 0.15rem 0.4rem;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      input.comment:hover {
+        border-color: var(--border);
+      }
+      input.comment:focus {
+        border-color: var(--accent);
+        outline: none;
+        background: var(--card-bg);
+      }
     </style>
   </head>
   <body>

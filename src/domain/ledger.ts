@@ -97,6 +97,15 @@ export interface BalanceChange {
   externalDelta: number;
 }
 
+/** コメント紐付け用の安定キー */
+export function transferCommentKey(transfer: TransferRecord): string {
+  return `transfer:${transfer.transferredAt}`;
+}
+
+export function changeCommentKey(change: BalanceChange): string {
+  return `change:${change.accountId}:${change.toTakenAt}`;
+}
+
 export function detectBalanceChanges(
   snapshots: BalanceSnapshot[],
   transfers: TransferRecord[],
