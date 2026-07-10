@@ -26,9 +26,7 @@ export interface BalanceSeries {
 
 function sameAccounts(a: SubAccount[], b: SubAccount[]): boolean {
   if (a.length !== b.length) return false;
-  return a.every(
-    (x, i) => x.id === b[i].id && x.name === b[i].name && x.balance === b[i].balance,
-  );
+  return a.every((x, i) => x.id === b[i].id && x.name === b[i].name && x.balance === b[i].balance);
 }
 
 export function appendSnapshot(

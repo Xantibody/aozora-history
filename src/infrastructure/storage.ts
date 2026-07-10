@@ -1,8 +1,4 @@
-import {
-  appendSnapshot,
-  type BalanceSnapshot,
-  type TransferRecord,
-} from "../domain/ledger.ts";
+import { appendSnapshot, type BalanceSnapshot, type TransferRecord } from "../domain/ledger.ts";
 
 export interface StorageArea {
   get(key: string): Promise<Record<string, unknown>>;
