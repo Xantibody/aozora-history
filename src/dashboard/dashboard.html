@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>つかいわけ口座ダッシュボード</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --border: light-dark(#d5dbe1, #3a4149);
+        --muted: light-dark(#5b6670, #9aa5ae);
+        --accent: light-dark(#0a6cb3, #5db3e8);
+        --card-bg: light-dark(#f4f7f9, #23282e);
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 0 auto;
+        max-width: 960px;
+        padding: 1.5rem;
+        line-height: 1.6;
+      }
+      h1 {
+        font-size: 1.4rem;
+        border-bottom: 2px solid var(--accent);
+        padding-bottom: 0.4rem;
+      }
+      h2 {
+        font-size: 1.1rem;
+        margin-top: 2rem;
+      }
+      .balance-cards {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.8rem;
+      }
+      .balance-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.8rem 1.2rem;
+        min-width: 10rem;
+      }
+      .balance-card.total {
+        border-color: var(--accent);
+      }
+      .account-name {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .account-balance {
+        font-size: 1.3rem;
+        font-variant-numeric: tabular-nums;
+      }
+      .updated-at {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid var(--border);
+        padding: 0.4rem 0.8rem;
+        text-align: left;
+        font-variant-numeric: tabular-nums;
+      }
+      th {
+        background: var(--card-bg);
+      }
+      .empty {
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>つかいわけ口座ダッシュボード</h1>
+    <div id="app"><p class="empty">読み込み中…</p></div>
+    <script src="dashboard.js"></script>
+  </body>
+</html>
