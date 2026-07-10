@@ -11,6 +11,9 @@ runs:
       run: |
         nix profile install --inputs-from . nixpkgs#nodejs_24
         nix profile install --inputs-from . nixpkgs#pnpm
+        nix profile install --inputs-from . nixpkgs#typescript-go
+        nix profile install --inputs-from . nixpkgs#oxfmt
+        nix profile install --inputs-from . nixpkgs#oxlint
 
     - name: Install dependencies
       shell: bash
