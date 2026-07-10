@@ -69,6 +69,57 @@ describe("addTransfer", () => {
   });
 });
 
+describe("HistoryStoreの一括読込・置換", () => {
+  it("台帳全体を読み出せる", async () => {
+    const store = new HistoryStore(fakeStorage());
+    await store.recordSnapshot(snapshot);
+    await store.recordTransfer(transfer);
+    await store.setComment("transfer:2", "メモ");
+
+    expect(await store.loadLedger()).toEqual({
+      snapshots: [snapshot],
+      transfers: [transfer],
+      comments: { "transfer:2": "メモ" },
+    });
+  });
+
+  it("台帳全体を置き換えられる", async () => {
+    const store = new HistoryStore(fakeStorage());
+    await store.recordTransfer(transfer);
+
+    await store.replaceLedger({ snapshots: [snapshot], transfers: [], comments: { k: "v" } });
+
+    expect(await store.loadLedger()).toEqual({
+      snapshots: [snapshot],
+      transfers: [],
+      comments: { k: "v" },
+    });
+  });
+});
+
+describe("HistoryStoreの同期設定", () => {
+  it("初期状態はnullを返す", async () => {
+    const store = new HistoryStore(fakeStorage());
+
+    expect(await store.loadSyncConfig()).toBeNull();
+  });
+
+  it("同期設定を保存して読み出せる", async () => {
+    const store = new HistoryStore(fakeStorage());
+    const config = {
+      accountId: "abc123",
+      bucket: "aozora",
+      objectKey: "aozora-history.json",
+      accessKeyId: "key",
+      secretAccessKey: "secret",
+    };
+
+    await store.saveSyncConfig(config);
+
+    expect(await store.loadSyncConfig()).toEqual(config);
+  });
+});
+
 describe("HistoryStoreのコメント", () => {
   it("初期状態は空", async () => {
     const store = new HistoryStore(fakeStorage());

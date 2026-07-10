@@ -1,4 +1,6 @@
 import { appendSnapshot, type BalanceSnapshot, type TransferRecord } from "../domain/ledger.ts";
+import type { LedgerData } from "../domain/merge.ts";
+import type { SyncConfig } from "./r2sync.ts";
 
 export interface StorageArea {
   get(key: string): Promise<Record<string, unknown>>;
@@ -8,6 +10,7 @@ export interface StorageArea {
 const SNAPSHOTS_KEY = "balanceSnapshots";
 const TRANSFERS_KEY = "transferRecords";
 const COMMENTS_KEY = "comments";
+const SYNC_CONFIG_KEY = "syncConfig";
 
 export type Comments = Record<string, string>;
 
@@ -48,6 +51,32 @@ export class HistoryStore {
   async loadComments(): Promise<Comments> {
     const items = await this.storage.get(COMMENTS_KEY);
     return (items[COMMENTS_KEY] as Comments | undefined) ?? {};
+  }
+
+  async loadLedger(): Promise<LedgerData> {
+    const [snapshots, transfers, comments] = await Promise.all([
+      this.loadSnapshots(),
+      this.loadTransfers(),
+      this.loadComments(),
+    ]);
+    return { snapshots, transfers, comments };
+  }
+
+  async replaceLedger(data: LedgerData): Promise<void> {
+    await this.storage.set({
+      [SNAPSHOTS_KEY]: data.snapshots,
+      [TRANSFERS_KEY]: data.transfers,
+      [COMMENTS_KEY]: data.comments,
+    });
+  }
+
+  async loadSyncConfig(): Promise<SyncConfig | null> {
+    const items = await this.storage.get(SYNC_CONFIG_KEY);
+    return (items[SYNC_CONFIG_KEY] as SyncConfig | undefined) ?? null;
+  }
+
+  async saveSyncConfig(config: SyncConfig): Promise<void> {
+    await this.storage.set({ [SYNC_CONFIG_KEY]: config });
   }
 
   /** 空のコメントは削除として扱う */
