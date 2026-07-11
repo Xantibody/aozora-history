@@ -19,6 +19,10 @@ function ledger(overrides: Partial<LedgerData> = {}): LedgerData {
   return { snapshots: [], transfers: [], comments: {}, ...overrides };
 }
 
+function entry(text: string, updatedAt: number): { text: string; updatedAt: number } {
+  return { text, updatedAt };
+}
+
 describe("mergeLedgers", () => {
   it("空同士は空を返す", () => {
     expect(mergeLedgers(ledger(), ledger())).toEqual(ledger());
@@ -64,13 +68,33 @@ describe("mergeLedgers", () => {
     expect(merged.snapshots.map((s) => s.takenAt)).toEqual([10, 30]);
   });
 
-  it("コメントはローカル優先でマージする", () => {
-    const local = ledger({ comments: { "transfer:1": "ローカル" } });
-    const remote = ledger({ comments: { "transfer:1": "リモート", "transfer:2": "リモートのみ" } });
+  it("コメントは更新時刻の新しい方を採用する", () => {
+    const local = ledger({
+      comments: { "transfer:1": entry("ローカル", 5), "transfer:3": entry("ローカルのみ", 1) },
+    });
+    const remote = ledger({
+      comments: { "transfer:1": entry("リモート", 9), "transfer:2": entry("リモートのみ", 1) },
+    });
 
     expect(mergeLedgers(local, remote).comments).toEqual({
-      "transfer:1": "ローカル",
-      "transfer:2": "リモートのみ",
+      "transfer:1": entry("リモート", 9),
+      "transfer:2": entry("リモートのみ", 1),
+      "transfer:3": entry("ローカルのみ", 1),
     });
+  });
+
+  it("コメントの更新時刻が同じならローカルを優先する", () => {
+    const local = ledger({ comments: { "transfer:1": entry("ローカル", 5) } });
+    const remote = ledger({ comments: { "transfer:1": entry("リモート", 5) } });
+
+    expect(mergeLedgers(local, remote).comments).toEqual({ "transfer:1": entry("ローカル", 5) });
+  });
+
+  it("削除の記録(tombstone)が新しければコメントは復活しない", () => {
+    // 端末Aで削除→同期したとき、リモートに残る古いコメントが上書きで戻ってこないこと
+    const local = ledger({ comments: { "transfer:1": entry("", 9) } });
+    const remote = ledger({ comments: { "transfer:1": entry("家賃", 5) } });
+
+    expect(mergeLedgers(local, remote).comments).toEqual({ "transfer:1": entry("", 9) });
   });
 });

@@ -71,7 +71,7 @@ describe("addTransfer", () => {
 
 describe("HistoryStoreの一括読込・置換", () => {
   it("台帳全体を読み出せる", async () => {
-    const store = new HistoryStore(fakeStorage());
+    const store = new HistoryStore(fakeStorage(), () => 9);
     await store.recordSnapshot(snapshot);
     await store.recordTransfer(transfer);
     await store.setComment("transfer:2", "メモ");
@@ -79,20 +79,21 @@ describe("HistoryStoreの一括読込・置換", () => {
     expect(await store.loadLedger()).toEqual({
       snapshots: [snapshot],
       transfers: [transfer],
-      comments: { "transfer:2": "メモ" },
+      comments: { "transfer:2": { text: "メモ", updatedAt: 9 } },
     });
   });
 
   it("台帳全体を置き換えられる", async () => {
     const store = new HistoryStore(fakeStorage());
     await store.recordTransfer(transfer);
+    const comments = { k: { text: "v", updatedAt: 1 } };
 
-    await store.replaceLedger({ snapshots: [snapshot], transfers: [], comments: { k: "v" } });
+    await store.replaceLedger({ snapshots: [snapshot], transfers: [], comments });
 
     expect(await store.loadLedger()).toEqual({
       snapshots: [snapshot],
       transfers: [],
-      comments: { k: "v" },
+      comments,
     });
   });
 });
@@ -121,40 +122,56 @@ describe("HistoryStoreの同期設定", () => {
 });
 
 describe("HistoryStoreのコメント", () => {
+  /** setComment のたびに 1, 2, 3… と進む時計を持つストア */
+  function commentStore(): HistoryStore {
+    let tick = 0;
+    return new HistoryStore(fakeStorage(), () => ++tick);
+  }
+
   it("初期状態は空", async () => {
     const store = new HistoryStore(fakeStorage());
 
     expect(await store.loadComments()).toEqual({});
   });
 
-  it("キーごとにコメントを保存・上書きできる", async () => {
-    const store = new HistoryStore(fakeStorage());
+  it("キーごとにコメントを更新時刻付きで保存・上書きできる", async () => {
+    const store = commentStore();
 
     await store.setComment("transfer:2", "積立へ");
     await store.setComment("change:133331:20", "給料");
     await store.setComment("transfer:2", "積立へ移動");
 
     expect(await store.loadComments()).toEqual({
-      "transfer:2": "積立へ移動",
-      "change:133331:20": "給料",
+      "transfer:2": { text: "積立へ移動", updatedAt: 3 },
+      "change:133331:20": { text: "給料", updatedAt: 2 },
     });
   });
 
-  it("空文字を保存するとコメントを削除する", async () => {
-    const store = new HistoryStore(fakeStorage());
+  it("空文字を保存すると削除の記録(tombstone)を残す", async () => {
+    const store = commentStore();
     await store.setComment("transfer:2", "積立へ");
 
     await store.setComment("transfer:2", "");
 
-    expect(await store.loadComments()).toEqual({});
+    expect(await store.loadComments()).toEqual({ "transfer:2": { text: "", updatedAt: 2 } });
   });
 
   it("前後の空白だけのコメントも削除として扱う", async () => {
-    const store = new HistoryStore(fakeStorage());
+    const store = commentStore();
     await store.setComment("transfer:2", "積立へ");
 
     await store.setComment("transfer:2", "   ");
 
-    expect(await store.loadComments()).toEqual({});
+    expect(await store.loadComments()).toEqual({ "transfer:2": { text: "", updatedAt: 2 } });
+  });
+
+  it("旧形式(文字列)のコメントは更新時刻0として読み込む", async () => {
+    const storage = fakeStorage();
+    await storage.set({ comments: { "transfer:2": "積立へ" } });
+    const store = new HistoryStore(storage);
+
+    expect(await store.loadComments()).toEqual({
+      "transfer:2": { text: "積立へ", updatedAt: 0 },
+    });
   });
 });

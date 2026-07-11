@@ -6,6 +6,7 @@ import {
   balanceSeries,
   changeCommentKey,
   commentSuggestions,
+  commentText,
   detectBalanceChanges,
   destinationTotals,
   flowTotals,
@@ -23,7 +24,7 @@ import {
   parseSyncConfigJson,
   type SyncConfig,
 } from "../infrastructure/r2sync.ts";
-import type { Comments } from "../infrastructure/storage.ts";
+import type { Comments } from "../domain/ledger.ts";
 
 export interface DashboardData {
   snapshots: BalanceSnapshot[];
@@ -543,7 +544,7 @@ export function renderDashboard(
       "dark:hover:ring-slate-600 dark:focus:bg-slate-800";
     input.placeholder = "コメント";
     input.setAttribute("list", SUGGESTIONS_ID);
-    input.value = data.comments[key] ?? "";
+    input.value = commentText(data.comments, key);
     input.addEventListener("change", () => handlers.onCommentChange(key, input.value));
     return input;
   };

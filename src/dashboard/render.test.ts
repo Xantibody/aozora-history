@@ -256,7 +256,7 @@ describe("renderDashboard", () => {
     it("保存済みコメントを表示する", () => {
       const key = `transfer:${transfers[0].transferredAt}`;
 
-      render(root, data({ comments: { [key]: "積立へ移動" } }));
+      render(root, data({ comments: { [key]: { text: "積立へ移動", updatedAt: 1 } } }));
 
       const inputs = [...root.querySelectorAll<HTMLInputElement>(".transfers input.comment")];
       expect(inputs.map((i) => i.value)).toContain("積立へ移動");
@@ -288,7 +288,13 @@ describe("renderDashboard", () => {
     it("過去のコメントを入力候補として提示する", () => {
       render(
         root,
-        data({ comments: { "transfer:1": "家賃", "transfer:2": "家賃", "change:101:3": "給料" } }),
+        data({
+          comments: {
+            "transfer:1": { text: "家賃", updatedAt: 1 },
+            "transfer:2": { text: "家賃", updatedAt: 1 },
+            "change:101:3": { text: "給料", updatedAt: 1 },
+          },
+        }),
       );
 
       const input = root.querySelector<HTMLInputElement>("input.comment")!;
@@ -308,7 +314,7 @@ describe("renderDashboard", () => {
     it("タブを切り替えてもコメントは保持して表示する", () => {
       const key = `transfer:${transfers[0].transferredAt}`;
 
-      render(root, data({ comments: { [key]: "積立へ移動" } }));
+      render(root, data({ comments: { [key]: { text: "積立へ移動", updatedAt: 1 } } }));
       [...root.querySelectorAll<HTMLButtonElement>(".transfers .tab")]
         .find((t) => t.textContent === "01: お財布")!
         .click();
@@ -600,7 +606,8 @@ describe("renderDashboard", () => {
     }
 
     it("エクスポートリンクがR2オブジェクトと同じ形式で現在のデータを含む", () => {
-      render(root, data({ comments: { "transfer:1": "メモ" } }));
+      const comments = { "transfer:1": { text: "メモ", updatedAt: 1 } };
+      render(root, data({ comments }));
       openSettings();
 
       const link = root.querySelector<HTMLAnchorElement>("a.export")!;
@@ -609,7 +616,7 @@ describe("renderDashboard", () => {
       const prefix = "data:application/json;charset=utf-8,";
       expect(link.href.startsWith(prefix)).toBe(true);
       const json = JSON.parse(decodeURIComponent(link.href.slice(prefix.length)));
-      expect(json).toEqual({ snapshots, transfers, comments: { "transfer:1": "メモ" } });
+      expect(json).toEqual({ snapshots, transfers, comments });
     });
 
     it("JSONファイルを選ぶと内容を渡して結果を表示する", async () => {

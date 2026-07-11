@@ -13,6 +13,22 @@ export interface TransferRecord {
   amount: number;
 }
 
+/**
+ * 記録に紐付くコメント。textが空文字の要素は削除の記録(tombstone)で、
+ * 端末間同期の際に「削除した」ことを他端末の古いコメントより優先させるために残す
+ */
+export interface CommentEntry {
+  text: string;
+  updatedAt: number;
+}
+
+export type Comments = Record<string, CommentEntry>;
+
+/** 表示用のコメント本文。未設定・削除済みは空文字 */
+export function commentText(comments: Comments, key: string): string {
+  return comments[key]?.text ?? "";
+}
+
 export interface BalancePoint {
   takenAt: number;
   balance: number;
@@ -165,13 +181,15 @@ export function workspaceSummaries(
 }
 
 /**
- * コメント欄の入力候補。重複を除き、使用回数の多い順
- * (同数ならキー末尾のタイムスタンプが新しい順)に並べる
+ * コメント欄の入力候補。削除の記録を除き、使用回数の多い順
+ * (同数なら記録またはコメント編集が新しい順)に並べる
  */
-export function commentSuggestions(comments: Record<string, string>): string[] {
+export function commentSuggestions(comments: Comments): string[] {
   const stats = new Map<string, { count: number; lastAt: number }>();
-  for (const [key, text] of Object.entries(comments)) {
-    const at = Number(key.slice(key.lastIndexOf(":") + 1)) || 0;
+  for (const [key, { text, updatedAt }] of Object.entries(comments)) {
+    if (text === "") continue;
+    // 旧形式から移行したコメントはupdatedAtが0のため、キー末尾の記録時刻でも比べる
+    const at = Math.max(updatedAt, Number(key.slice(key.lastIndexOf(":") + 1)) || 0);
     const entry = stats.get(text) ?? { count: 0, lastAt: 0 };
     entry.count += 1;
     entry.lastAt = Math.max(entry.lastAt, at);
