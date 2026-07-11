@@ -4,6 +4,7 @@ import {
   type BalanceSnapshot,
   balanceSeries,
   changeCommentKey,
+  commentSuggestions,
   detectBalanceChanges,
   destinationTotals,
   flowTotals,
@@ -337,6 +338,19 @@ export function renderDashboard(
     return node;
   };
 
+  const SUGGESTIONS_ID = "comment-suggestions";
+
+  const suggestionList = (): HTMLElement => {
+    const list = el("datalist");
+    list.id = SUGGESTIONS_ID;
+    for (const text of commentSuggestions(data.comments)) {
+      const option = document.createElement("option");
+      option.value = text;
+      list.append(option);
+    }
+    return list;
+  };
+
   const commentInput = (key: string): HTMLElement => {
     const input = document.createElement("input");
     input.className =
@@ -344,6 +358,7 @@ export function renderDashboard(
       "hover:ring-slate-300 focus:bg-white focus:ring-2 focus:ring-sky-500 focus:outline-none " +
       "dark:hover:ring-slate-600 dark:focus:bg-slate-800";
     input.placeholder = "コメント";
+    input.setAttribute("list", SUGGESTIONS_ID);
     input.value = data.comments[key] ?? "";
     input.addEventListener("change", () => handlers.onCommentChange(key, input.value));
     return input;
@@ -691,7 +706,7 @@ export function renderDashboard(
       return;
     }
 
-    root.append(settingsButton());
+    root.append(settingsButton(), suggestionList());
 
     if (data.snapshots.length === 0 && data.transfers.length === 0) {
       root.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));

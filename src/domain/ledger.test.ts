@@ -4,6 +4,7 @@ import {
   appendSnapshot,
   type BalanceSnapshot,
   balanceSeries,
+  commentSuggestions,
   detectBalanceChanges,
   destinationTotals,
   latestSnapshot,
@@ -375,6 +376,43 @@ describe("detectBalanceChanges", () => {
       [20, 20000],
       [30, -10000],
     ]);
+  });
+});
+
+describe("commentSuggestions", () => {
+  it("コメントがなければ空を返す", () => {
+    expect(commentSuggestions({})).toEqual([]);
+  });
+
+  it("同じ内容のコメントは1つの候補にまとめる", () => {
+    const comments = {
+      "transfer:100": "家賃",
+      "transfer:200": "家賃",
+      "change:101:300": "給料",
+    };
+
+    expect(commentSuggestions(comments)).toEqual(["家賃", "給料"]);
+  });
+
+  it("使用回数の多い順に並べる", () => {
+    const comments = {
+      "transfer:100": "積立",
+      "transfer:200": "家賃",
+      "transfer:300": "家賃",
+      "transfer:400": "家賃",
+      "transfer:500": "積立",
+    };
+
+    expect(commentSuggestions(comments)).toEqual(["家賃", "積立"]);
+  });
+
+  it("使用回数が同じなら新しい記録のコメントを先にする", () => {
+    const comments = {
+      "transfer:100": "古いメモ",
+      "transfer:200": "新しいメモ",
+    };
+
+    expect(commentSuggestions(comments)).toEqual(["新しいメモ", "古いメモ"]);
   });
 });
 

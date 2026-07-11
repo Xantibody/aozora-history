@@ -227,6 +227,26 @@ describe("renderDashboard", () => {
       expect(onCommentChange).toHaveBeenCalledWith(expect.stringMatching(/^change:/), "給料");
     });
 
+    it("過去のコメントを入力候補として提示する", () => {
+      render(
+        root,
+        data({ comments: { "transfer:1": "家賃", "transfer:2": "家賃", "change:101:3": "給料" } }),
+      );
+
+      const input = root.querySelector<HTMLInputElement>("input.comment")!;
+      const listId = input.getAttribute("list")!;
+      const options = [...root.querySelectorAll(`#${listId} option`)];
+      expect(options.map((o) => o.getAttribute("value"))).toEqual(["家賃", "給料"]);
+    });
+
+    it("コメントがなければ候補も空にする", () => {
+      render(root);
+
+      const input = root.querySelector<HTMLInputElement>("input.comment")!;
+      const listId = input.getAttribute("list")!;
+      expect(root.querySelectorAll(`#${listId} option`)).toHaveLength(0);
+    });
+
     it("タブを切り替えてもコメントは保持して表示する", () => {
       const key = `transfer:${transfers[0].transferredAt}`;
 

@@ -118,6 +118,24 @@ export interface BalanceChange {
   externalDelta: number;
 }
 
+/**
+ * コメント欄の入力候補。重複を除き、使用回数の多い順
+ * (同数ならキー末尾のタイムスタンプが新しい順)に並べる
+ */
+export function commentSuggestions(comments: Record<string, string>): string[] {
+  const stats = new Map<string, { count: number; lastAt: number }>();
+  for (const [key, text] of Object.entries(comments)) {
+    const at = Number(key.slice(key.lastIndexOf(":") + 1)) || 0;
+    const entry = stats.get(text) ?? { count: 0, lastAt: 0 };
+    entry.count += 1;
+    entry.lastAt = Math.max(entry.lastAt, at);
+    stats.set(text, entry);
+  }
+  return [...stats.entries()]
+    .toSorted(([, a], [, b]) => b.count - a.count || b.lastAt - a.lastAt)
+    .map(([text]) => text);
+}
+
 /** コメント紐付け用の安定キー */
 export function transferCommentKey(transfer: TransferRecord): string {
   return `transfer:${transfer.transferredAt}`;
