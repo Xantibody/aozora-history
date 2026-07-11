@@ -20,6 +20,8 @@ const TRANSFERS_KEY = "transferRecords";
 const COMMENTS_KEY = "comments";
 const DELETIONS_KEY = "transferDeletions";
 const SYNC_CONFIG_KEY = "syncConfig";
+/** 最後にR2と同期できた時刻。台帳ではないためLEDGER_KEYSに含めない(自動同期のループ防止) */
+export const LAST_SYNCED_KEY = "lastSyncedAt";
 
 /** 台帳本体を構成するstorageキー。同期のトリガー判定に使う */
 export const LEDGER_KEYS = [SNAPSHOTS_KEY, TRANSFERS_KEY, COMMENTS_KEY, DELETIONS_KEY] as const;
@@ -119,6 +121,15 @@ export class HistoryStore {
       [COMMENTS_KEY]: data.comments,
       [DELETIONS_KEY]: data.deletions,
     });
+  }
+
+  async loadLastSyncedAt(): Promise<number | null> {
+    const items = await this.storage.get(LAST_SYNCED_KEY);
+    return (items[LAST_SYNCED_KEY] as number | undefined) ?? null;
+  }
+
+  async markSynced(): Promise<void> {
+    await this.storage.set({ [LAST_SYNCED_KEY]: this.now() });
   }
 
   async loadSyncConfig(): Promise<SyncConfig | null> {

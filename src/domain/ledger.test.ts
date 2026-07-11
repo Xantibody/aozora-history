@@ -7,6 +7,7 @@ import {
   commentSuggestions,
   detectBalanceChanges,
   destinationTotals,
+  latestRecordAt,
   latestSnapshot,
   sortTransfersDesc,
   type TransferRecord,
@@ -452,6 +453,20 @@ describe("workspaceSummaries", () => {
         points: [{ takenAt: 20, balance: 130000 }],
       },
     ]);
+  });
+});
+
+describe("latestRecordAt", () => {
+  it("記録がなければnullを返す", () => {
+    expect(latestRecordAt([], [])).toBeNull();
+  });
+
+  it("スナップショットと振替のうち最新の時刻を返す", () => {
+    const s = snapshot(10, accounts(["お財布", 100]));
+    const t = transfer(25, ["100", "お財布"], ["101", "積立"], 500);
+
+    expect(latestRecordAt([s], [t])).toBe(25);
+    expect(latestRecordAt([s], [])).toBe(10);
   });
 });
 

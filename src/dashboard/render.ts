@@ -10,6 +10,7 @@ import {
   detectBalanceChanges,
   destinationTotals,
   flowTotals,
+  latestRecordAt,
   latestSnapshot,
   signedAmountFor,
   sortTransfersDesc,
@@ -32,6 +33,7 @@ export interface DashboardData {
   comments: Comments;
   deletions: Record<string, number>;
   syncConfig: SyncConfig | null;
+  lastSyncedAt: number | null;
 }
 
 export interface DashboardHandlers {
@@ -424,10 +426,14 @@ function currentMonth(): string {
  * ダッシュボードを描画する。戻り値の再描画関数は選択中のタブや期間などの
  * UI状態を保ったまま、dataの現在の内容を描き直す(自動更新用)
  */
+/** 記録がこれだけ止まっていたら、銀行サイトの変更に追従できていない可能性を警告する */
+const STALE_AFTER_MS = 7 * DAY_MS;
+
 export function renderDashboard(
   root: HTMLElement,
   data: DashboardData,
   handlers: DashboardHandlers,
+  now: () => number = Date.now,
 ): () => void {
   let selectedFromId: string | null = null;
   let periodFrom: number | null = null;
@@ -526,6 +532,33 @@ export function renderDashboard(
       clear,
     );
     node.append(detail);
+    return node;
+  };
+
+  /** 最終記録・最終同期の時刻。記録が止まっていたら警告も出す */
+  const freshnessSection = (latest: number): HTMLElement => {
+    const node = el("div", `freshness mt-1 flex flex-wrap gap-x-4 gap-y-1 ${FINE_PRINT}`);
+    node.append(el("span", "latest-record", `最終記録: ${formatDateTime(latest)}`));
+    if (data.syncConfig !== null) {
+      node.append(
+        el(
+          "span",
+          "last-synced",
+          data.lastSyncedAt === null
+            ? "最終同期: まだ同期していません"
+            : `最終同期: ${formatDateTime(data.lastSyncedAt)}`,
+        ),
+      );
+    }
+    if (now() - latest > STALE_AFTER_MS) {
+      node.append(
+        el(
+          "span",
+          "stale-warning font-medium text-amber-700 dark:text-amber-400",
+          "⚠ 7日以上記録が増えていません。銀行サイトを見ても記録されない場合、サイトの変更に拡張が追従できていない可能性があります",
+        ),
+      );
+    }
     return node;
   };
 
@@ -933,10 +966,12 @@ export function renderDashboard(
 
     root.append(settingsButton(), suggestionList());
 
-    if (data.snapshots.length === 0 && data.transfers.length === 0) {
+    const latestAt = latestRecordAt(data.snapshots, data.transfers);
+    if (latestAt === null) {
       root.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
       return;
     }
+    root.append(freshnessSection(latestAt));
 
     const latest = latestSnapshot(data.snapshots);
     if (latest !== null) root.append(balancesSection(latest));

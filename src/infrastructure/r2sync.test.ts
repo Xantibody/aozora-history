@@ -147,6 +147,23 @@ describe("syncWithR2", () => {
     expect(JSON.parse(requests[1].body!)).toEqual(merged);
   });
 
+  it("同期が完了したら最終同期時刻を記録する", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 777);
+    const { fetchFn } = fakeFetch([{ status: 404 }, { status: 200 }]);
+
+    await syncWithR2(store, client(fetchFn));
+
+    expect(await store.loadLastSyncedAt()).toBe(777);
+  });
+
+  it("アップロードに失敗したら最終同期時刻は記録しない", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 777);
+    const { fetchFn } = fakeFetch([{ status: 404 }, { status: 500 }]);
+
+    await expect(syncWithR2(store, client(fetchFn))).rejects.toThrow();
+    expect(await store.loadLastSyncedAt()).toBeNull();
+  });
+
   it("リモートが未作成ならローカルの内容をそのままアップロードする", async () => {
     const store = new HistoryStore(fakeStorage());
     const { fetchFn, requests } = fakeFetch([{ status: 404 }, { status: 200 }]);

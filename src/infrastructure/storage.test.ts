@@ -162,6 +162,22 @@ describe("HistoryStoreの同期設定", () => {
   });
 });
 
+describe("HistoryStoreの最終同期時刻", () => {
+  it("初期状態はnullを返す", async () => {
+    const store = new HistoryStore(fakeStorage());
+
+    expect(await store.loadLastSyncedAt()).toBeNull();
+  });
+
+  it("markSyncedで現在時刻を記録する", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 777);
+
+    await store.markSynced();
+
+    expect(await store.loadLastSyncedAt()).toBe(777);
+  });
+});
+
 describe("HistoryStoreのコメント", () => {
   /** setComment のたびに 1, 2, 3… と進む時計を持つストア */
   function commentStore(): HistoryStore {
