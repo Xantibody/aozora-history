@@ -363,6 +363,23 @@ describe("renderDashboard", () => {
     });
   });
 
+  describe("残高推移の合計グラフ", () => {
+    it("スナップショットが2件以上あれば合計残高の折れ線を表示する", () => {
+      render(root);
+
+      const chart = root.querySelector(".snapshots .total-chart svg.balance-chart");
+      expect(chart).not.toBeNull();
+      // 最新の合計 129,392 + 82,520 + 272,469 = 484,381円 が終端ラベルに出る
+      expect(chart!.textContent).toContain("484,381円");
+    });
+
+    it("スナップショットが1件なら合計グラフは表示しない", () => {
+      render(root, data({ snapshots: [snapshots[0]], transfers: [] }));
+
+      expect(root.querySelector(".snapshots .total-chart")).toBeNull();
+    });
+  });
+
   describe("記録の鮮度", () => {
     // 最新の記録は2つ目のスナップショット (7/10 13:34)
     const latestAt = Date.UTC(2026, 6, 10, 13, 34);
