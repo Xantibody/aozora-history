@@ -85,6 +85,14 @@ export function balanceSeries(history: BalanceSnapshot[]): BalanceSeries[] {
   return [...byId.values()];
 }
 
+/** スナップショットごとの全口座合計。総資産の推移グラフに使う */
+export function totalBalancePoints(history: BalanceSnapshot[]): BalancePoint[] {
+  return history.map((snapshot) => ({
+    takenAt: snapshot.takenAt,
+    balance: snapshot.accounts.reduce((sum, a) => sum + a.balance, 0),
+  }));
+}
+
 export function sortTransfersDesc(transfers: TransferRecord[]): TransferRecord[] {
   return transfers.toSorted((a, b) => b.transferredAt - a.transferredAt);
 }

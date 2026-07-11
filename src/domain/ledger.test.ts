@@ -10,6 +10,7 @@ import {
   latestRecordAt,
   latestSnapshot,
   sortTransfersDesc,
+  totalBalancePoints,
   type TransferRecord,
   flowTotals,
   signedAmountFor,
@@ -452,6 +453,22 @@ describe("workspaceSummaries", () => {
         externalNet: 30000,
         points: [{ takenAt: 20, balance: 130000 }],
       },
+    ]);
+  });
+});
+
+describe("totalBalancePoints", () => {
+  it("スナップショットがなければ空を返す", () => {
+    expect(totalBalancePoints([])).toEqual([]);
+  });
+
+  it("スナップショットごとに全口座の合計を返す", () => {
+    const s1 = snapshot(10, accounts(["お財布", 100], ["積立", 50]));
+    const s2 = snapshot(20, accounts(["お財布", 70], ["積立", 90]));
+
+    expect(totalBalancePoints([s1, s2])).toEqual([
+      { takenAt: 10, balance: 150 },
+      { takenAt: 20, balance: 160 },
     ]);
   });
 });

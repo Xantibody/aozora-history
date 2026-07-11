@@ -14,6 +14,7 @@ import {
   latestSnapshot,
   signedAmountFor,
   sortTransfersDesc,
+  totalBalancePoints,
   transferCommentKey,
   type TransferRecord,
   transfersInvolving,
@@ -749,6 +750,16 @@ export function renderDashboard(
       node.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
       return node;
     }
+
+    // 表は口座ごとの内訳なので、全体の動きは合計の折れ線で補う
+    const totals = totalBalancePoints(visible);
+    if (totals.length >= 2) {
+      const chartBox = el("div", "total-chart mb-4");
+      chartBox.append(el("div", `chart-label ${FINE_PRINT}`, "合計"));
+      chartBox.append(balanceChart(totals));
+      node.append(chartBox);
+    }
+
     const columns = balanceSeries(visible);
     const rows = visible.toReversed().map((snapshot): Cell[] => {
       const byId = new Map(snapshot.accounts.map((a) => [a.id, a.balance]));
