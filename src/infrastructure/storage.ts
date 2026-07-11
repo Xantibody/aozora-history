@@ -12,6 +12,9 @@ const TRANSFERS_KEY = "transferRecords";
 const COMMENTS_KEY = "comments";
 const SYNC_CONFIG_KEY = "syncConfig";
 
+/** 台帳本体を構成するstorageキー。同期のトリガー判定に使う */
+export const LEDGER_KEYS = [SNAPSHOTS_KEY, TRANSFERS_KEY, COMMENTS_KEY] as const;
+
 export type Comments = Record<string, string>;
 
 export function addTransfer(

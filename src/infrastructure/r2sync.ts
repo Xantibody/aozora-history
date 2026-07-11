@@ -67,7 +67,10 @@ export class R2Client {
 export async function syncWithR2(store: HistoryStore, client: R2Client): Promise<LedgerData> {
   const local = await store.loadLedger();
   const remote = await client.download();
-  const merged = remote === null ? local : mergeLedgers(local, remote);
+  const remoteMerged = remote === null ? local : mergeLedgers(local, remote);
+  // ダウンロード待ちの間に増えた記録をreplaceLedgerで消さないよう、最新のローカルと再マージする
+  const latest = await store.loadLedger();
+  const merged = mergeLedgers(remoteMerged, latest);
   await store.replaceLedger(merged);
   await client.upload(merged);
   return merged;
