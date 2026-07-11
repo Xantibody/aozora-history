@@ -94,6 +94,19 @@ describe("R2Client", () => {
     await expect(client(fetchFn).download()).rejects.toThrow("403");
   });
 
+  it("台帳の形式でないデータはローカルを壊さないようエラーにする", async () => {
+    const wrongObject = { snapshots: "not an array" };
+    const { fetchFn } = fakeFetch([{ status: 200, body: JSON.stringify(wrongObject) }]);
+
+    await expect(client(fetchFn).download()).rejects.toThrow("形式が正しくありません");
+  });
+
+  it("JSONでないデータはエラーにする", async () => {
+    const { fetchFn } = fakeFetch([{ status: 200, body: "<html>error page</html>" }]);
+
+    await expect(client(fetchFn).download()).rejects.toThrow("JSONとして読み込めませんでした");
+  });
+
   it("アップロードはJSONボディをPUTする", async () => {
     const { fetchFn, requests } = fakeFetch([{ status: 200 }]);
 
