@@ -587,7 +587,7 @@ describe("renderDashboard", () => {
     const tables = root.querySelectorAll("table");
     expect(tables.length).toBeGreaterThan(0);
     for (const t of tables) {
-      expect(t.parentElement?.className).toBe("table-scroll");
+      expect(t.parentElement?.classList.contains("table-scroll")).toBe(true);
     }
   });
 });

@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* ライト/ダーク両対応の配色。ユーティリティからは bg-(--card-bg) のように参照する */
+:root {
+  color-scheme: light dark;
+  --border: light-dark(#d5dbe1, #3a4149);
+  --muted: light-dark(#5b6670, #9aa5ae);
+  --accent: light-dark(#0a6cb3, #5db3e8);
+  --card-bg: light-dark(#f4f7f9, #23282e);
+  --on-accent: light-dark(#ffffff, #16191d);
+  --input-text: light-dark(#1c2126, #e8eaed);
+}

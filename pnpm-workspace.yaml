@@ -1,2 +1,4 @@
 allowBuilds:
+  # tailwindcss --watch用のネイティブ監視。ビルドだけなら不要でポーリングにフォールバックする
+  "@parcel/watcher": false
   esbuild: true

@@ -56,9 +56,17 @@ function el(tag: string, className?: string, text?: string): HTMLElement {
   return node;
 }
 
+// クラス名の先頭は意味を表すマーカー(テストとイベント処理のフック)、
+// 続くTailwindユーティリティが見た目を担う
+const MUTED = "text-sm text-(--muted)";
+const CONTROL = "border border-(--border) bg-(--card-bg)";
+const CELL =
+  "border border-(--border) px-3 py-1.5 text-left tabular-nums whitespace-nowrap max-sm:px-2 max-sm:py-1 max-sm:text-sm";
+const LINK_BUTTON = "cursor-pointer border-none bg-transparent p-0 text-(--accent) underline";
+
 function section(className: string, title: string): HTMLElement {
   const node = el("section", className);
-  node.append(el("h2", undefined, title));
+  node.append(el("h2", "mt-8 mb-3 text-[1.1rem] font-bold max-sm:mt-6", title));
   return node;
 }
 
@@ -66,17 +74,17 @@ type Cell = string | HTMLElement;
 
 /** 画面幅を超える表はラッパー内で横スクロールさせる(モバイル対応) */
 function table(headers: string[], rows: Cell[][]): HTMLElement {
-  const tableEl = el("table");
+  const tableEl = el("table", "w-full border-collapse");
   const thead = el("thead");
   const headRow = el("tr");
-  headRow.append(...headers.map((h) => el("th", undefined, h)));
+  headRow.append(...headers.map((h) => el("th", `${CELL} bg-(--card-bg)`, h)));
   thead.append(headRow);
 
   const tbody = el("tbody");
   for (const row of rows) {
     const tr = el("tr");
     for (const cell of row) {
-      const td = el("td");
+      const td = el("td", CELL);
       td.append(cell);
       tr.append(td);
     }
@@ -84,29 +92,40 @@ function table(headers: string[], rows: Cell[][]): HTMLElement {
   }
 
   tableEl.append(thead, tbody);
-  const scroll = el("div", "table-scroll");
+  const scroll = el("div", "table-scroll overflow-x-auto");
   scroll.append(tableEl);
   return scroll;
 }
 
+const CARD =
+  "rounded-lg border bg-(--card-bg) px-5 py-3 min-w-40 max-sm:min-w-0 max-sm:flex-[1_1_calc(50%-0.25rem)] max-sm:px-3 max-sm:py-2.5";
+
 function balancesSection(snapshot: BalanceSnapshot): HTMLElement {
   const node = section("balances", "現在の残高");
-  const list = el("div", "balance-cards");
+  const list = el("div", "balance-cards flex flex-wrap gap-3 max-sm:gap-2");
+  const balanceCard = (name: string, balance: number, extra: string): HTMLElement => {
+    const card = el("div", extra);
+    card.append(el("div", `account-name ${MUTED}`, name));
+    card.append(
+      el("div", "account-balance text-[1.3rem] tabular-nums max-sm:text-lg", formatYen(balance)),
+    );
+    return card;
+  };
   for (const account of snapshot.accounts) {
-    const card = el("div", "balance-card");
-    card.append(el("div", "account-name", account.name));
-    card.append(el("div", "account-balance", formatYen(account.balance)));
-    list.append(card);
+    list.append(
+      balanceCard(account.name, account.balance, `balance-card ${CARD} border-(--border)`),
+    );
   }
   const total = snapshot.accounts.reduce((sum, a) => sum + a.balance, 0);
-  const totalCard = el("div", "balance-card total");
-  totalCard.append(el("div", "account-name", "合計"));
-  totalCard.append(el("div", "account-balance", formatYen(total)));
-  list.append(totalCard);
+  list.append(balanceCard("合計", total, `balance-card total ${CARD} border-(--accent)`));
 
   node.append(list);
   node.append(
-    el("p", "updated-at", `最終更新: ${snapshot.updatedAt ?? formatDateTime(snapshot.takenAt)}`),
+    el(
+      "p",
+      `updated-at ${MUTED}`,
+      `最終更新: ${snapshot.updatedAt ?? formatDateTime(snapshot.takenAt)}`,
+    ),
   );
   return node;
 }
@@ -195,33 +214,37 @@ export function renderDashboard(
   };
 
   const periodSection = (): HTMLElement => {
-    const node = el("div", "period");
+    const node = el("div", "period mt-6 flex flex-wrap items-center gap-x-6 gap-y-2");
 
-    const monthGroup = el("div", "month-nav");
-    const prev = el("button", "month-prev", "◀");
+    const monthGroup = el("div", "month-nav inline-flex items-center gap-1.5");
+    const monthButton = `${CONTROL} cursor-pointer rounded px-2.5 py-0.5`;
+    const prev = el("button", `month-prev ${monthButton}`, "◀");
     prev.title = "前の月";
     prev.addEventListener("click", () => {
       selectMonth(shiftMonth(monthValue === "" ? currentMonth() : monthValue, -1));
     });
 
     const monthInput = document.createElement("input");
+    monthInput.className = `${CONTROL} rounded px-2 py-0.5`;
     monthInput.type = "month";
     monthInput.name = "period-month";
     monthInput.value = monthValue;
     monthInput.addEventListener("change", () => selectMonth(monthInput.value));
 
-    const next = el("button", "month-next", "▶");
+    const next = el("button", `month-next ${monthButton}`, "▶");
     next.title = "次の月";
     next.addEventListener("click", () => {
       selectMonth(shiftMonth(monthValue === "" ? currentMonth() : monthValue, 1));
     });
 
     monthGroup.append(prev, monthInput, next);
-    node.append(el("span", "period-label", "表示月:"), monthGroup);
+    node.append(el("span", `period-label ${MUTED}`, "表示月:"), monthGroup);
 
-    const detail = el("div", "period-detail");
+    const detail = el("div", "period-detail inline-flex flex-wrap items-center gap-2");
 
+    const dateInput = `${CONTROL} rounded px-2 py-0.5 text-sm`;
     const fromInput = document.createElement("input");
+    fromInput.className = dateInput;
     fromInput.type = "date";
     fromInput.name = "period-from";
     fromInput.value = periodFromValue;
@@ -233,6 +256,7 @@ export function renderDashboard(
     });
 
     const toInput = document.createElement("input");
+    toInput.className = dateInput;
     toInput.type = "date";
     toInput.name = "period-to";
     toInput.value = periodToValue;
@@ -243,11 +267,11 @@ export function renderDashboard(
       draw();
     });
 
-    const clear = el("button", "period-clear", "クリア");
+    const clear = el("button", `period-clear ${LINK_BUTTON} text-sm`, "クリア");
     clear.addEventListener("click", () => selectMonth(""));
 
     detail.append(
-      el("span", "period-label", "詳細指定:"),
+      el("span", "period-label text-xs text-(--muted)", "詳細指定:"),
       fromInput,
       el("span", "period-separator", "〜"),
       toInput,
@@ -259,7 +283,9 @@ export function renderDashboard(
 
   const commentInput = (key: string): HTMLElement => {
     const input = document.createElement("input");
-    input.className = "comment";
+    input.className =
+      "comment w-full min-w-40 rounded border border-transparent bg-transparent px-1.5 py-0.5 text-sm " +
+      "hover:border-(--border) focus:border-(--accent) focus:bg-(--card-bg) focus:outline-none";
     input.placeholder = "コメント";
     input.value = data.comments[key] ?? "";
     input.addEventListener("change", () => handlers.onCommentChange(key, input.value));
@@ -269,13 +295,20 @@ export function renderDashboard(
   const transfersSection = (): HTMLElement => {
     const node = section("transfers", "振替履歴");
 
-    const tabs = el("div", "tabs");
+    const tabs = el("div", "tabs mb-3 flex flex-wrap gap-1.5");
     const tabDefs: { id: string | null; name: string }[] = [
       { id: null, name: "すべて" },
       ...tabAccounts(data),
     ];
+    const tabBase = "tab cursor-pointer rounded-full border px-3.5 py-1 text-sm";
     for (const def of tabDefs) {
-      const tab = el("button", def.id === selectedFromId ? "tab active" : "tab", def.name);
+      const tab = el(
+        "button",
+        def.id === selectedFromId
+          ? `${tabBase} active border-(--accent) bg-(--accent) text-(--on-accent)`
+          : `${tabBase} border-(--border) bg-(--card-bg)`,
+        def.name,
+      );
       tab.addEventListener("click", () => {
         selectedFromId = def.id;
         draw();
@@ -289,21 +322,22 @@ export function renderDashboard(
       inPeriod(t.transferredAt),
     );
     if (filtered.length === 0) {
-      node.append(el("p", "empty", "まだ記録がありません"));
+      node.append(el("p", "empty text-(--muted)", "まだ記録がありません"));
       return node;
     }
 
-    const summary = el("div", "destination-summary");
+    const summary = el("div", `destination-summary mb-2.5 ${MUTED}`);
+    const summaryItem = "summary-item ml-3 inline-block tabular-nums";
     if (selectedId === null) {
       summary.append(el("span", "summary-label", "入金先ごとの合計:"));
       for (const dest of destinationTotals(filtered)) {
-        summary.append(el("span", "summary-item", `${dest.name} ${formatYen(dest.total)}`));
+        summary.append(el("span", summaryItem, `${dest.name} ${formatYen(dest.total)}`));
       }
     } else {
       const totals = flowTotals(filtered, selectedId);
       summary.append(el("span", "summary-label", "合計:"));
-      summary.append(el("span", "summary-item", `出金 ${formatSigned(-totals.outgoing)}`));
-      summary.append(el("span", "summary-item", `入金 ${formatSigned(totals.incoming)}`));
+      summary.append(el("span", summaryItem, `出金 ${formatSigned(-totals.outgoing)}`));
+      summary.append(el("span", summaryItem, `入金 ${formatSigned(totals.incoming)}`));
     }
     node.append(summary);
 
@@ -334,7 +368,7 @@ export function renderDashboard(
       .filter((c) => inPeriod(c.toTakenAt))
       .toSorted((a, b) => b.toTakenAt - a.toTakenAt);
     if (changes.length === 0) {
-      node.append(el("p", "empty", "まだ記録がありません"));
+      node.append(el("p", "empty text-(--muted)", "まだ記録がありません"));
       return node;
     }
     const rows = changes.map((c): Cell[] => [
@@ -353,7 +387,7 @@ export function renderDashboard(
     const node = section("snapshots", "残高推移");
     const visible = data.snapshots.filter((s) => inPeriod(s.takenAt));
     if (visible.length === 0) {
-      node.append(el("p", "empty", "まだ記録がありません"));
+      node.append(el("p", "empty text-(--muted)", "まだ記録がありません"));
       return node;
     }
     const columns = balanceSeries(visible);
@@ -379,9 +413,10 @@ export function renderDashboard(
     value: string,
     type = "text",
   ): [HTMLElement, HTMLInputElement] => {
-    const row = el("label", "sync-field");
+    const row = el("label", `sync-field flex flex-col gap-1 ${MUTED}`);
     row.append(el("span", undefined, label));
     const input = document.createElement("input");
+    input.className = `${CONTROL} rounded px-2.5 py-1.5 text-(--input-text)`;
     input.type = type;
     input.name = name;
     input.value = value;
@@ -416,7 +451,10 @@ export function renderDashboard(
       "password",
     );
 
-    const form = el("div", "sync-form");
+    const form = el(
+      "div",
+      "sync-form mb-3 grid grid-cols-[repeat(auto-fit,minmax(16rem,1fr))] gap-2",
+    );
     form.append(accountRow, bucketRow, keyRow, akRow, skRow);
     node.append(form);
 
@@ -425,7 +463,12 @@ export function renderDashboard(
       draw();
     };
 
-    const save = el("button", "save-config", "設定を保存");
+    const button = "cursor-pointer rounded-md border px-4 py-1.5";
+    const save = el(
+      "button",
+      `save-config ${button} border-(--border) bg-(--card-bg)`,
+      "設定を保存",
+    );
     save.addEventListener("click", () => {
       void handlers
         .onSaveSyncConfig({
@@ -438,27 +481,34 @@ export function renderDashboard(
         .then(showStatus);
     });
 
-    const syncNow = el("button", "sync-now", "今すぐ同期");
+    const syncNow = el(
+      "button",
+      `sync-now ${button} border-(--accent) bg-(--accent) text-(--on-accent)`,
+      "今すぐ同期",
+    );
     syncNow.addEventListener("click", () => {
       syncStatus = "同期中…";
       draw();
       void handlers.onSyncNow().then(showStatus);
     });
 
-    const buttons = el("div", "sync-buttons");
+    const buttons = el("div", "sync-buttons flex gap-2.5");
     buttons.append(save, syncNow);
     node.append(buttons);
 
     if (config !== null) {
       const exportLink = document.createElement("a");
-      exportLink.className = "export-config";
+      exportLink.className = "export-config mt-3 inline-block text-(--accent) underline";
       exportLink.download = "aozora-history-sync-config.json";
       exportLink.textContent = "同期設定をエクスポート";
       exportLink.href = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(config))}`;
       node.append(exportLink);
     }
 
-    const importConfigRow = el("label", "import-config-row");
+    const importConfigRow = el(
+      "label",
+      "import-config-row mt-3 flex flex-wrap items-center gap-2.5 text-sm",
+    );
     importConfigRow.append(el("span", undefined, "設定JSONをインポート:"));
     const importConfigInput = document.createElement("input");
     importConfigInput.type = "file";
@@ -481,12 +531,12 @@ export function renderDashboard(
     node.append(
       el(
         "p",
-        "note",
+        `note ${MUTED}`,
         "エクスポートした設定ファイルにはシークレットアクセスキーが平文で含まれる。他端末に取り込んだら削除すること。",
       ),
     );
 
-    node.append(el("p", "sync-status", syncStatus));
+    node.append(el("p", `sync-status min-h-[1.2em] ${MUTED}`, syncStatus));
     return node;
   };
 
@@ -497,7 +547,7 @@ export function renderDashboard(
     const node = section("import-export", "インポート / エクスポート");
 
     const exportLink = document.createElement("a");
-    exportLink.className = "export";
+    exportLink.className = "export mb-3 inline-block text-(--accent) underline";
     exportLink.download = "aozora-history.json";
     exportLink.textContent = "JSONをエクスポート";
     const ledger = {
@@ -508,7 +558,7 @@ export function renderDashboard(
     exportLink.href = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(ledger))}`;
     node.append(exportLink);
 
-    const importRow = el("label", "import-row");
+    const importRow = el("label", "import-row flex flex-wrap items-center gap-2.5 text-sm");
     importRow.append(el("span", undefined, "JSONをインポート(現在の記録とマージ):"));
     const fileInput = document.createElement("input");
     fileInput.type = "file";
@@ -533,17 +583,17 @@ export function renderDashboard(
     node.append(
       el(
         "p",
-        "note",
+        `note ${MUTED}`,
         "R2上のオブジェクトやエクスポートしたファイルと同じ形式のJSONを読み込めます。",
       ),
     );
-    node.append(el("p", "import-status", importStatus));
+    node.append(el("p", `import-status min-h-[1.2em] ${MUTED}`, importStatus));
     return node;
   };
 
   const settingsView = (): HTMLElement => {
     const node = el("div", "settings-view");
-    const back = el("button", "back-button", "← ダッシュボードに戻る");
+    const back = el("button", `back-button ${LINK_BUTTON}`, "← ダッシュボードに戻る");
     back.addEventListener("click", () => {
       view = "dashboard";
       draw();
@@ -553,7 +603,11 @@ export function renderDashboard(
   };
 
   const settingsButton = (): HTMLElement => {
-    const button = el("button", "settings-button", "⚙");
+    const button = el(
+      "button",
+      `settings-button ${CONTROL} absolute top-6 right-6 h-10 w-10 cursor-pointer rounded-full text-lg leading-none max-sm:top-4 max-sm:right-3`,
+      "⚙",
+    );
     button.title = "設定";
     button.setAttribute("aria-label", "設定");
     button.addEventListener("click", () => {
@@ -574,7 +628,7 @@ export function renderDashboard(
     root.append(settingsButton());
 
     if (data.snapshots.length === 0 && data.transfers.length === 0) {
-      root.append(el("p", "empty", "まだ記録がありません"));
+      root.append(el("p", "empty text-(--muted)", "まだ記録がありません"));
       return;
     }
 
