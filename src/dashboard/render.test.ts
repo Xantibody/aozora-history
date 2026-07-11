@@ -363,6 +363,43 @@ describe("renderDashboard", () => {
     });
   });
 
+  describe("タブのアクセシビリティとフォーカス", () => {
+    it("タブにrole/aria-selectedを付ける", () => {
+      render(root);
+
+      expect(root.querySelector(".transfers .tabs")!.getAttribute("role")).toBe("tablist");
+      const active = root.querySelector(".transfers .tab.active")!;
+      expect(active.getAttribute("role")).toBe("tab");
+      expect(active.getAttribute("aria-selected")).toBe("true");
+      const inactive = [...root.querySelectorAll(".transfers .tab")].find((t) => t !== active)!;
+      expect(inactive.getAttribute("aria-selected")).toBe("false");
+    });
+
+    it("月送りボタンで再描画してもフォーカスを保つ", () => {
+      render(root);
+
+      const prev = root.querySelector<HTMLButtonElement>(".month-prev")!;
+      prev.focus();
+      prev.click();
+
+      expect((document.activeElement as HTMLElement).classList.contains("month-prev")).toBe(true);
+    });
+
+    it("タブを切り替えてもフォーカスは選んだタブに残る", () => {
+      render(root);
+
+      const tab = [...root.querySelectorAll<HTMLButtonElement>(".transfers .tab")].find(
+        (t) => t.textContent === "01: お財布",
+      )!;
+      tab.focus();
+      tab.click();
+
+      const nowActive = root.querySelector(".transfers .tab.active")!;
+      expect(nowActive.textContent).toBe("01: お財布");
+      expect(document.activeElement).toBe(nowActive);
+    });
+  });
+
   describe("残高推移の合計グラフ", () => {
     it("スナップショットが2件以上あれば合計残高の折れ線を表示する", () => {
       render(root);
