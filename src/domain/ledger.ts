@@ -59,12 +59,33 @@ export function sortTransfersDesc(transfers: TransferRecord[]): TransferRecord[]
   return transfers.toSorted((a, b) => b.transferredAt - a.transferredAt);
 }
 
-export function transfersFrom(
+/** 指定口座が出金側・入金側どちらかで関わる振替。nullなら全件 */
+export function transfersInvolving(
   transfers: TransferRecord[],
-  fromAccountId: string | null,
+  accountId: string | null,
 ): TransferRecord[] {
-  if (fromAccountId === null) return transfers;
-  return transfers.filter((t) => t.from.id === fromAccountId);
+  if (accountId === null) return transfers;
+  return transfers.filter((t) => t.from.id === accountId || t.to.id === accountId);
+}
+
+/** 口座から見た符号付き金額。出金は負、入金は正 */
+export function signedAmountFor(transfer: TransferRecord, accountId: string): number {
+  return transfer.from.id === accountId ? -transfer.amount : transfer.amount;
+}
+
+export interface FlowTotals {
+  outgoing: number;
+  incoming: number;
+}
+
+/** 口座から見た出金・入金それぞれの合計(絶対値) */
+export function flowTotals(transfers: TransferRecord[], accountId: string): FlowTotals {
+  const totals = { outgoing: 0, incoming: 0 };
+  for (const t of transfers) {
+    if (t.from.id === accountId) totals.outgoing += t.amount;
+    if (t.to.id === accountId) totals.incoming += t.amount;
+  }
+  return totals;
 }
 
 export interface DestinationTotal {

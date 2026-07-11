@@ -6,11 +6,13 @@ import {
   changeCommentKey,
   detectBalanceChanges,
   destinationTotals,
+  flowTotals,
   latestSnapshot,
+  signedAmountFor,
   sortTransfersDesc,
   transferCommentKey,
   type TransferRecord,
-  transfersFrom,
+  transfersInvolving,
 } from "../domain/ledger.ts";
 import { parseSyncConfigJson, type SyncConfig } from "../infrastructure/r2sync.ts";
 import type { Comments } from "../infrastructure/storage.ts";
@@ -282,7 +284,8 @@ export function renderDashboard(
     }
     node.append(tabs);
 
-    const filtered = sortTransfersDesc(transfersFrom(data.transfers, selectedFromId)).filter((t) =>
+    const selectedId = selectedFromId;
+    const filtered = sortTransfersDesc(transfersInvolving(data.transfers, selectedId)).filter((t) =>
       inPeriod(t.transferredAt),
     );
     if (filtered.length === 0) {
@@ -291,17 +294,28 @@ export function renderDashboard(
     }
 
     const summary = el("div", "destination-summary");
-    summary.append(el("span", "summary-label", "入金先ごとの合計:"));
-    for (const dest of destinationTotals(filtered)) {
-      summary.append(el("span", "summary-item", `${dest.name} ${formatYen(dest.total)}`));
+    if (selectedId === null) {
+      summary.append(el("span", "summary-label", "入金先ごとの合計:"));
+      for (const dest of destinationTotals(filtered)) {
+        summary.append(el("span", "summary-item", `${dest.name} ${formatYen(dest.total)}`));
+      }
+    } else {
+      const totals = flowTotals(filtered, selectedId);
+      summary.append(el("span", "summary-label", "合計:"));
+      summary.append(el("span", "summary-item", `出金 ${formatSigned(-totals.outgoing)}`));
+      summary.append(el("span", "summary-item", `入金 ${formatSigned(totals.incoming)}`));
     }
     node.append(summary);
+
+    // 口座を選んでいる間は、その口座から見た入出金を符号付きで表示する
+    const amountCell = (t: TransferRecord): string =>
+      selectedId === null ? formatYen(t.amount) : formatSigned(signedAmountFor(t, selectedId));
 
     const rows = filtered.map((t): Cell[] => [
       formatDateTime(t.transferredAt),
       t.from.name,
       t.to.name,
-      formatYen(t.amount),
+      amountCell(t),
       commentInput(transferCommentKey(t)),
     ]);
     node.append(table(["日時", "出金口座", "入金口座", "金額", "コメント"], rows));

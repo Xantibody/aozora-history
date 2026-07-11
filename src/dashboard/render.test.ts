@@ -117,7 +117,13 @@ describe("renderDashboard", () => {
     expect(rows[1].textContent).toContain("30,000円");
   });
 
-  describe("出金口座タブ", () => {
+  describe("口座タブ", () => {
+    function clickTab(label: string) {
+      [...root.querySelectorAll<HTMLButtonElement>(".transfers .tab")]
+        .find((t) => t.textContent === label)!
+        .click();
+    }
+
     it("すべての口座のタブと「すべて」タブを表示する", () => {
       render(root);
 
@@ -125,42 +131,49 @@ describe("renderDashboard", () => {
       expect(labels).toEqual(["すべて", "01: お財布", "02: 積立", "03: 支払い箱"]);
     });
 
-    it("タブを選ぶと出金口座で絞り込む", () => {
+    it("タブを選ぶとその口座の入出金を符号付きで並べる", () => {
       render(root);
 
-      const walletTab = [...root.querySelectorAll<HTMLButtonElement>(".transfers .tab")].find(
-        (t) => t.textContent === "01: お財布",
-      )!;
-      walletTab.click();
+      clickTab("02: 積立");
+
+      const rows = [...root.querySelectorAll(".transfers tbody tr")];
+      expect(rows).toHaveLength(2);
+      // お財布 → 積立 5,000円 は積立から見ると入金
+      expect(rows[0].textContent).toContain("+5,000円");
+      // 積立 → 支払い箱 30,000円 は出金
+      expect(rows[1].textContent).toContain("-30,000円");
+    });
+
+    it("出金しかない口座は出金だけを表示する", () => {
+      render(root);
+
+      clickTab("01: お財布");
 
       const rows = [...root.querySelectorAll(".transfers tbody tr")];
       expect(rows).toHaveLength(1);
-      expect(rows[0].textContent).toContain("5,000円");
+      expect(rows[0].textContent).toContain("-5,000円");
     });
 
-    it("絞り込み中は入金先ごとの合計を表示する", () => {
+    it("絞り込み中は出金と入金の合計を表示する", () => {
       render(root);
 
-      const savingTab = [...root.querySelectorAll<HTMLButtonElement>(".transfers .tab")].find(
-        (t) => t.textContent === "02: 積立",
-      )!;
-      savingTab.click();
+      clickTab("02: 積立");
 
       const summary = root.querySelector(".transfers .destination-summary")!;
-      expect(summary.textContent).toContain("03: 支払い箱");
-      expect(summary.textContent).toContain("30,000円");
+      expect(summary.textContent).toContain("出金 -30,000円");
+      expect(summary.textContent).toContain("入金 +5,000円");
     });
 
-    it("「すべて」タブに戻すと全件表示する", () => {
+    it("「すべて」タブに戻すと全件を符号なしで表示する", () => {
       render(root);
-      const tabs = [...root.querySelectorAll<HTMLButtonElement>(".transfers .tab")];
 
-      tabs.find((t) => t.textContent === "01: お財布")!.click();
-      [...root.querySelectorAll<HTMLButtonElement>(".transfers .tab")]
-        .find((t) => t.textContent === "すべて")!
-        .click();
+      clickTab("01: お財布");
+      clickTab("すべて");
 
-      expect(root.querySelectorAll(".transfers tbody tr")).toHaveLength(2);
+      const rows = [...root.querySelectorAll(".transfers tbody tr")];
+      expect(rows).toHaveLength(2);
+      expect(rows[0].textContent).toContain("5,000円");
+      expect(rows[0].textContent).not.toContain("-5,000円");
     });
   });
 
