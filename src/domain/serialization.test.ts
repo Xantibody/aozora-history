@@ -18,6 +18,7 @@ const validLedger = {
     },
   ],
   comments: { "transfer:200": { text: "家賃", updatedAt: 300 } },
+  deletions: { "100:133331:133332:5000": 400 },
 };
 
 describe("parseLedgerJson", () => {
@@ -36,7 +37,12 @@ describe("parseLedgerJson", () => {
   });
 
   it("欠けているセクションは空として読み込む", () => {
-    expect(parseLedgerJson("{}")).toEqual({ snapshots: [], transfers: [], comments: {} });
+    expect(parseLedgerJson("{}")).toEqual({
+      snapshots: [],
+      transfers: [],
+      comments: {},
+      deletions: {},
+    });
   });
 
   it("JSONとして不正な文字列はエラーにする", () => {
@@ -76,6 +82,11 @@ describe("parseLedgerJson", () => {
     expect(parseLedgerJson(json).comments).toEqual({
       "transfer:200": { text: "家賃", updatedAt: 0 },
     });
+  });
+
+  it("削除の記録の形式が壊れていればエラーにする", () => {
+    expect(() => parseLedgerJson(JSON.stringify({ deletions: { k: "文字列" } }))).toThrow("形式");
+    expect(() => parseLedgerJson(JSON.stringify({ deletions: [1] }))).toThrow("形式");
   });
 
   it("コメントの形式が壊れていればエラーにする", () => {

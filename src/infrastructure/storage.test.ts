@@ -80,6 +80,7 @@ describe("HistoryStoreの一括読込・置換", () => {
       snapshots: [snapshot],
       transfers: [transfer],
       comments: { "transfer:2": { text: "メモ", updatedAt: 9 } },
+      deletions: {},
     });
   });
 
@@ -87,14 +88,54 @@ describe("HistoryStoreの一括読込・置換", () => {
     const store = new HistoryStore(fakeStorage());
     await store.recordTransfer(transfer);
     const comments = { k: { text: "v", updatedAt: 1 } };
+    const deletions = { "9:1:2:100": 5 };
 
-    await store.replaceLedger({ snapshots: [snapshot], transfers: [], comments });
+    await store.replaceLedger({ snapshots: [snapshot], transfers: [], comments, deletions });
 
     expect(await store.loadLedger()).toEqual({
       snapshots: [snapshot],
       transfers: [],
       comments,
+      deletions,
     });
+  });
+});
+
+describe("HistoryStoreの振替削除", () => {
+  function storeWithClock(): HistoryStore {
+    let tick = 0;
+    return new HistoryStore(fakeStorage(), () => ++tick);
+  }
+
+  it("振替を取り除き削除の記録を残す", async () => {
+    const store = storeWithClock();
+    await store.recordTransfer(transfer);
+    const other = { ...transfer, transferredAt: 3 };
+    await store.recordTransfer(other);
+
+    await store.deleteTransfer(transfer);
+
+    expect(await store.loadTransfers()).toEqual([other]);
+    expect(await store.loadDeletions()).toEqual({ "2:133331:133332:5000": 1 });
+  });
+
+  it("削除した振替のコメントも削除する", async () => {
+    const store = storeWithClock();
+    await store.recordTransfer(transfer);
+    await store.setComment("transfer:2", "誤操作");
+
+    await store.deleteTransfer(transfer);
+
+    expect(await store.loadComments()).toEqual({ "transfer:2": { text: "", updatedAt: 3 } });
+  });
+
+  it("コメントがなければコメントは変更しない", async () => {
+    const store = storeWithClock();
+    await store.recordTransfer(transfer);
+
+    await store.deleteTransfer(transfer);
+
+    expect(await store.loadComments()).toEqual({});
   });
 });
 

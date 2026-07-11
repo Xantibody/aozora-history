@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BalanceSnapshot, TransferRecord } from "./ledger.ts";
+import { type BalanceSnapshot, transferKey, type TransferRecord } from "./ledger.ts";
 import { type LedgerData, mergeLedgers } from "./merge.ts";
 
 function snapshot(takenAt: number, balance: number): BalanceSnapshot {
@@ -16,7 +16,7 @@ function transfer(at: number, amount: number): TransferRecord {
 }
 
 function ledger(overrides: Partial<LedgerData> = {}): LedgerData {
-  return { snapshots: [], transfers: [], comments: {}, ...overrides };
+  return { snapshots: [], transfers: [], comments: {}, deletions: {}, ...overrides };
 }
 
 function entry(text: string, updatedAt: number): { text: string; updatedAt: number } {
@@ -88,6 +88,25 @@ describe("mergeLedgers", () => {
     const remote = ledger({ comments: { "transfer:1": entry("リモート", 5) } });
 
     expect(mergeLedgers(local, remote).comments).toEqual({ "transfer:1": entry("ローカル", 5) });
+  });
+
+  it("削除の記録がある振替はマージ結果に含めない", () => {
+    // 端末Aで削除→同期したとき、リモート(や自端末)に残る振替が復活しないこと
+    const t = transfer(1, 1000);
+    const local = ledger({ deletions: { [transferKey(t)]: 9 } });
+    const remote = ledger({ transfers: [t] });
+
+    const merged = mergeLedgers(local, remote);
+
+    expect(merged.transfers).toEqual([]);
+    expect(merged.deletions).toEqual({ [transferKey(t)]: 9 });
+  });
+
+  it("削除の記録は両方のものを持ち寄る", () => {
+    const local = ledger({ deletions: { a: 1 } });
+    const remote = ledger({ deletions: { b: 2 } });
+
+    expect(mergeLedgers(local, remote).deletions).toEqual({ a: 1, b: 2 });
   });
 
   it("削除の記録(tombstone)が新しければコメントは復活しない", () => {

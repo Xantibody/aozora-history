@@ -30,11 +30,13 @@ export interface DashboardData {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
   comments: Comments;
+  deletions: Record<string, number>;
   syncConfig: SyncConfig | null;
 }
 
 export interface DashboardHandlers {
   onCommentChange(key: string, text: string): void;
+  onDeleteTransfer(transfer: TransferRecord): void;
   onSaveSyncConfig(config: SyncConfig): Promise<string>;
   onSyncNow(): Promise<string>;
   onImportFile(text: string): Promise<string>;
@@ -619,14 +621,35 @@ export function renderDashboard(
     const amountCell = (t: TransferRecord): Cell =>
       selectedId === null ? formatYen(t.amount) : signedCell(signedAmountFor(t, selectedId));
 
+    /** 誤記録(確認後のキャンセルなど)を取り除くための削除ボタン */
+    const deleteButton = (t: TransferRecord): HTMLElement => {
+      const button = el(
+        "button",
+        "delete-transfer cursor-pointer rounded px-1.5 text-slate-400 transition-colors " +
+          "hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-2 focus-visible:outline-offset-2 " +
+          "focus-visible:outline-sky-500 dark:hover:bg-rose-950 dark:hover:text-rose-400",
+        "×",
+      );
+      const detail = `${formatDateTime(t.transferredAt)} ${t.from.name} → ${t.to.name} ${formatYen(t.amount)}`;
+      button.title = "この振替を削除";
+      button.setAttribute("aria-label", `振替を削除: ${detail}`);
+      button.addEventListener("click", () => {
+        if (!window.confirm(`この振替の記録を削除しますか?\n${detail}`)) return;
+        handlers.onDeleteTransfer(t);
+        draw();
+      });
+      return button;
+    };
+
     const rows = filtered.map((t): Cell[] => [
       formatDateTime(t.transferredAt),
       t.from.name,
       t.to.name,
       amountCell(t),
       commentInput(transferCommentKey(t)),
+      deleteButton(t),
     ]);
-    node.append(table(["日時", "出金口座", "入金口座", "金額", "コメント"], rows, [3]));
+    node.append(table(["日時", "出金口座", "入金口座", "金額", "コメント", ""], rows, [3]));
     return node;
   };
 
@@ -832,6 +855,7 @@ export function renderDashboard(
       snapshots: data.snapshots,
       transfers: data.transfers,
       comments: data.comments,
+      deletions: data.deletions,
     };
     exportLink.href = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(ledger))}`;
     node.append(exportLink);

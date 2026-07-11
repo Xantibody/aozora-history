@@ -13,6 +13,11 @@ export interface TransferRecord {
   amount: number;
 }
 
+/** 振替の同一性を表すキー。端末間マージの重複排除と削除の記録に使う */
+export function transferKey(t: TransferRecord): string {
+  return `${t.transferredAt}:${t.from.id}:${t.to.id}:${t.amount}`;
+}
+
 /**
  * 記録に紐付くコメント。textが空文字の要素は削除の記録(tombstone)で、
  * 端末間同期の際に「削除した」ことを他端末の古いコメントより優先させるために残す
