@@ -133,18 +133,22 @@ export interface WorkspaceSummary {
 }
 
 /**
- * 口座(workspace)ごとのKPIサマリー。
- * 期間で絞り込む場合は絞り込み済みのスナップショット・振替を渡す
+ * 口座(workspace)ごとのKPIサマリー。全期間の記録とinPeriodを渡す。
+ * 外部入出金は全期間の変動を求めてから期間で絞る。絞り込み済みの
+ * スナップショットから計算すると期間境界をまたぐ区間ごと消えてしまい、
+ * 「残高変動」の表と食い違うため
  */
 export function workspaceSummaries(
   snapshots: BalanceSnapshot[],
   transfers: TransferRecord[],
+  inPeriod: (epochMs: number) => boolean = () => true,
 ): WorkspaceSummary[] {
-  const changes = detectBalanceChanges(snapshots, transfers);
-  return balanceSeries(snapshots).map((series) => {
+  const changes = detectBalanceChanges(snapshots, transfers).filter((c) => inPeriod(c.toTakenAt));
+  const visibleTransfers = transfers.filter((t) => inPeriod(t.transferredAt));
+  return balanceSeries(snapshots.filter((s) => inPeriod(s.takenAt))).map((series) => {
     const first = series.points[0].balance;
     const last = series.points.at(-1)!.balance;
-    const flows = flowTotals(transfers, series.id);
+    const flows = flowTotals(visibleTransfers, series.id);
     const externalNet = changes
       .filter((c) => c.accountId === series.id)
       .reduce((sum, c) => sum + c.externalDelta, 0);

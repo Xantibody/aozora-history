@@ -434,6 +434,26 @@ describe("workspaceSummaries", () => {
 
     expect(workspaceSummaries([s], transfers).map((w) => w.id)).toEqual(["100"]);
   });
+
+  it("外部入出金は期間境界をまたぐ変動も含める(残高変動の表と一致させる)", () => {
+    // 期間前(10)と期間内(20)のスナップショットの間に外部入金があったケース。
+    // 期間で絞ったスナップショットだけから計算すると区間ごと消えてしまう
+    const s1 = snapshot(10, accounts(["お財布", 100000]));
+    const s2 = snapshot(20, accounts(["お財布", 130000]));
+    const inPeriod = (ms: number): boolean => ms >= 15;
+
+    expect(workspaceSummaries([s1, s2], [], inPeriod)).toEqual([
+      {
+        id: "100",
+        name: "お財布",
+        balance: 130000,
+        delta: 0,
+        transferNet: 0,
+        externalNet: 30000,
+        points: [{ takenAt: 20, balance: 130000 }],
+      },
+    ]);
+  });
 });
 
 describe("commentSuggestions", () => {

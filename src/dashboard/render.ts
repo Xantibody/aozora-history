@@ -550,10 +550,7 @@ export function renderDashboard(
 
   /** 口座(workspace)ごとのKPIと残高推移。期間フィルタに追随する */
   const workspacesSection = (): HTMLElement | null => {
-    const summaries = workspaceSummaries(
-      data.snapshots.filter((s) => inPeriod(s.takenAt)),
-      data.transfers.filter((t) => inPeriod(t.transferredAt)),
-    );
+    const summaries = workspaceSummaries(data.snapshots, data.transfers, inPeriod);
     if (summaries.length === 0) return null;
     const node = section("workspaces", "口座別サマリー");
     // minmax(0,1fr)の明示的なカラムにしてSVGの固有幅(viewBox)でカードが広がるのを防ぐ
