@@ -57,8 +57,8 @@ function render(root: HTMLElement, d = data()) {
     onSyncNow: vi.fn(async () => "同期しました"),
     onImportFile: vi.fn(async () => "読み込みました"),
   };
-  renderDashboard(root, d, handlers);
-  return handlers;
+  const redraw = renderDashboard(root, d, handlers);
+  return { ...handlers, redraw };
 }
 
 describe("formatYen", () => {
@@ -687,6 +687,31 @@ describe("renderDashboard", () => {
     render(root);
 
     expect(root.querySelectorAll(".balances")).toHaveLength(1);
+  });
+
+  describe("再描画関数", () => {
+    it("選択中のタブを保ったまま最新のデータを表示する", () => {
+      const d = data();
+      const { redraw } = render(root, d);
+      [...root.querySelectorAll<HTMLButtonElement>(".transfers .tab")]
+        .find((t) => t.textContent === "01: お財布")!
+        .click();
+
+      // 開いている間に別の場所(銀行サイトのタブや自動同期)で振替が増えた
+      d.transfers = [
+        ...transfers,
+        {
+          transferredAt: Date.UTC(2026, 6, 10, 14, 0),
+          from: { id: "133331", name: "01: お財布" },
+          to: { id: "133805", name: "03: 支払い箱" },
+          amount: 700,
+        },
+      ];
+      redraw();
+
+      expect(root.querySelector(".transfers .tab.active")!.textContent).toBe("01: お財布");
+      expect(root.querySelector(".transfers")!.textContent).toContain("700円");
+    });
   });
 
   it("テーブルは横スクロール用のラッパーに入る", () => {

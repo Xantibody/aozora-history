@@ -1,8 +1,8 @@
 import { transferCommentKey, transferKey } from "../domain/ledger.ts";
-import { mergeLedgers } from "../domain/merge.ts";
+import { type LedgerData, mergeLedgers } from "../domain/merge.ts";
 import { parseLedgerJson } from "../domain/serialization.ts";
 import { type FetchLike, R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
-import { HistoryStore } from "../infrastructure/storage.ts";
+import { HistoryStore, LEDGER_KEYS } from "../infrastructure/storage.ts";
 import { type DashboardHandlers, renderDashboard } from "./render.ts";
 
 const fetchFn: FetchLike = (url, init) => fetch(url, init);
@@ -21,6 +21,20 @@ async function main(): Promise<void> {
   ]);
 
   const data = { snapshots, transfers, comments, deletions, syncConfig };
+
+  const currentLedger = (): LedgerData => ({
+    snapshots: data.snapshots,
+    transfers: data.transfers,
+    comments: data.comments,
+    deletions: data.deletions,
+  });
+
+  const applyLedger = (ledger: LedgerData): void => {
+    data.snapshots = ledger.snapshots;
+    data.transfers = ledger.transfers;
+    data.comments = ledger.comments;
+    data.deletions = ledger.deletions;
+  };
 
   const handlers: DashboardHandlers = {
     onCommentChange: (key, text) => {
@@ -61,10 +75,7 @@ async function main(): Promise<void> {
         };
         const merged = mergeLedgers(local, imported);
         await store.replaceLedger(merged);
-        data.snapshots = merged.snapshots;
-        data.transfers = merged.transfers;
-        data.comments = merged.comments;
-        data.deletions = merged.deletions;
+        applyLedger(merged);
         return `読み込みました（スナップショット${merged.snapshots.length}件・振替${merged.transfers.length}件）`;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -79,10 +90,7 @@ async function main(): Promise<void> {
       try {
         const client = new R2Client(data.syncConfig, fetchFn, () => new Date());
         const merged = await syncWithR2(store, client);
-        data.snapshots = merged.snapshots;
-        data.transfers = merged.transfers;
-        data.comments = merged.comments;
-        data.deletions = merged.deletions;
+        applyLedger(merged);
         return `同期しました（スナップショット${merged.snapshots.length}件・振替${merged.transfers.length}件）`;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -91,21 +99,28 @@ async function main(): Promise<void> {
     },
   };
 
-  renderDashboard(root, data, handlers);
+  const redraw = renderDashboard(root, data, handlers);
 
-  // 起動時に他端末の記録を取り込む。失敗は致命的でないため無視する
-  // (background の自動同期や「今すぐ同期」で回復できる)
+  // 開いている間の変更(銀行サイトのタブでの記録・backgroundの自動同期)を反映する
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local") return;
+    if (!LEDGER_KEYS.some((key) => key in changes)) return;
+    void store.loadLedger().then((ledger) => {
+      if (JSON.stringify(ledger) === JSON.stringify(currentLedger())) return;
+      applyLedger(ledger);
+      // コメント入力中に再描画するとフォーカスを奪うため見送る(dataには反映済み)
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement && root.contains(active)) return;
+      redraw();
+    });
+  });
+
+  // 起動時に他端末の記録を取り込む。取り込んだ変更は上の購読が拾って再描画する。
+  // 失敗は致命的でないため無視する(backgroundの自動同期や「今すぐ同期」で回復できる)
   if (data.syncConfig !== null) {
-    const before = JSON.stringify({ snapshots, transfers, comments, deletions });
     try {
       const client = new R2Client(data.syncConfig, fetchFn, () => new Date());
-      const merged = await syncWithR2(store, client);
-      if (JSON.stringify(merged) === before) return;
-      data.snapshots = merged.snapshots;
-      data.transfers = merged.transfers;
-      data.comments = merged.comments;
-      data.deletions = merged.deletions;
-      renderDashboard(root, data, handlers);
+      await syncWithR2(store, client);
     } catch {
       // noop
     }

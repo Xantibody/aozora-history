@@ -420,11 +420,15 @@ function currentMonth(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
 }
 
+/**
+ * ダッシュボードを描画する。戻り値の再描画関数は選択中のタブや期間などの
+ * UI状態を保ったまま、dataの現在の内容を描き直す(自動更新用)
+ */
 export function renderDashboard(
   root: HTMLElement,
   data: DashboardData,
   handlers: DashboardHandlers,
-): void {
+): () => void {
   let selectedFromId: string | null = null;
   let periodFrom: number | null = null;
   let periodToExclusive: number | null = null;
@@ -945,4 +949,5 @@ export function renderDashboard(
   };
 
   draw();
+  return draw;
 }
