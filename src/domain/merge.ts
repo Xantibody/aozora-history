@@ -2,6 +2,7 @@ import {
   appendSnapshot,
   type BalanceSnapshot,
   type Comments,
+  transferKey,
   type TransferRecord,
 } from "./ledger.ts";
 
@@ -9,10 +10,6 @@ export interface LedgerData {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
   comments: Comments;
-}
-
-function transferKey(t: TransferRecord): string {
-  return `${t.transferredAt}:${t.from.id}:${t.to.id}:${t.amount}`;
 }
 
 /**
