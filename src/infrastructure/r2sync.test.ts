@@ -136,4 +136,39 @@ describe("syncWithR2", () => {
     expect(merged).toEqual(emptyLedger);
     expect(JSON.parse(requests[1].body!)).toEqual(emptyLedger);
   });
+
+  it("ダウンロード待ちの間に記録された振替を消さずに同期する", async () => {
+    const store = new HistoryStore(fakeStorage());
+    const requests: Request[] = [];
+    let releaseDownload = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseDownload = resolve;
+    });
+    const fetchFn: FetchLike = async (url, init) => {
+      requests.push({ url, method: init.method, headers: init.headers, body: init.body });
+      if (init.method === "GET") await gate;
+      const status = init.method === "GET" ? 404 : 200;
+      return {
+        status,
+        ok: status >= 200 && status < 300,
+        text: () => Promise.resolve(""),
+      };
+    };
+
+    const syncing = syncWithR2(store, client(fetchFn));
+    // R2からの応答を待っている間に新しい振替が記録される
+    await store.recordTransfer({
+      transferredAt: 7,
+      from: { id: "100", name: "お財布" },
+      to: { id: "101", name: "積立" },
+      amount: 500,
+    });
+    releaseDownload();
+    const merged = await syncing;
+
+    expect(merged.transfers).toHaveLength(1);
+    expect(await store.loadTransfers()).toHaveLength(1);
+    const putRequest = requests.find((r) => r.method === "PUT");
+    expect(JSON.parse(putRequest!.body!).transfers).toHaveLength(1);
+  });
 });
