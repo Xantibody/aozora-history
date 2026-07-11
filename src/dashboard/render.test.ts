@@ -567,4 +567,14 @@ describe("renderDashboard", () => {
 
     expect(root.querySelectorAll(".balances")).toHaveLength(1);
   });
+
+  it("テーブルは横スクロール用のラッパーに入る", () => {
+    render(root);
+
+    const tables = root.querySelectorAll("table");
+    expect(tables.length).toBeGreaterThan(0);
+    for (const t of tables) {
+      expect(t.parentElement?.className).toBe("table-scroll");
+    }
+  });
 });

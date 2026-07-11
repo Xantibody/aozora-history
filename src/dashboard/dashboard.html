@@ -78,6 +78,9 @@
         color: var(--muted);
         font-size: 0.85rem;
       }
+      .table-scroll {
+        overflow-x: auto;
+      }
       table {
         border-collapse: collapse;
         width: 100%;
@@ -88,9 +91,13 @@
         padding: 0.4rem 0.8rem;
         text-align: left;
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
       }
       th {
         background: var(--card-bg);
+      }
+      td:has(input.comment) {
+        min-width: 10rem;
       }
       .empty {
         color: var(--muted);
@@ -266,6 +273,41 @@
       .note {
         color: var(--muted);
         font-size: 0.85rem;
+      }
+      /* モバイル: 余白を詰め、歯車ボタンと見出しの重なりを避ける */
+      @media (max-width: 640px) {
+        body {
+          padding: 1rem 0.75rem;
+        }
+        h1 {
+          font-size: 1.15rem;
+          margin-top: 0.4rem;
+          padding-right: 3rem;
+        }
+        .settings-button {
+          right: 0.75rem;
+          top: 0.9rem;
+        }
+        h2 {
+          margin-top: 1.4rem;
+        }
+        .balance-cards {
+          gap: 0.5rem;
+        }
+        .balance-card {
+          flex: 1 1 calc(50% - 0.5rem);
+          min-width: 0;
+          padding: 0.6rem 0.8rem;
+          box-sizing: border-box;
+        }
+        .account-balance {
+          font-size: 1.1rem;
+        }
+        th,
+        td {
+          font-size: 0.9rem;
+          padding: 0.3rem 0.5rem;
+        }
       }
     </style>
   </head>

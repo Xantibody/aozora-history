@@ -62,6 +62,7 @@ function section(className: string, title: string): HTMLElement {
 
 type Cell = string | HTMLElement;
 
+/** 画面幅を超える表はラッパー内で横スクロールさせる(モバイル対応) */
 function table(headers: string[], rows: Cell[][]): HTMLElement {
   const tableEl = el("table");
   const thead = el("thead");
@@ -81,7 +82,9 @@ function table(headers: string[], rows: Cell[][]): HTMLElement {
   }
 
   tableEl.append(thead, tbody);
-  return tableEl;
+  const scroll = el("div", "table-scroll");
+  scroll.append(tableEl);
+  return scroll;
 }
 
 function balancesSection(snapshot: BalanceSnapshot): HTMLElement {
