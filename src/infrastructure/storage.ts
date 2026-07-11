@@ -1,4 +1,10 @@
-import { appendSnapshot, type BalanceSnapshot, type TransferRecord } from "../domain/ledger.ts";
+import {
+  appendSnapshot,
+  type BalanceSnapshot,
+  type CommentEntry,
+  type Comments,
+  type TransferRecord,
+} from "../domain/ledger.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { SyncConfig } from "./r2sync.ts";
 
@@ -15,7 +21,13 @@ const SYNC_CONFIG_KEY = "syncConfig";
 /** 台帳本体を構成するstorageキー。同期のトリガー判定に使う */
 export const LEDGER_KEYS = [SNAPSHOTS_KEY, TRANSFERS_KEY, COMMENTS_KEY] as const;
 
-export type Comments = Record<string, string>;
+export type { Comments };
+
+/** tombstone化(fix/comment-deletion-sync)以前に保存された旧形式のコメントを移行する */
+function migrateComment(value: unknown): CommentEntry {
+  if (typeof value === "string") return { text: value, updatedAt: 0 };
+  return value as CommentEntry;
+}
 
 export function addTransfer(
   transfers: TransferRecord[],
@@ -25,7 +37,10 @@ export function addTransfer(
 }
 
 export class HistoryStore {
-  constructor(private readonly storage: StorageArea) {}
+  constructor(
+    private readonly storage: StorageArea,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   async loadSnapshots(): Promise<BalanceSnapshot[]> {
     const items = await this.storage.get(SNAPSHOTS_KEY);
@@ -53,7 +68,10 @@ export class HistoryStore {
 
   async loadComments(): Promise<Comments> {
     const items = await this.storage.get(COMMENTS_KEY);
-    return (items[COMMENTS_KEY] as Comments | undefined) ?? {};
+    const stored = (items[COMMENTS_KEY] as Record<string, unknown> | undefined) ?? {};
+    return Object.fromEntries(
+      Object.entries(stored).map(([key, value]) => [key, migrateComment(value)]),
+    );
   }
 
   async loadLedger(): Promise<LedgerData> {
@@ -82,15 +100,10 @@ export class HistoryStore {
     await this.storage.set({ [SYNC_CONFIG_KEY]: config });
   }
 
-  /** 空のコメントは削除として扱う */
+  /** 空のコメントは削除。キーごと消さず削除の記録(tombstone)を残し、同期で復活しないようにする */
   async setComment(key: string, text: string): Promise<void> {
     const comments = await this.loadComments();
-    const trimmed = text.trim();
-    if (trimmed === "") {
-      delete comments[key];
-    } else {
-      comments[key] = trimmed;
-    }
+    comments[key] = { text: text.trim(), updatedAt: this.now() };
     await this.storage.set({ [COMMENTS_KEY]: comments });
   }
 }

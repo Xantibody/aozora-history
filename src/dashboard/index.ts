@@ -23,12 +23,7 @@ async function main(): Promise<void> {
   const handlers: DashboardHandlers = {
     onCommentChange: (key, text) => {
       // 再描画時に最新のコメントが出るようローカルにも反映する
-      const trimmed = text.trim();
-      if (trimmed === "") {
-        delete data.comments[key];
-      } else {
-        data.comments[key] = trimmed;
-      }
+      data.comments[key] = { text: text.trim(), updatedAt: Date.now() };
       void store.setComment(key, text);
     },
 

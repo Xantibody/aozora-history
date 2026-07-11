@@ -48,7 +48,8 @@ describe("setupContentScript", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     document.body.innerHTML = "";
-    store = new HistoryStore(fakeStorage());
+    let tick = 0;
+    store = new HistoryStore(fakeStorage(), () => ++tick);
     teardown = setupContentScript(document, store, () => 42);
   });
 
@@ -123,7 +124,9 @@ describe("setupContentScript", () => {
       panel.querySelector<HTMLButtonElement>("button.save")!.click();
       await vi.runAllTimersAsync();
 
-      expect(await store.loadComments()).toEqual({ "transfer:42": "家賃の移動" });
+      expect(await store.loadComments()).toEqual({
+        "transfer:42": { text: "家賃の移動", updatedAt: 1 },
+      });
       expect(document.getElementById("aozora-history-comment")).toBeNull();
     });
 

@@ -24,7 +24,7 @@ const remoteLedger: LedgerData = {
     { takenAt: 10, updatedAt: null, accounts: [{ id: "100", name: "お財布", balance: 100 }] },
   ],
   transfers: [],
-  comments: { "transfer:1": "リモート" },
+  comments: { "transfer:1": { text: "リモート", updatedAt: 0 } },
 };
 
 interface Request {
@@ -136,11 +136,11 @@ describe("syncWithR2", () => {
 
     expect(merged.snapshots).toHaveLength(1);
     expect(merged.transfers).toHaveLength(1);
-    expect(merged.comments).toEqual({ "transfer:1": "リモート" });
+    expect(merged.comments).toEqual(remoteLedger.comments);
     // ローカルへ反映
     expect(await store.loadSnapshots()).toEqual(remoteLedger.snapshots);
     expect(await store.loadTransfers()).toHaveLength(1);
-    expect(await store.loadComments()).toEqual({ "transfer:1": "リモート" });
+    expect(await store.loadComments()).toEqual(remoteLedger.comments);
     // R2へ反映
     expect(requests[1].method).toBe("PUT");
     expect(JSON.parse(requests[1].body!)).toEqual(merged);

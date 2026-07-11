@@ -440,9 +440,8 @@ describe("workspaceSummaries", () => {
     // 期間で絞ったスナップショットだけから計算すると区間ごと消えてしまう
     const s1 = snapshot(10, accounts(["お財布", 100000]));
     const s2 = snapshot(20, accounts(["お財布", 130000]));
-    const inPeriod = (ms: number): boolean => ms >= 15;
 
-    expect(workspaceSummaries([s1, s2], [], inPeriod)).toEqual([
+    expect(workspaceSummaries([s1, s2], [], (ms) => ms >= 15)).toEqual([
       {
         id: "100",
         name: "お財布",
@@ -456,6 +455,11 @@ describe("workspaceSummaries", () => {
   });
 });
 
+const c = (text: string, updatedAt = 0): { text: string; updatedAt: number } => ({
+  text,
+  updatedAt,
+});
+
 describe("commentSuggestions", () => {
   it("コメントがなければ空を返す", () => {
     expect(commentSuggestions({})).toEqual([]);
@@ -463,9 +467,9 @@ describe("commentSuggestions", () => {
 
   it("同じ内容のコメントは1つの候補にまとめる", () => {
     const comments = {
-      "transfer:100": "家賃",
-      "transfer:200": "家賃",
-      "change:101:300": "給料",
+      "transfer:100": c("家賃"),
+      "transfer:200": c("家賃"),
+      "change:101:300": c("給料"),
     };
 
     expect(commentSuggestions(comments)).toEqual(["家賃", "給料"]);
@@ -473,11 +477,11 @@ describe("commentSuggestions", () => {
 
   it("使用回数の多い順に並べる", () => {
     const comments = {
-      "transfer:100": "積立",
-      "transfer:200": "家賃",
-      "transfer:300": "家賃",
-      "transfer:400": "家賃",
-      "transfer:500": "積立",
+      "transfer:100": c("積立"),
+      "transfer:200": c("家賃"),
+      "transfer:300": c("家賃"),
+      "transfer:400": c("家賃"),
+      "transfer:500": c("積立"),
     };
 
     expect(commentSuggestions(comments)).toEqual(["家賃", "積立"]);
@@ -485,11 +489,29 @@ describe("commentSuggestions", () => {
 
   it("使用回数が同じなら新しい記録のコメントを先にする", () => {
     const comments = {
-      "transfer:100": "古いメモ",
-      "transfer:200": "新しいメモ",
+      "transfer:100": c("古いメモ"),
+      "transfer:200": c("新しいメモ"),
     };
 
     expect(commentSuggestions(comments)).toEqual(["新しいメモ", "古いメモ"]);
+  });
+
+  it("編集時刻が記録より新しければそちらで比べる", () => {
+    const comments = {
+      "transfer:100": c("後から編集", 900),
+      "transfer:200": c("新しい記録"),
+    };
+
+    expect(commentSuggestions(comments)).toEqual(["後から編集", "新しい記録"]);
+  });
+
+  it("削除の記録(tombstone)は候補に出さない", () => {
+    const comments = {
+      "transfer:100": c("家賃"),
+      "transfer:200": c("", 900),
+    };
+
+    expect(commentSuggestions(comments)).toEqual(["家賃"]);
   });
 });
 

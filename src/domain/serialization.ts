@@ -1,4 +1,4 @@
-import type { BalanceSnapshot, TransferRecord } from "./ledger.ts";
+import type { BalanceSnapshot, CommentEntry, Comments, TransferRecord } from "./ledger.ts";
 import type { LedgerData } from "./merge.ts";
 import type { AccountRef, SubAccount } from "./parser.ts";
 
@@ -58,13 +58,21 @@ function parseTransfer(value: unknown): TransferRecord {
   };
 }
 
-function parseComments(value: unknown): Record<string, string> {
+function parseCommentEntry(value: unknown): CommentEntry {
+  // tombstone化以前のエクスポート・R2オブジェクトはコメントが文字列
+  if (typeof value === "string") return { text: value, updatedAt: 0 };
+  if (isRecord(value) && typeof value.text === "string" && typeof value.updatedAt === "number") {
+    return { text: value.text, updatedAt: value.updatedAt };
+  }
+  throw new FormatError("コメント");
+}
+
+function parseComments(value: unknown): Comments {
   if (value === undefined) return {};
   if (!isRecord(value)) throw new FormatError("コメント");
-  for (const text of Object.values(value)) {
-    if (typeof text !== "string") throw new FormatError("コメント");
-  }
-  return value as Record<string, string>;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, parseCommentEntry(entry)]),
+  );
 }
 
 /** R2オブジェクト・エクスポートファイルと同じ形式のJSONを検証しつつ読み込む */

@@ -17,7 +17,7 @@ const validLedger = {
       amount: 5000,
     },
   ],
-  comments: { "transfer:200": "家賃" },
+  comments: { "transfer:200": { text: "家賃", updatedAt: 300 } },
 };
 
 describe("parseLedgerJson", () => {
@@ -70,9 +70,18 @@ describe("parseLedgerJson", () => {
     expect(() => parseLedgerJson(json)).toThrow("形式");
   });
 
-  it("コメントの値が文字列でなければエラーにする", () => {
-    const json = JSON.stringify({ comments: { k: 123 } });
+  it("旧形式(文字列)のコメントは更新時刻0として読み込む", () => {
+    const json = JSON.stringify({ comments: { "transfer:200": "家賃" } });
 
-    expect(() => parseLedgerJson(json)).toThrow("形式");
+    expect(parseLedgerJson(json).comments).toEqual({
+      "transfer:200": { text: "家賃", updatedAt: 0 },
+    });
+  });
+
+  it("コメントの形式が壊れていればエラーにする", () => {
+    expect(() => parseLedgerJson(JSON.stringify({ comments: { k: 123 } }))).toThrow("形式");
+    expect(() => parseLedgerJson(JSON.stringify({ comments: { k: { text: "a" } } }))).toThrow(
+      "形式",
+    );
   });
 });

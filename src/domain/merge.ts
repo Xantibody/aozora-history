@@ -1,16 +1,24 @@
-import { appendSnapshot, type BalanceSnapshot, type TransferRecord } from "./ledger.ts";
+import {
+  appendSnapshot,
+  type BalanceSnapshot,
+  type Comments,
+  type TransferRecord,
+} from "./ledger.ts";
 
 export interface LedgerData {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
-  comments: Record<string, string>;
+  comments: Comments;
 }
 
 function transferKey(t: TransferRecord): string {
   return `${t.transferredAt}:${t.from.id}:${t.to.id}:${t.amount}`;
 }
 
-/** 端末間同期用のマージ。記録は和集合、コメントの衝突はローカル優先 */
+/**
+ * 端末間同期用のマージ。記録は和集合、コメントは更新時刻の新しい方
+ * (同時刻はローカル優先)。削除の記録(tombstone)も同じ規則で伝播する
+ */
 export function mergeLedgers(local: LedgerData, remote: LedgerData): LedgerData {
   const snapshotsByTakenAt = new Map<number, BalanceSnapshot>();
   for (const s of [...remote.snapshots, ...local.snapshots]) {
@@ -28,5 +36,11 @@ export function mergeLedgers(local: LedgerData, remote: LedgerData): LedgerData 
     (a, b) => a.transferredAt - b.transferredAt,
   );
 
-  return { snapshots, transfers, comments: { ...remote.comments, ...local.comments } };
+  const comments: Comments = { ...remote.comments };
+  for (const [key, entry] of Object.entries(local.comments)) {
+    const other = comments[key];
+    if (other === undefined || other.updatedAt <= entry.updatedAt) comments[key] = entry;
+  }
+
+  return { snapshots, transfers, comments };
 }
