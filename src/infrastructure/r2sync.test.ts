@@ -140,7 +140,7 @@ describe("syncWithR2", () => {
   it("ダウンロード待ちの間に記録された振替を消さずに同期する", async () => {
     const store = new HistoryStore(fakeStorage());
     const requests: Request[] = [];
-    let releaseDownload = (): void => {};
+    let releaseDownload!: () => void;
     const gate = new Promise<void>((resolve) => {
       releaseDownload = resolve;
     });

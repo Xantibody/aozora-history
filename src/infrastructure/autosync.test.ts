@@ -139,7 +139,7 @@ describe("AutoSync", () => {
     const store = new HistoryStore(fakeStorage());
     await store.saveSyncConfig(config);
     await store.recordTransfer(transfer);
-    let release = (): void => {};
+    let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
