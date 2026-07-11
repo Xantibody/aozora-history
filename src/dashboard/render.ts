@@ -12,7 +12,7 @@ import {
   type TransferRecord,
   transfersFrom,
 } from "../domain/ledger.ts";
-import type { SyncConfig } from "../infrastructure/r2sync.ts";
+import { parseSyncConfigJson, type SyncConfig } from "../infrastructure/r2sync.ts";
 import type { Comments } from "../infrastructure/storage.ts";
 
 export interface DashboardData {
@@ -431,6 +431,44 @@ export function renderDashboard(
     const buttons = el("div", "sync-buttons");
     buttons.append(save, syncNow);
     node.append(buttons);
+
+    if (config !== null) {
+      const exportLink = document.createElement("a");
+      exportLink.className = "export-config";
+      exportLink.download = "aozora-history-sync-config.json";
+      exportLink.textContent = "同期設定をエクスポート";
+      exportLink.href = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(config))}`;
+      node.append(exportLink);
+    }
+
+    const importConfigRow = el("label", "import-config-row");
+    importConfigRow.append(el("span", undefined, "設定JSONをインポート:"));
+    const importConfigInput = document.createElement("input");
+    importConfigInput.type = "file";
+    importConfigInput.name = "import-config-file";
+    importConfigInput.accept = ".json,application/json";
+    importConfigInput.addEventListener("change", () => {
+      const file = importConfigInput.files?.[0];
+      if (file === undefined) return;
+      void file.text().then((text) => {
+        try {
+          return handlers.onSaveSyncConfig(parseSyncConfigJson(text)).then(showStatus);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          showStatus(`読み込みに失敗しました: ${message}`);
+        }
+      });
+    });
+    importConfigRow.append(importConfigInput);
+    node.append(importConfigRow);
+    node.append(
+      el(
+        "p",
+        "note",
+        "エクスポートした設定ファイルにはシークレットアクセスキーが平文で含まれる。他端末に取り込んだら削除すること。",
+      ),
+    );
+
     node.append(el("p", "sync-status", syncStatus));
     return node;
   };

@@ -10,6 +10,43 @@ export interface SyncConfig {
   secretAccessKey: string;
 }
 
+const DEFAULT_OBJECT_KEY = "aozora-history.json";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value !== "";
+}
+
+/** エクスポートした同期設定JSONを検証しつつ読み込む */
+export function parseSyncConfigJson(text: string): SyncConfig {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("JSONとして読み込めませんでした");
+  }
+  if (!isRecord(parsed)) throw new Error("同期設定の形式が正しくありません");
+  const { accountId, bucket, objectKey, accessKeyId, secretAccessKey } = parsed;
+  if (
+    !isNonEmptyString(accountId) ||
+    !isNonEmptyString(bucket) ||
+    !isNonEmptyString(accessKeyId) ||
+    !isNonEmptyString(secretAccessKey)
+  ) {
+    throw new Error("同期設定の形式が正しくありません");
+  }
+  return {
+    accountId,
+    bucket,
+    objectKey: isNonEmptyString(objectKey) ? objectKey : DEFAULT_OBJECT_KEY,
+    accessKeyId,
+    secretAccessKey,
+  };
+}
+
 export interface FetchResponse {
   status: number;
   ok: boolean;

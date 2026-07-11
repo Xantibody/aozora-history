@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { LedgerData } from "../domain/merge.ts";
-import { type FetchLike, R2Client, type SyncConfig, syncWithR2 } from "./r2sync.ts";
+import {
+  type FetchLike,
+  parseSyncConfigJson,
+  R2Client,
+  type SyncConfig,
+  syncWithR2,
+} from "./r2sync.ts";
 import { HistoryStore, type StorageArea } from "./storage.ts";
 
 const config: SyncConfig = {
@@ -170,5 +176,49 @@ describe("syncWithR2", () => {
     expect(await store.loadTransfers()).toHaveLength(1);
     const putRequest = requests.find((r) => r.method === "PUT");
     expect(JSON.parse(putRequest!.body!).transfers).toHaveLength(1);
+  });
+});
+
+describe("parseSyncConfigJson", () => {
+  it("エクスポートした同期設定を読み込める", () => {
+    expect(parseSyncConfigJson(JSON.stringify(config))).toEqual(config);
+  });
+
+  it("objectKeyが無ければデフォルトを補う", () => {
+    const { objectKey: _, ...withoutKey } = config;
+
+    expect(parseSyncConfigJson(JSON.stringify(withoutKey))).toEqual({
+      ...config,
+      objectKey: "aozora-history.json",
+    });
+  });
+
+  it("JSONでなければエラーにする", () => {
+    expect(() => parseSyncConfigJson("not json")).toThrow("JSONとして読み込めませんでした");
+  });
+
+  it.each(["accountId", "bucket", "accessKeyId", "secretAccessKey"])(
+    "%s が欠けていたらエラーにする",
+    (field) => {
+      const broken = { ...config, [field]: undefined };
+
+      expect(() => parseSyncConfigJson(JSON.stringify(broken))).toThrow(
+        "同期設定の形式が正しくありません",
+      );
+    },
+  );
+
+  it("空文字のフィールドはエラーにする", () => {
+    const broken = { ...config, accountId: "" };
+
+    expect(() => parseSyncConfigJson(JSON.stringify(broken))).toThrow(
+      "同期設定の形式が正しくありません",
+    );
+  });
+
+  it("台帳のJSONを渡してもエラーにする", () => {
+    expect(() => parseSyncConfigJson(JSON.stringify(emptyLedger))).toThrow(
+      "同期設定の形式が正しくありません",
+    );
   });
 });
