@@ -177,6 +177,64 @@ describe("renderDashboard", () => {
     });
   });
 
+  describe("口座別サマリー", () => {
+    function card(name: string): HTMLElement {
+      return [...root.querySelectorAll<HTMLElement>(".workspaces .workspace-card")].find((c) =>
+        c.querySelector(".workspace-name")!.textContent!.includes(name),
+      )!;
+    }
+
+    it("口座ごとのカードに残高・変動・振替・外部入出金のKPIを表示する", () => {
+      render(root);
+
+      const cards = root.querySelectorAll(".workspaces .workspace-card");
+      expect(cards).toHaveLength(3);
+
+      const wallet = card("01: お財布");
+      // 残高 129,392円、期間内変動 -5,000円(振替 -5,000円、外部 ±0円)
+      expect(wallet.querySelector(".kpi-balance")!.textContent).toContain("129,392円");
+      expect(wallet.querySelector(".kpi-delta")!.textContent).toContain("-5,000円");
+      expect(wallet.querySelector(".kpi-transfer")!.textContent).toContain("-5,000円");
+      expect(wallet.querySelector(".kpi-external")!.textContent).toContain("±0円");
+    });
+
+    it("残高が2点以上ある口座は推移の折れ線グラフを表示する", () => {
+      render(root);
+
+      const wallet = card("01: お財布");
+      const svg = wallet.querySelector("svg.balance-chart")!;
+      expect(svg).not.toBeNull();
+      expect(svg.querySelector(".chart-line")).not.toBeNull();
+      expect(svg.querySelector(".chart-area")).not.toBeNull();
+      // 期間内の各スナップショットの値はホバーで読める
+      expect(svg.querySelectorAll(".chart-hit")).toHaveLength(2);
+    });
+
+    it("残高が1点しかない口座はグラフを出さない", () => {
+      render(root);
+
+      // 支払い箱は2つ目のスナップショットにしか現れない
+      expect(card("03: 支払い箱").querySelector("svg.balance-chart")).toBeNull();
+    });
+
+    it("期間で絞り込むとサマリーも追随する", () => {
+      render(root);
+
+      const input = root.querySelector<HTMLInputElement>('input[name="period-to"]')!;
+      input.value = "2026-07-09";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+
+      expect(root.querySelectorAll(".workspaces .workspace-card")).toHaveLength(2);
+      expect(card("01: お財布").querySelector(".kpi-balance")!.textContent).toContain("134,392円");
+    });
+
+    it("期間内にスナップショットがなければセクションを出さない", () => {
+      render(root, data({ snapshots: [] }));
+
+      expect(root.querySelector(".workspaces")).toBeNull();
+    });
+  });
+
   describe("残高変動", () => {
     it("振替で説明できない増減を入金・出金として表示する", () => {
       // 支払い箱は途中から現れて +272,469円 → 振替記録がないため外部入金扱い
