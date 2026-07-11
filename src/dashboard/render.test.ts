@@ -448,6 +448,59 @@ describe("renderDashboard", () => {
 
       expect(root.querySelector(".sync")).not.toBeNull();
     });
+
+    it("保存済みの同期設定をエクスポートリンクに含める", () => {
+      render(root, data({ syncConfig: savedConfig }));
+      openSettings();
+
+      const link = root.querySelector<HTMLAnchorElement>(".sync a.export-config")!;
+
+      expect(link.download).toBe("aozora-history-sync-config.json");
+      const prefix = "data:application/json;charset=utf-8,";
+      expect(link.href.startsWith(prefix)).toBe(true);
+      expect(JSON.parse(decodeURIComponent(link.href.slice(prefix.length)))).toEqual(savedConfig);
+    });
+
+    it("同期設定が未保存ならエクスポートリンクを出さない", () => {
+      render(root);
+      openSettings();
+
+      expect(root.querySelector(".sync a.export-config")).toBeNull();
+    });
+
+    it("設定JSONを選ぶと保存して結果を表示する", async () => {
+      const { onSaveSyncConfig } = render(root);
+      openSettings();
+
+      const input = root.querySelector<HTMLInputElement>('input[name="import-config-file"]')!;
+      const file = new File([JSON.stringify(savedConfig)], "aozora-history-sync-config.json", {
+        type: "application/json",
+      });
+      Object.defineProperty(input, "files", { value: [file] });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+
+      await vi.waitFor(() => {
+        expect(root.querySelector(".sync .sync-status")!.textContent).toBe("保存しました");
+      });
+      expect(onSaveSyncConfig).toHaveBeenCalledWith(savedConfig);
+    });
+
+    it("不正な設定JSONはエラーを表示して保存しない", async () => {
+      const { onSaveSyncConfig } = render(root);
+      openSettings();
+
+      const input = root.querySelector<HTMLInputElement>('input[name="import-config-file"]')!;
+      const file = new File(["not json"], "config.json", { type: "application/json" });
+      Object.defineProperty(input, "files", { value: [file] });
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+
+      await vi.waitFor(() => {
+        expect(root.querySelector(".sync .sync-status")!.textContent).toBe(
+          "読み込みに失敗しました: JSONとして読み込めませんでした",
+        );
+      });
+      expect(onSaveSyncConfig).not.toHaveBeenCalled();
+    });
   });
 
   describe("インポート / エクスポート", () => {
