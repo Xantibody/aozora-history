@@ -63,6 +63,15 @@ export function latestSnapshot(history: BalanceSnapshot[]): BalanceSnapshot | nu
   return history.at(-1) ?? null;
 }
 
+/** 最後に記録が増えた時刻。銀行サイトの構造変化などで記録が止まっていないかの確認に使う */
+export function latestRecordAt(
+  snapshots: BalanceSnapshot[],
+  transfers: TransferRecord[],
+): number | null {
+  const times = [...snapshots.map((s) => s.takenAt), ...transfers.map((t) => t.transferredAt)];
+  return times.length === 0 ? null : Math.max(...times);
+}
+
 export function balanceSeries(history: BalanceSnapshot[]): BalanceSeries[] {
   const byId = new Map<string, BalanceSeries>();
   for (const snapshot of history) {

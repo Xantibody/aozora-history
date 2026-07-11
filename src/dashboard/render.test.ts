@@ -46,10 +46,18 @@ const transfers: TransferRecord[] = [
 ];
 
 function data(overrides: Partial<DashboardData> = {}): DashboardData {
-  return { snapshots, transfers, comments: {}, deletions: {}, syncConfig: null, ...overrides };
+  return {
+    snapshots,
+    transfers,
+    comments: {},
+    deletions: {},
+    syncConfig: null,
+    lastSyncedAt: null,
+    ...overrides,
+  };
 }
 
-function render(root: HTMLElement, d = data()) {
+function render(root: HTMLElement, d = data(), now?: () => number) {
   const handlers = {
     onCommentChange: vi.fn<(key: string, text: string) => void>(),
     onDeleteTransfer: vi.fn<(transfer: TransferRecord) => void>(),
@@ -57,7 +65,7 @@ function render(root: HTMLElement, d = data()) {
     onSyncNow: vi.fn(async () => "同期しました"),
     onImportFile: vi.fn(async () => "読み込みました"),
   };
-  const redraw = renderDashboard(root, d, handlers);
+  const redraw = renderDashboard(root, d, handlers, now);
   return { ...handlers, redraw };
 }
 
@@ -322,6 +330,62 @@ describe("renderDashboard", () => {
 
       const input = root.querySelector<HTMLInputElement>(".transfers input.comment")!;
       expect(input.value).toBe("積立へ移動");
+    });
+  });
+
+  describe("記録の鮮度", () => {
+    // 最新の記録は2つ目のスナップショット (7/10 13:34)
+    const latestAt = Date.UTC(2026, 6, 10, 13, 34);
+    const DAY = 24 * 60 * 60 * 1000;
+    const config = {
+      accountId: "abc",
+      bucket: "b",
+      objectKey: "k.json",
+      accessKeyId: "ak",
+      secretAccessKey: "sk",
+    };
+
+    it("最終記録の時刻を表示する", () => {
+      render(root, data(), () => latestAt + DAY);
+
+      expect(root.querySelector(".freshness .latest-record")!.textContent).toBe(
+        `最終記録: ${formatDateTime(latestAt)}`,
+      );
+    });
+
+    it("7日以上記録が増えていなければ警告する", () => {
+      render(root, data(), () => latestAt + 8 * DAY);
+
+      expect(root.querySelector(".freshness .stale-warning")).not.toBeNull();
+    });
+
+    it("記録が新しければ警告しない", () => {
+      render(root, data(), () => latestAt + DAY);
+
+      expect(root.querySelector(".freshness .stale-warning")).toBeNull();
+    });
+
+    it("同期設定があれば最終同期時刻を表示する", () => {
+      const syncedAt = latestAt + DAY;
+      render(root, data({ syncConfig: config, lastSyncedAt: syncedAt }), () => syncedAt);
+
+      expect(root.querySelector(".freshness .last-synced")!.textContent).toBe(
+        `最終同期: ${formatDateTime(syncedAt)}`,
+      );
+    });
+
+    it("同期設定はあるがまだ同期していなければその旨を表示する", () => {
+      render(root, data({ syncConfig: config }), () => latestAt);
+
+      expect(root.querySelector(".freshness .last-synced")!.textContent).toContain(
+        "まだ同期していません",
+      );
+    });
+
+    it("同期設定がなければ最終同期は表示しない", () => {
+      render(root, data(), () => latestAt);
+
+      expect(root.querySelector(".freshness .last-synced")).toBeNull();
     });
   });
 

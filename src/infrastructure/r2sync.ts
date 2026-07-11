@@ -113,5 +113,6 @@ export async function syncWithR2(store: HistoryStore, client: R2Client): Promise
   const merged = mergeLedgers(remoteMerged, latest);
   await store.replaceLedger(merged);
   await client.upload(merged);
+  await store.markSynced();
   return merged;
 }

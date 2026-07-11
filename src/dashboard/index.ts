@@ -2,7 +2,7 @@ import { transferCommentKey, transferKey } from "../domain/ledger.ts";
 import { type LedgerData, mergeLedgers } from "../domain/merge.ts";
 import { parseLedgerJson } from "../domain/serialization.ts";
 import { type FetchLike, R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
-import { HistoryStore, LEDGER_KEYS } from "../infrastructure/storage.ts";
+import { HistoryStore, LAST_SYNCED_KEY, LEDGER_KEYS } from "../infrastructure/storage.ts";
 import { type DashboardHandlers, renderDashboard } from "./render.ts";
 
 const fetchFn: FetchLike = (url, init) => fetch(url, init);
@@ -12,15 +12,16 @@ async function main(): Promise<void> {
   if (root === null) return;
 
   const store = new HistoryStore(browser.storage.local);
-  const [snapshots, transfers, comments, deletions, syncConfig] = await Promise.all([
+  const [snapshots, transfers, comments, deletions, syncConfig, lastSyncedAt] = await Promise.all([
     store.loadSnapshots(),
     store.loadTransfers(),
     store.loadComments(),
     store.loadDeletions(),
     store.loadSyncConfig(),
+    store.loadLastSyncedAt(),
   ]);
 
-  const data = { snapshots, transfers, comments, deletions, syncConfig };
+  const data = { snapshots, transfers, comments, deletions, syncConfig, lastSyncedAt };
 
   const currentLedger = (): LedgerData => ({
     snapshots: data.snapshots,
@@ -104,10 +105,14 @@ async function main(): Promise<void> {
   // 開いている間の変更(銀行サイトのタブでの記録・backgroundの自動同期)を反映する
   browser.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "local") return;
-    if (!LEDGER_KEYS.some((key) => key in changes)) return;
-    void store.loadLedger().then((ledger) => {
-      if (JSON.stringify(ledger) === JSON.stringify(currentLedger())) return;
+    if (!LEDGER_KEYS.some((key) => key in changes) && !(LAST_SYNCED_KEY in changes)) return;
+    void Promise.all([store.loadLedger(), store.loadLastSyncedAt()]).then(([ledger, syncedAt]) => {
+      const unchanged =
+        syncedAt === data.lastSyncedAt &&
+        JSON.stringify(ledger) === JSON.stringify(currentLedger());
+      if (unchanged) return;
       applyLedger(ledger);
+      data.lastSyncedAt = syncedAt;
       // コメント入力中に再描画するとフォーカスを奪うため見送る(dataには反映済み)
       const active = document.activeElement;
       if (active instanceof HTMLInputElement && root.contains(active)) return;
