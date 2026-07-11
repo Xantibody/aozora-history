@@ -143,7 +143,7 @@ describe("AutoSync", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const emptyLedger: LedgerData = { snapshots: [], transfers: [], comments: {} };
+    const emptyLedger: LedgerData = { snapshots: [], transfers: [], comments: {}, deletions: {} };
     const results: LedgerData[] = [];
     // 同期中の変更を取りこぼした(=ローカルより古い)結果を返す遅い同期
     const runSync: SyncRunner = async () => {

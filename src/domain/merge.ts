@@ -10,6 +10,8 @@ export interface LedgerData {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
   comments: Comments;
+  /** 削除した振替の記録。transferKey → 削除時刻。同期で削除を伝播させるために残す */
+  deletions: Record<string, number>;
 }
 
 /**
@@ -25,9 +27,13 @@ export function mergeLedgers(local: LedgerData, remote: LedgerData): LedgerData 
     .toSorted((a, b) => a.takenAt - b.takenAt)
     .reduce<BalanceSnapshot[]>((acc, s) => appendSnapshot(acc, s), []);
 
+  const deletions = { ...remote.deletions, ...local.deletions };
+
   const transfersByKey = new Map<string, TransferRecord>();
   for (const t of [...remote.transfers, ...local.transfers]) {
-    transfersByKey.set(transferKey(t), t);
+    const key = transferKey(t);
+    if (key in deletions) continue;
+    transfersByKey.set(key, t);
   }
   const transfers = [...transfersByKey.values()].toSorted(
     (a, b) => a.transferredAt - b.transferredAt,
@@ -39,5 +45,5 @@ export function mergeLedgers(local: LedgerData, remote: LedgerData): LedgerData 
     if (other === undefined || other.updatedAt <= entry.updatedAt) comments[key] = entry;
   }
 
-  return { snapshots, transfers, comments };
+  return { snapshots, transfers, comments, deletions };
 }

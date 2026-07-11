@@ -46,12 +46,13 @@ const transfers: TransferRecord[] = [
 ];
 
 function data(overrides: Partial<DashboardData> = {}): DashboardData {
-  return { snapshots, transfers, comments: {}, syncConfig: null, ...overrides };
+  return { snapshots, transfers, comments: {}, deletions: {}, syncConfig: null, ...overrides };
 }
 
 function render(root: HTMLElement, d = data()) {
   const handlers = {
     onCommentChange: vi.fn<(key: string, text: string) => void>(),
+    onDeleteTransfer: vi.fn<(transfer: TransferRecord) => void>(),
     onSaveSyncConfig: vi.fn(async () => "保存しました"),
     onSyncNow: vi.fn(async () => "同期しました"),
     onImportFile: vi.fn(async () => "読み込みました"),
@@ -321,6 +322,27 @@ describe("renderDashboard", () => {
 
       const input = root.querySelector<HTMLInputElement>(".transfers input.comment")!;
       expect(input.value).toBe("積立へ移動");
+    });
+  });
+
+  describe("振替の削除", () => {
+    it("削除ボタンを押し確認するとハンドラへ振替を渡す", () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const { onDeleteTransfer } = render(root);
+
+      root.querySelector<HTMLButtonElement>(".transfers button.delete-transfer")!.click();
+
+      // 行は新しい順なので先頭の削除ボタンは transfers[0] のもの
+      expect(onDeleteTransfer).toHaveBeenCalledWith(transfers[0]);
+    });
+
+    it("確認ダイアログをキャンセルしたら削除しない", () => {
+      vi.spyOn(window, "confirm").mockReturnValue(false);
+      const { onDeleteTransfer } = render(root);
+
+      root.querySelector<HTMLButtonElement>(".transfers button.delete-transfer")!.click();
+
+      expect(onDeleteTransfer).not.toHaveBeenCalled();
     });
   });
 
@@ -607,7 +629,8 @@ describe("renderDashboard", () => {
 
     it("エクスポートリンクがR2オブジェクトと同じ形式で現在のデータを含む", () => {
       const comments = { "transfer:1": { text: "メモ", updatedAt: 1 } };
-      render(root, data({ comments }));
+      const deletions = { "9:1:2:100": 5 };
+      render(root, data({ comments, deletions }));
       openSettings();
 
       const link = root.querySelector<HTMLAnchorElement>("a.export")!;
@@ -616,7 +639,7 @@ describe("renderDashboard", () => {
       const prefix = "data:application/json;charset=utf-8,";
       expect(link.href.startsWith(prefix)).toBe(true);
       const json = JSON.parse(decodeURIComponent(link.href.slice(prefix.length)));
-      expect(json).toEqual({ snapshots, transfers, comments });
+      expect(json).toEqual({ snapshots, transfers, comments, deletions });
     });
 
     it("JSONファイルを選ぶと内容を渡して結果を表示する", async () => {

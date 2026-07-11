@@ -75,6 +75,15 @@ function parseComments(value: unknown): Comments {
   );
 }
 
+function parseDeletions(value: unknown): Record<string, number> {
+  if (value === undefined) return {};
+  if (!isRecord(value)) throw new FormatError("削除の記録");
+  for (const deletedAt of Object.values(value)) {
+    if (typeof deletedAt !== "number") throw new FormatError("削除の記録");
+  }
+  return value as Record<string, number>;
+}
+
 /** R2オブジェクト・エクスポートファイルと同じ形式のJSONを検証しつつ読み込む */
 export function parseLedgerJson(text: string): LedgerData {
   let parsed: unknown;
@@ -94,5 +103,6 @@ export function parseLedgerJson(text: string): LedgerData {
     snapshots: snapshots.map(parseSnapshot),
     transfers: transfers.map(parseTransfer),
     comments: parseComments(parsed.comments),
+    deletions: parseDeletions(parsed.deletions),
   };
 }

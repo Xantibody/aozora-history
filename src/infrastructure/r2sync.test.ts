@@ -17,7 +17,7 @@ const config: SyncConfig = {
   secretAccessKey: "secret",
 };
 
-const emptyLedger: LedgerData = { snapshots: [], transfers: [], comments: {} };
+const emptyLedger: LedgerData = { snapshots: [], transfers: [], comments: {}, deletions: {} };
 
 const remoteLedger: LedgerData = {
   snapshots: [
@@ -25,6 +25,7 @@ const remoteLedger: LedgerData = {
   ],
   transfers: [],
   comments: { "transfer:1": { text: "リモート", updatedAt: 0 } },
+  deletions: {},
 };
 
 interface Request {

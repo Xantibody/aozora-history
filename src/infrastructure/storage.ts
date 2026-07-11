@@ -3,6 +3,8 @@ import {
   type BalanceSnapshot,
   type CommentEntry,
   type Comments,
+  transferCommentKey,
+  transferKey,
   type TransferRecord,
 } from "../domain/ledger.ts";
 import type { LedgerData } from "../domain/merge.ts";
@@ -16,10 +18,11 @@ export interface StorageArea {
 const SNAPSHOTS_KEY = "balanceSnapshots";
 const TRANSFERS_KEY = "transferRecords";
 const COMMENTS_KEY = "comments";
+const DELETIONS_KEY = "transferDeletions";
 const SYNC_CONFIG_KEY = "syncConfig";
 
 /** 台帳本体を構成するstorageキー。同期のトリガー判定に使う */
-export const LEDGER_KEYS = [SNAPSHOTS_KEY, TRANSFERS_KEY, COMMENTS_KEY] as const;
+export const LEDGER_KEYS = [SNAPSHOTS_KEY, TRANSFERS_KEY, COMMENTS_KEY, DELETIONS_KEY] as const;
 
 export type { Comments };
 
@@ -74,13 +77,39 @@ export class HistoryStore {
     );
   }
 
+  async loadDeletions(): Promise<Record<string, number>> {
+    const items = await this.storage.get(DELETIONS_KEY);
+    return (items[DELETIONS_KEY] as Record<string, number> | undefined) ?? {};
+  }
+
+  /** 振替を削除する。同期で復活しないよう削除の記録を残し、コメントも削除する */
+  async deleteTransfer(transfer: TransferRecord): Promise<void> {
+    const [transfers, deletions, comments] = await Promise.all([
+      this.loadTransfers(),
+      this.loadDeletions(),
+      this.loadComments(),
+    ]);
+    const key = transferKey(transfer);
+    const items: Record<string, unknown> = {
+      [TRANSFERS_KEY]: transfers.filter((t) => transferKey(t) !== key),
+      [DELETIONS_KEY]: { ...deletions, [key]: this.now() },
+    };
+    const commentKey = transferCommentKey(transfer);
+    if (comments[commentKey] !== undefined && comments[commentKey].text !== "") {
+      comments[commentKey] = { text: "", updatedAt: this.now() };
+      items[COMMENTS_KEY] = comments;
+    }
+    await this.storage.set(items);
+  }
+
   async loadLedger(): Promise<LedgerData> {
-    const [snapshots, transfers, comments] = await Promise.all([
+    const [snapshots, transfers, comments, deletions] = await Promise.all([
       this.loadSnapshots(),
       this.loadTransfers(),
       this.loadComments(),
+      this.loadDeletions(),
     ]);
-    return { snapshots, transfers, comments };
+    return { snapshots, transfers, comments, deletions };
   }
 
   async replaceLedger(data: LedgerData): Promise<void> {
@@ -88,6 +117,7 @@ export class HistoryStore {
       [SNAPSHOTS_KEY]: data.snapshots,
       [TRANSFERS_KEY]: data.transfers,
       [COMMENTS_KEY]: data.comments,
+      [DELETIONS_KEY]: data.deletions,
     });
   }
 

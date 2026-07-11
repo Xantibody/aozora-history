@@ -1,3 +1,4 @@
+import { transferCommentKey, transferKey } from "../domain/ledger.ts";
 import { mergeLedgers } from "../domain/merge.ts";
 import { parseLedgerJson } from "../domain/serialization.ts";
 import { type FetchLike, R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
@@ -11,20 +12,33 @@ async function main(): Promise<void> {
   if (root === null) return;
 
   const store = new HistoryStore(browser.storage.local);
-  const [snapshots, transfers, comments, syncConfig] = await Promise.all([
+  const [snapshots, transfers, comments, deletions, syncConfig] = await Promise.all([
     store.loadSnapshots(),
     store.loadTransfers(),
     store.loadComments(),
+    store.loadDeletions(),
     store.loadSyncConfig(),
   ]);
 
-  const data = { snapshots, transfers, comments, syncConfig };
+  const data = { snapshots, transfers, comments, deletions, syncConfig };
 
   const handlers: DashboardHandlers = {
     onCommentChange: (key, text) => {
       // 再描画時に最新のコメントが出るようローカルにも反映する
       data.comments[key] = { text: text.trim(), updatedAt: Date.now() };
       void store.setComment(key, text);
+    },
+
+    onDeleteTransfer: (transfer) => {
+      // 再描画で消えた行が戻らないよう、ローカルにも削除を反映する
+      const key = transferKey(transfer);
+      data.transfers = data.transfers.filter((t) => transferKey(t) !== key);
+      data.deletions = { ...data.deletions, [key]: Date.now() };
+      const commentKey = transferCommentKey(transfer);
+      if (data.comments[commentKey] !== undefined) {
+        data.comments[commentKey] = { text: "", updatedAt: Date.now() };
+      }
+      void store.deleteTransfer(transfer);
     },
 
     onSaveSyncConfig: async (config) => {
@@ -43,12 +57,14 @@ async function main(): Promise<void> {
           snapshots: data.snapshots,
           transfers: data.transfers,
           comments: data.comments,
+          deletions: data.deletions,
         };
         const merged = mergeLedgers(local, imported);
         await store.replaceLedger(merged);
         data.snapshots = merged.snapshots;
         data.transfers = merged.transfers;
         data.comments = merged.comments;
+        data.deletions = merged.deletions;
         return `読み込みました（スナップショット${merged.snapshots.length}件・振替${merged.transfers.length}件）`;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -66,6 +82,7 @@ async function main(): Promise<void> {
         data.snapshots = merged.snapshots;
         data.transfers = merged.transfers;
         data.comments = merged.comments;
+        data.deletions = merged.deletions;
         return `同期しました（スナップショット${merged.snapshots.length}件・振替${merged.transfers.length}件）`;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -79,7 +96,7 @@ async function main(): Promise<void> {
   // 起動時に他端末の記録を取り込む。失敗は致命的でないため無視する
   // (background の自動同期や「今すぐ同期」で回復できる)
   if (data.syncConfig !== null) {
-    const before = JSON.stringify({ snapshots, transfers, comments });
+    const before = JSON.stringify({ snapshots, transfers, comments, deletions });
     try {
       const client = new R2Client(data.syncConfig, fetchFn, () => new Date());
       const merged = await syncWithR2(store, client);
@@ -87,6 +104,7 @@ async function main(): Promise<void> {
       data.snapshots = merged.snapshots;
       data.transfers = merged.transfers;
       data.comments = merged.comments;
+      data.deletions = merged.deletions;
       renderDashboard(root, data, handlers);
     } catch {
       // noop
