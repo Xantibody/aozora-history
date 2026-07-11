@@ -9,7 +9,9 @@ import {
   latestSnapshot,
   sortTransfersDesc,
   type TransferRecord,
-  transfersFrom,
+  flowTotals,
+  signedAmountFor,
+  transfersInvolving,
 } from "./ledger.ts";
 
 function accounts(...balances: [string, number][]): SubAccount[] {
@@ -159,7 +161,7 @@ function transfer(
   };
 }
 
-describe("transfersFrom", () => {
+describe("transfersInvolving", () => {
   const transfers = [
     transfer(1, ["100", "お財布"], ["101", "積立"], 1000),
     transfer(2, ["101", "積立"], ["100", "お財布"], 2000),
@@ -167,15 +169,43 @@ describe("transfersFrom", () => {
   ];
 
   it("nullなら全件返す", () => {
-    expect(transfersFrom(transfers, null)).toEqual(transfers);
+    expect(transfersInvolving(transfers, null)).toEqual(transfers);
   });
 
-  it("出金口座で絞り込む", () => {
-    expect(transfersFrom(transfers, "100").map((t) => t.transferredAt)).toEqual([1, 3]);
+  it("出金側でも入金側でも関わる振替を返す", () => {
+    expect(transfersInvolving(transfers, "101").map((t) => t.transferredAt)).toEqual([1, 2]);
   });
 
   it("該当がなければ空配列を返す", () => {
-    expect(transfersFrom(transfers, "999")).toEqual([]);
+    expect(transfersInvolving(transfers, "999")).toEqual([]);
+  });
+});
+
+describe("signedAmountFor", () => {
+  const t = transfer(1, ["100", "お財布"], ["101", "積立"], 1000);
+
+  it("出金は負にする", () => {
+    expect(signedAmountFor(t, "100")).toBe(-1000);
+  });
+
+  it("入金は正にする", () => {
+    expect(signedAmountFor(t, "101")).toBe(1000);
+  });
+});
+
+describe("flowTotals", () => {
+  const transfers = [
+    transfer(1, ["100", "お財布"], ["101", "積立"], 1000),
+    transfer(2, ["101", "積立"], ["100", "お財布"], 2000),
+    transfer(3, ["101", "積立"], ["102", "支払い箱"], 3000),
+  ];
+
+  it("口座から見た出金合計と入金合計を返す", () => {
+    expect(flowTotals(transfers, "101")).toEqual({ outgoing: 5000, incoming: 1000 });
+  });
+
+  it("関わる振替がなければゼロを返す", () => {
+    expect(flowTotals(transfers, "999")).toEqual({ outgoing: 0, incoming: 0 });
   });
 });
 

@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* ダーク対応はTailwindのdark:バリアント(prefers-color-scheme)で行う。
+   フォームコントロールのネイティブ描画のためcolor-schemeだけ宣言する */
+:root {
+  color-scheme: light dark;
+}
