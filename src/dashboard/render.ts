@@ -626,6 +626,8 @@ export function renderDashboard(
     const node = section("transfers", "振替履歴");
 
     const tabs = el("div", "tabs mb-3 flex flex-wrap gap-1.5");
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "振替履歴の口座");
     const tabDefs: { id: string | null; name: string }[] = [
       { id: null, name: "すべて" },
       ...tabAccounts(data),
@@ -633,13 +635,16 @@ export function renderDashboard(
     const tabBase =
       "tab cursor-pointer rounded-full px-3.5 py-1 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500";
     for (const def of tabDefs) {
+      const selected = def.id === selectedFromId;
       const tab = el(
         "button",
-        def.id === selectedFromId
+        selected
           ? `${tabBase} active bg-sky-600 font-medium text-white dark:bg-sky-500 dark:text-slate-950`
           : `${tabBase} bg-white ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:ring-slate-700 dark:hover:bg-slate-700`,
         def.name,
       );
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", String(selected));
       tab.addEventListener("click", () => {
         selectedFromId = def.id;
         draw();
@@ -997,7 +1002,37 @@ export function renderDashboard(
     return button;
   };
 
+  /**
+   * 再描画でフォーカスが失われないよう、描画前の位置を覚えて復元する関数を返す。
+   * 要素は作り直されるため、意味マーカー(クラス名の先頭)とname/aria-label/
+   * テキストで同じ役割の要素を探し直す
+   */
+  const captureFocus = (): (() => void) | null => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !root.contains(active)) return null;
+    const marker = active.classList[0];
+    if (marker === undefined || !/^[a-z][\w-]*$/i.test(marker)) return null;
+    const name = active.getAttribute("name");
+    const label = active.getAttribute("aria-label");
+    const text = active.textContent;
+    return () => {
+      const candidates = [...root.querySelectorAll<HTMLElement>(`.${marker}`)];
+      const target =
+        candidates.find((c) => name !== null && c.getAttribute("name") === name) ??
+        candidates.find((c) => label !== null && c.getAttribute("aria-label") === label) ??
+        candidates.find((c) => c.textContent === text) ??
+        candidates[0];
+      target?.focus();
+    };
+  };
+
   const draw = (): void => {
+    const restoreFocus = captureFocus();
+    drawView();
+    restoreFocus?.();
+  };
+
+  const drawView = (): void => {
     root.replaceChildren();
 
     if (view === "settings") {
