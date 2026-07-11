@@ -10,7 +10,7 @@ export interface SyncConfig {
   secretAccessKey: string;
 }
 
-const DEFAULT_OBJECT_KEY = "aozora-history.json";
+export const DEFAULT_OBJECT_KEY = "aozora-history.json";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
