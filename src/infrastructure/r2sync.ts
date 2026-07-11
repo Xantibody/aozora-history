@@ -1,4 +1,5 @@
 import { type LedgerData, mergeLedgers } from "../domain/merge.ts";
+import { parseLedgerJson } from "../domain/serialization.ts";
 import { sha256Hex, signRequest } from "./sigv4.ts";
 import type { HistoryStore } from "./storage.ts";
 
@@ -91,7 +92,9 @@ export class R2Client {
     const res = await this.request("GET");
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`R2からの取得に失敗しました (HTTP ${res.status})`);
-    return JSON.parse(await res.text()) as LedgerData;
+    // オブジェクトキーの指定ミスなどで別のデータが置かれていても、
+    // マージ経由でローカルの記録を壊さないよう検証してから取り込む
+    return parseLedgerJson(await res.text());
   }
 
   async upload(data: LedgerData): Promise<void> {
