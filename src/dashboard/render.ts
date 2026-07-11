@@ -60,6 +60,27 @@ export function formatDateTime(epochMs: number): string {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function csvField(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+}
+
+/** 家計簿ソフトなどへの取り込み用CSV。金額は数値のまま出す */
+export function transfersCsv(transfers: TransferRecord[], comments: Comments): string {
+  const rows = sortTransfersDesc(transfers).map((t) =>
+    [
+      formatDateTime(t.transferredAt),
+      t.from.name,
+      t.to.name,
+      String(t.amount),
+      commentText(comments, transferCommentKey(t)),
+    ]
+      .map(csvField)
+      .join(","),
+  );
+  // ExcelがUTF-8として認識できるようBOMを付ける
+  return `﻿${["日時,出金口座,入金口座,金額,コメント", ...rows].join("\r\n")}\r\n`;
+}
+
 function el(tag: string, className?: string, text?: string): HTMLElement {
   const node = document.createElement(tag);
   if (className !== undefined) node.className = className;
@@ -895,7 +916,16 @@ export function renderDashboard(
       deletions: data.deletions,
     };
     exportLink.href = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(ledger))}`;
-    node.append(exportLink);
+
+    const csvLink = document.createElement("a");
+    csvLink.className = `export-csv mb-3 inline-block text-sm ${LINK}`;
+    csvLink.download = "aozora-history.csv";
+    csvLink.textContent = "振替履歴をCSVでエクスポート";
+    csvLink.href = `data:text/csv;charset=utf-8,${encodeURIComponent(transfersCsv(data.transfers, data.comments))}`;
+
+    const exportRow = el("div", "export-row flex flex-wrap gap-x-6");
+    exportRow.append(exportLink, csvLink);
+    node.append(exportRow);
 
     const importRow = el("label", "import-row flex flex-wrap items-center gap-2.5 text-sm");
     importRow.append(el("span", undefined, "JSONをインポート(現在の記録とマージ):"));
