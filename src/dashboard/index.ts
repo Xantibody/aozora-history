@@ -2,7 +2,7 @@ import { mergeLedgers } from "../domain/merge.ts";
 import { parseLedgerJson } from "../domain/serialization.ts";
 import { type FetchLike, R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
 import { HistoryStore } from "../infrastructure/storage.ts";
-import { renderDashboard } from "./render.ts";
+import { type DashboardHandlers, renderDashboard } from "./render.ts";
 
 const fetchFn: FetchLike = (url, init) => fetch(url, init);
 
@@ -20,7 +20,7 @@ async function main(): Promise<void> {
 
   const data = { snapshots, transfers, comments, syncConfig };
 
-  renderDashboard(root, data, {
+  const handlers: DashboardHandlers = {
     onCommentChange: (key, text) => {
       // 再描画時に最新のコメントが出るようローカルにも反映する
       const trimmed = text.trim();
@@ -77,7 +77,26 @@ async function main(): Promise<void> {
         return `同期に失敗しました: ${message}`;
       }
     },
-  });
+  };
+
+  renderDashboard(root, data, handlers);
+
+  // 起動時に他端末の記録を取り込む。失敗は致命的でないため無視する
+  // (background の自動同期や「今すぐ同期」で回復できる)
+  if (data.syncConfig !== null) {
+    const before = JSON.stringify({ snapshots, transfers, comments });
+    try {
+      const client = new R2Client(data.syncConfig, fetchFn, () => new Date());
+      const merged = await syncWithR2(store, client);
+      if (JSON.stringify(merged) === before) return;
+      data.snapshots = merged.snapshots;
+      data.transfers = merged.transfers;
+      data.comments = merged.comments;
+      renderDashboard(root, data, handlers);
+    } catch {
+      // noop
+    }
+  }
 }
 
 void main();
