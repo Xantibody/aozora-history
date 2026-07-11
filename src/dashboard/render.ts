@@ -18,7 +18,11 @@ import {
   type WorkspaceSummary,
   workspaceSummaries,
 } from "../domain/ledger.ts";
-import { parseSyncConfigJson, type SyncConfig } from "../infrastructure/r2sync.ts";
+import {
+  DEFAULT_OBJECT_KEY,
+  parseSyncConfigJson,
+  type SyncConfig,
+} from "../infrastructure/r2sync.ts";
 import type { Comments } from "../infrastructure/storage.ts";
 
 export interface DashboardData {
@@ -34,8 +38,6 @@ export interface DashboardHandlers {
   onSyncNow(): Promise<string>;
   onImportFile(text: string): Promise<string>;
 }
-
-const DEFAULT_OBJECT_KEY = "aozora-history.json";
 
 export function formatYen(amount: number): string {
   return `${amount.toLocaleString("ja-JP")}円`;
