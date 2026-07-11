@@ -4,6 +4,7 @@ import {
   appendSnapshot,
   type BalanceSnapshot,
   balanceSeries,
+  commentSuggestions,
   detectBalanceChanges,
   destinationTotals,
   latestSnapshot,
@@ -12,6 +13,7 @@ import {
   flowTotals,
   signedAmountFor,
   transfersInvolving,
+  workspaceSummaries,
 } from "./ledger.ts";
 
 function accounts(...balances: [string, number][]): SubAccount[] {
@@ -375,6 +377,99 @@ describe("detectBalanceChanges", () => {
       [20, 20000],
       [30, -10000],
     ]);
+  });
+});
+
+describe("workspaceSummaries", () => {
+  it("スナップショットがなければ空を返す", () => {
+    expect(workspaceSummaries([], [])).toEqual([]);
+  });
+
+  it("口座ごとに残高・期間内変動・振替純額・外部入出金・推移をまとめる", () => {
+    const s1 = snapshot(10, accounts(["お財布", 100000], ["積立", 50000]));
+    const s2 = snapshot(20, accounts(["お財布", 65000], ["積立", 55000]));
+    const transfers = [transfer(15, ["100", "お財布"], ["101", "積立"], 5000)];
+
+    expect(workspaceSummaries([s1, s2], transfers)).toEqual([
+      {
+        id: "100",
+        name: "お財布",
+        balance: 65000,
+        delta: -35000,
+        transferNet: -5000,
+        externalNet: -30000,
+        points: [
+          { takenAt: 10, balance: 100000 },
+          { takenAt: 20, balance: 65000 },
+        ],
+      },
+      {
+        id: "101",
+        name: "積立",
+        balance: 55000,
+        delta: 5000,
+        transferNet: 5000,
+        externalNet: 0,
+        points: [
+          { takenAt: 10, balance: 50000 },
+          { takenAt: 20, balance: 55000 },
+        ],
+      },
+    ]);
+  });
+
+  it("スナップショットが1件だけなら変動はゼロにする", () => {
+    const s = snapshot(10, accounts(["お財布", 100000]));
+
+    const summaries = workspaceSummaries([s], []);
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].delta).toBe(0);
+    expect(summaries[0].balance).toBe(100000);
+  });
+
+  it("スナップショットに現れない口座は含めない", () => {
+    const s = snapshot(10, accounts(["お財布", 100000]));
+    const transfers = [transfer(15, ["100", "お財布"], ["999", "外部"], 5000)];
+
+    expect(workspaceSummaries([s], transfers).map((w) => w.id)).toEqual(["100"]);
+  });
+});
+
+describe("commentSuggestions", () => {
+  it("コメントがなければ空を返す", () => {
+    expect(commentSuggestions({})).toEqual([]);
+  });
+
+  it("同じ内容のコメントは1つの候補にまとめる", () => {
+    const comments = {
+      "transfer:100": "家賃",
+      "transfer:200": "家賃",
+      "change:101:300": "給料",
+    };
+
+    expect(commentSuggestions(comments)).toEqual(["家賃", "給料"]);
+  });
+
+  it("使用回数の多い順に並べる", () => {
+    const comments = {
+      "transfer:100": "積立",
+      "transfer:200": "家賃",
+      "transfer:300": "家賃",
+      "transfer:400": "家賃",
+      "transfer:500": "積立",
+    };
+
+    expect(commentSuggestions(comments)).toEqual(["家賃", "積立"]);
+  });
+
+  it("使用回数が同じなら新しい記録のコメントを先にする", () => {
+    const comments = {
+      "transfer:100": "古いメモ",
+      "transfer:200": "新しいメモ",
+    };
+
+    expect(commentSuggestions(comments)).toEqual(["新しいメモ", "古いメモ"]);
   });
 });
 

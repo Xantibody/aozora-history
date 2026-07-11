@@ -1,4 +1,4 @@
-import { transferCommentKey } from "./domain/ledger.ts";
+import { commentSuggestions, transferCommentKey } from "./domain/ledger.ts";
 import { parseAccountsPage, parseTransferForm } from "./domain/parser.ts";
 import type { HistoryStore } from "./infrastructure/storage.ts";
 
@@ -6,7 +6,12 @@ const CONFIRM_BUTTON_ID = "sp-account-account-to-account-confirm";
 const PANEL_ID = "aozora-history-comment";
 
 /** 銀行サイトのCSSに影響されないよう、スタイルはすべてインラインで当てる */
-function showCommentPrompt(doc: Document, store: HistoryStore, key: string): void {
+function showCommentPrompt(
+  doc: Document,
+  store: HistoryStore,
+  key: string,
+  suggestions: string[],
+): void {
   doc.getElementById(PANEL_ID)?.remove();
 
   const panel = doc.createElement("div");
@@ -28,6 +33,15 @@ function showCommentPrompt(doc: Document, store: HistoryStore, key: string): voi
     if ((event as KeyboardEvent).key === "Enter") save.click();
   });
 
+  const list = doc.createElement("datalist");
+  list.id = `${PANEL_ID}-suggestions`;
+  for (const text of suggestions) {
+    const option = doc.createElement("option");
+    option.value = text;
+    list.append(option);
+  }
+  input.setAttribute("list", list.id);
+
   const save = doc.createElement("button");
   save.type = "button";
   save.className = "save";
@@ -47,7 +61,7 @@ function showCommentPrompt(doc: Document, store: HistoryStore, key: string): voi
     "font:inherit;background:none;color:#888;border:none;cursor:pointer;padding:0 4px;";
   close.addEventListener("click", () => panel.remove());
 
-  panel.append(label, input, save, close);
+  panel.append(label, input, save, close, list);
   doc.body.append(panel);
   input.focus();
 }
@@ -83,9 +97,12 @@ export function setupContentScript(
     const parsed = parseTransferForm(doc);
     if (parsed === null) return;
     const record = { transferredAt: now(), ...parsed };
-    void store.recordTransfer(record).then(() => {
-      showCommentPrompt(doc, store, transferCommentKey(record));
-    });
+    void store
+      .recordTransfer(record)
+      .then(() => store.loadComments())
+      .then((comments) => {
+        showCommentPrompt(doc, store, transferCommentKey(record), commentSuggestions(comments));
+      });
   };
 
   const observer = new MutationObserver(scheduleCapture);

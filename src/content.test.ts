@@ -140,6 +140,19 @@ describe("setupContentScript", () => {
       expect(document.getElementById("aozora-history-comment")).toBeNull();
     });
 
+    it("過去のコメントを入力候補として提示する", async () => {
+      await store.setComment("transfer:1", "家賃");
+      await store.setComment("transfer:2", "積立");
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      const input = panel.querySelector("input")!;
+      const listId = input.getAttribute("list")!;
+      const options = [...panel.querySelectorAll(`#${listId} option`)];
+      expect(options.map((o) => o.getAttribute("value"))).toEqual(["積立", "家賃"]);
+    });
+
     it("記録に失敗した場合はパネルを出さない", async () => {
       document.body.innerHTML = transferHtml;
       document.querySelector<HTMLInputElement>("input.input-amount")!.value = "";

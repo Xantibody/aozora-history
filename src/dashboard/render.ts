@@ -1,9 +1,11 @@
 import type { AccountRef } from "../domain/parser.ts";
 import {
   type BalanceChange,
+  type BalancePoint,
   type BalanceSnapshot,
   balanceSeries,
   changeCommentKey,
+  commentSuggestions,
   detectBalanceChanges,
   destinationTotals,
   flowTotals,
@@ -13,6 +15,8 @@ import {
   transferCommentKey,
   type TransferRecord,
   transfersInvolving,
+  type WorkspaceSummary,
+  workspaceSummaries,
 } from "../domain/ledger.ts";
 import { parseSyncConfigJson, type SyncConfig } from "../infrastructure/r2sync.ts";
 import type { Comments } from "../infrastructure/storage.ts";
@@ -132,6 +136,185 @@ function table(headers: string[], rows: Cell[][], numericCols: number[] = []): H
   const scroll = el("div", "table-scroll overflow-x-auto");
   scroll.append(tableEl);
   return scroll;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl(tag: string, attrs: Record<string, string> = {}, className?: string): SVGElement {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  if (className !== undefined) node.setAttribute("class", className);
+  return node;
+}
+
+function shortDate(epochMs: number): string {
+  const d = new Date(epochMs);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+// 折れ線グラフの寸法。右側は終端の金額ラベル分の余白
+const CHART = { width: 640, height: 160, left: 8, right: 76, top: 16, bottom: 22 };
+
+/**
+ * 残高推移の折れ線。系列は1つなので凡例は置かずアクセント1色
+ * (ライト・ダーク両面で検証済みのsky-600)で描く。各点の値はホバーの
+ * <title>と「残高推移」の表でも読めるため、直接ラベルは終端の1つに絞る
+ */
+function balanceChart(points: BalancePoint[]): SVGElement {
+  const { width, height, left, right, top, bottom } = CHART;
+  const plotRight = width - right;
+  const plotBottom = height - bottom;
+  const t0 = points[0].takenAt;
+  const tN = points.at(-1)!.takenAt;
+  const balances = points.map((p) => p.balance);
+  const min = Math.min(...balances);
+  const max = Math.max(...balances);
+  const x = (t: number): number =>
+    tN === t0 ? left : left + ((t - t0) / (tN - t0)) * (plotRight - left);
+  const y = (b: number): number =>
+    max === min
+      ? (top + plotBottom) / 2
+      : plotBottom - ((b - min) / (max - min)) * (plotBottom - top);
+
+  const svg = svgEl(
+    "svg",
+    { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "残高推移" },
+    "balance-chart mt-3 w-full text-sky-600",
+  );
+
+  // 罫線は面から1段ずらしたヘアライン
+  for (const gy of [top, (top + plotBottom) / 2, plotBottom]) {
+    svg.append(
+      svgEl(
+        "line",
+        {
+          x1: String(left),
+          y1: String(gy),
+          x2: String(plotRight),
+          y2: String(gy),
+          "stroke-width": "1",
+        },
+        "chart-grid stroke-slate-200 dark:stroke-slate-700",
+      ),
+    );
+  }
+
+  const coords = points.map((p) => `${x(p.takenAt)},${y(p.balance)}`);
+  svg.append(
+    svgEl(
+      "polygon",
+      {
+        points: `${left},${plotBottom} ${coords.join(" ")} ${x(tN)},${plotBottom}`,
+        fill: "currentColor",
+        "fill-opacity": "0.1",
+      },
+      "chart-area",
+    ),
+  );
+  svg.append(
+    svgEl(
+      "polyline",
+      {
+        points: coords.join(" "),
+        fill: "none",
+        stroke: "currentColor",
+        "stroke-width": "2",
+        "stroke-linejoin": "round",
+        "stroke-linecap": "round",
+      },
+      "chart-line",
+    ),
+  );
+
+  // 終端マーカーはカード面の色のリングで線から浮かせる
+  const last = points.at(-1)!;
+  svg.append(
+    svgEl(
+      "circle",
+      {
+        cx: String(x(last.takenAt)),
+        cy: String(y(last.balance)),
+        r: "4",
+        fill: "currentColor",
+        "stroke-width": "2",
+      },
+      "chart-end stroke-slate-50 dark:stroke-slate-800",
+    ),
+  );
+
+  // ラベルは系列色ではなくテキスト用のインクで描く
+  const label = (text: string, attrs: Record<string, string>, cls: string): SVGElement => {
+    const node = svgEl("text", { "font-size": "11", ...attrs }, cls);
+    node.textContent = text;
+    return node;
+  };
+  const ink = "fill-slate-500 dark:fill-slate-400";
+  svg.append(
+    label(
+      formatYen(last.balance),
+      { x: String(x(tN) + 8), y: String(y(last.balance) + 4) },
+      `chart-end-label ${ink}`,
+    ),
+    label(shortDate(t0), { x: String(left), y: String(height - 6) }, `chart-x-label ${ink}`),
+    label(
+      shortDate(tN),
+      { x: String(plotRight), y: String(height - 6), "text-anchor": "end" },
+      `chart-x-label ${ink}`,
+    ),
+  );
+
+  // ホバーで各点の日時と残高を読めるようにする(マークより広い当たり判定)
+  for (const p of points) {
+    const hit = svgEl(
+      "circle",
+      { cx: String(x(p.takenAt)), cy: String(y(p.balance)), r: "14", fill: "transparent" },
+      "chart-hit",
+    );
+    const title = svgEl("title");
+    title.textContent = `${formatDateTime(p.takenAt)} ${formatYen(p.balance)}`;
+    hit.append(title);
+    svg.append(hit);
+  }
+  return svg;
+}
+
+function workspaceKpi(cls: string, label: string, value: HTMLElement): HTMLElement {
+  const box = el("div", `kpi ${cls}`);
+  box.append(el("div", "text-xs font-medium text-slate-500 dark:text-slate-400", label));
+  box.append(value);
+  return box;
+}
+
+function workspaceCard(summary: WorkspaceSummary): HTMLElement {
+  const card = el(
+    "div",
+    "workspace-card rounded-lg bg-slate-50 p-4 ring-1 ring-slate-200 max-sm:p-3 dark:bg-slate-800/60 dark:ring-slate-700",
+  );
+  card.append(el("h3", "workspace-name mb-2 text-sm font-semibold", summary.name));
+
+  const balance = el("div");
+  balance.append(el("div", "text-xl font-semibold max-sm:text-lg", formatYen(summary.balance)));
+  const delta = el("div", "kpi-delta mt-0.5 text-xs");
+  delta.append(el("span", "text-slate-500 dark:text-slate-400", "期間内 "));
+  delta.append(signedCell(summary.delta));
+  balance.append(delta);
+
+  const flowValue = (amount: number): HTMLElement => {
+    const value = el("div", "text-base font-medium max-sm:text-sm");
+    value.append(signedCell(amount));
+    return value;
+  };
+
+  const kpis = el("div", "kpis flex flex-wrap gap-x-8 gap-y-2");
+  kpis.append(
+    workspaceKpi("kpi-balance", "残高", balance),
+    workspaceKpi("kpi-transfer", "振替", flowValue(summary.transferNet)),
+    workspaceKpi("kpi-external", "外部入出金", flowValue(summary.externalNet)),
+  );
+  card.append(kpis);
+
+  if (summary.points.length >= 2) card.append(balanceChart(summary.points));
+  return card;
 }
 
 const TILE =
@@ -337,6 +520,19 @@ export function renderDashboard(
     return node;
   };
 
+  const SUGGESTIONS_ID = "comment-suggestions";
+
+  const suggestionList = (): HTMLElement => {
+    const list = el("datalist");
+    list.id = SUGGESTIONS_ID;
+    for (const text of commentSuggestions(data.comments)) {
+      const option = document.createElement("option");
+      option.value = text;
+      list.append(option);
+    }
+    return list;
+  };
+
   const commentInput = (key: string): HTMLElement => {
     const input = document.createElement("input");
     input.className =
@@ -344,9 +540,25 @@ export function renderDashboard(
       "hover:ring-slate-300 focus:bg-white focus:ring-2 focus:ring-sky-500 focus:outline-none " +
       "dark:hover:ring-slate-600 dark:focus:bg-slate-800";
     input.placeholder = "コメント";
+    input.setAttribute("list", SUGGESTIONS_ID);
     input.value = data.comments[key] ?? "";
     input.addEventListener("change", () => handlers.onCommentChange(key, input.value));
     return input;
+  };
+
+  /** 口座(workspace)ごとのKPIと残高推移。期間フィルタに追随する */
+  const workspacesSection = (): HTMLElement | null => {
+    const summaries = workspaceSummaries(
+      data.snapshots.filter((s) => inPeriod(s.takenAt)),
+      data.transfers.filter((t) => inPeriod(t.transferredAt)),
+    );
+    if (summaries.length === 0) return null;
+    const node = section("workspaces", "口座別サマリー");
+    // minmax(0,1fr)の明示的なカラムにしてSVGの固有幅(viewBox)でカードが広がるのを防ぐ
+    const grid = el("div", "workspace-grid grid grid-cols-1 gap-3 lg:grid-cols-2");
+    for (const summary of summaries) grid.append(workspaceCard(summary));
+    node.append(grid);
+    return node;
   };
 
   const transfersSection = (): HTMLElement => {
@@ -691,7 +903,7 @@ export function renderDashboard(
       return;
     }
 
-    root.append(settingsButton());
+    root.append(settingsButton(), suggestionList());
 
     if (data.snapshots.length === 0 && data.transfers.length === 0) {
       root.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
@@ -701,6 +913,8 @@ export function renderDashboard(
     const latest = latestSnapshot(data.snapshots);
     if (latest !== null) root.append(balancesSection(latest));
     root.append(periodSection());
+    const workspaces = workspacesSection();
+    if (workspaces !== null) root.append(workspaces);
     root.append(transfersSection());
     root.append(changesSection());
     root.append(snapshotsSection());

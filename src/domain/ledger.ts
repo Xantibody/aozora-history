@@ -118,6 +118,66 @@ export interface BalanceChange {
   externalDelta: number;
 }
 
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  /** 期間内最新の残高 */
+  balance: number;
+  /** 期間内の最初のスナップショットからの増減 */
+  delta: number;
+  /** つかいわけ口座間の振替による純増減(入金 − 出金) */
+  transferNet: number;
+  /** 振替で説明できない純増減(給与などの入金、振込などの出金) */
+  externalNet: number;
+  points: BalancePoint[];
+}
+
+/**
+ * 口座(workspace)ごとのKPIサマリー。
+ * 期間で絞り込む場合は絞り込み済みのスナップショット・振替を渡す
+ */
+export function workspaceSummaries(
+  snapshots: BalanceSnapshot[],
+  transfers: TransferRecord[],
+): WorkspaceSummary[] {
+  const changes = detectBalanceChanges(snapshots, transfers);
+  return balanceSeries(snapshots).map((series) => {
+    const first = series.points[0].balance;
+    const last = series.points.at(-1)!.balance;
+    const flows = flowTotals(transfers, series.id);
+    const externalNet = changes
+      .filter((c) => c.accountId === series.id)
+      .reduce((sum, c) => sum + c.externalDelta, 0);
+    return {
+      id: series.id,
+      name: series.name,
+      balance: last,
+      delta: last - first,
+      transferNet: flows.incoming - flows.outgoing,
+      externalNet,
+      points: series.points,
+    };
+  });
+}
+
+/**
+ * コメント欄の入力候補。重複を除き、使用回数の多い順
+ * (同数ならキー末尾のタイムスタンプが新しい順)に並べる
+ */
+export function commentSuggestions(comments: Record<string, string>): string[] {
+  const stats = new Map<string, { count: number; lastAt: number }>();
+  for (const [key, text] of Object.entries(comments)) {
+    const at = Number(key.slice(key.lastIndexOf(":") + 1)) || 0;
+    const entry = stats.get(text) ?? { count: 0, lastAt: 0 };
+    entry.count += 1;
+    entry.lastAt = Math.max(entry.lastAt, at);
+    stats.set(text, entry);
+  }
+  return [...stats.entries()]
+    .toSorted(([, a], [, b]) => b.count - a.count || b.lastAt - a.lastAt)
+    .map(([text]) => text);
+}
+
 /** コメント紐付け用の安定キー */
 export function transferCommentKey(transfer: TransferRecord): string {
   return `transfer:${transfer.transferredAt}`;
