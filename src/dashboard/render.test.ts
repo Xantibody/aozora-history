@@ -7,6 +7,7 @@ import {
   formatSigned,
   formatYen,
   renderDashboard,
+  transfersCsv,
 } from "./render.ts";
 
 const snapshots: BalanceSnapshot[] = [
@@ -68,6 +69,35 @@ function render(root: HTMLElement, d = data(), now?: () => number) {
   const redraw = renderDashboard(root, d, handlers, now);
   return { ...handlers, redraw };
 }
+
+describe("transfersCsv", () => {
+  it("ヘッダー付きで振替を新しい順にCSV化する(Excel向けBOM付き)", () => {
+    const comments = {
+      [`transfer:${transfers[1].transferredAt}`]: { text: "生活費", updatedAt: 1 },
+    };
+
+    const csv = transfersCsv(transfers, comments);
+
+    expect(csv).toBe(
+      "﻿日時,出金口座,入金口座,金額,コメント\r\n" +
+        `${formatDateTime(transfers[0].transferredAt)},01: お財布,02: 積立,5000,\r\n` +
+        `${formatDateTime(transfers[1].transferredAt)},02: 積立,03: 支払い箱,30000,生活費\r\n`,
+    );
+  });
+
+  it("カンマや引用符を含むフィールドはRFC4180形式でエスケープする", () => {
+    const t = {
+      transferredAt: 1,
+      from: { id: "1", name: 'A,B"C' },
+      to: { id: "2", name: "D" },
+      amount: 100,
+    };
+
+    const csv = transfersCsv([t], {});
+
+    expect(csv).toContain('"A,B""C",D,100,');
+  });
+});
 
 describe("formatYen", () => {
   it("カンマ区切りと円記号を付ける", () => {
@@ -704,6 +734,23 @@ describe("renderDashboard", () => {
       expect(link.href.startsWith(prefix)).toBe(true);
       const json = JSON.parse(decodeURIComponent(link.href.slice(prefix.length)));
       expect(json).toEqual({ snapshots, transfers, comments, deletions });
+    });
+
+    it("CSVエクスポートリンクが振替履歴とコメントを含む", () => {
+      const comments = {
+        [`transfer:${transfers[0].transferredAt}`]: { text: "積立へ", updatedAt: 1 },
+      };
+      render(root, data({ comments }));
+      openSettings();
+
+      const link = root.querySelector<HTMLAnchorElement>("a.export-csv")!;
+
+      expect(link.download).toBe("aozora-history.csv");
+      const prefix = "data:text/csv;charset=utf-8,";
+      expect(link.href.startsWith(prefix)).toBe(true);
+      const csv = decodeURIComponent(link.href.slice(prefix.length));
+      expect(csv).toContain("日時,出金口座,入金口座,金額,コメント");
+      expect(csv).toContain("積立へ");
     });
 
     it("JSONファイルを選ぶと内容を渡して結果を表示する", async () => {
