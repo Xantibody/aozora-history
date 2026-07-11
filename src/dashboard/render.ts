@@ -58,36 +58,73 @@ function el(tag: string, className?: string, text?: string): HTMLElement {
 
 // クラス名の先頭は意味を表すマーカー(テストとイベント処理のフック)、
 // 続くTailwindユーティリティが見た目を担う
-const MUTED = "text-sm text-(--muted)";
-const CONTROL = "border border-(--border) bg-(--card-bg)";
-const CELL =
-  "border border-(--border) px-3 py-1.5 text-left tabular-nums whitespace-nowrap max-sm:px-2 max-sm:py-1 max-sm:text-sm";
-const LINK_BUTTON = "cursor-pointer border-none bg-transparent p-0 text-(--accent) underline";
+const MUTED = "text-sm text-slate-500 dark:text-slate-400";
+const FINE_PRINT = "text-xs text-slate-500 dark:text-slate-400";
+const INPUT =
+  "rounded-md bg-white px-2.5 py-1.5 text-sm ring-1 ring-slate-300 focus:ring-2 focus:ring-sky-500 focus:outline-none dark:bg-slate-800 dark:ring-slate-600";
+const BTN =
+  "cursor-pointer rounded-lg text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500";
+const BTN_PRIMARY = `${BTN} bg-sky-600 px-4 py-1.5 font-medium text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400`;
+const BTN_SECONDARY = `${BTN} bg-white ring-1 ring-slate-300 hover:bg-slate-100 dark:bg-slate-800 dark:ring-slate-600 dark:hover:bg-slate-700`;
+const LINK =
+  "cursor-pointer text-sky-700 underline hover:text-sky-900 dark:text-sky-400 dark:hover:text-sky-300";
+const LINK_BUTTON = `${LINK} border-none bg-transparent p-0`;
+// 極性色(WCAG AA検証済み)。符号(+/−)自体が色以外の手掛かりを担う
+const POSITIVE = "text-emerald-700 dark:text-emerald-400";
+const NEGATIVE = "text-rose-700 dark:text-rose-400";
+
+/** 符号付き金額。+(入金)は緑、−(出金)は赤で表示する */
+function signedCell(amount: number): HTMLElement {
+  const cls = amount > 0 ? POSITIVE : amount < 0 ? NEGATIVE : undefined;
+  return el("span", cls, formatSigned(amount));
+}
 
 function section(className: string, title: string): HTMLElement {
-  const node = el("section", className);
-  node.append(el("h2", "mt-8 mb-3 text-[1.1rem] font-bold max-sm:mt-6", title));
+  const node = el(
+    "section",
+    `${className} mt-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 max-sm:p-3 dark:bg-slate-900 dark:ring-slate-800`,
+  );
+  node.append(el("h2", "mb-3 text-base font-semibold", title));
   return node;
 }
 
 type Cell = string | HTMLElement;
 
-/** 画面幅を超える表はラッパー内で横スクロールさせる(モバイル対応) */
-function table(headers: string[], rows: Cell[][]): HTMLElement {
+/**
+ * 画面幅を超える表はラッパー内で横スクロールさせる(モバイル対応)。
+ * numericColsの列は右揃えにして桁を比べやすくする
+ */
+function table(headers: string[], rows: Cell[][], numericCols: number[] = []): HTMLElement {
+  const numeric = new Set(numericCols);
+  const align = (i: number): string => (numeric.has(i) ? "text-right" : "text-left");
   const tableEl = el("table", "w-full border-collapse");
   const thead = el("thead");
-  const headRow = el("tr");
-  headRow.append(...headers.map((h) => el("th", `${CELL} bg-(--card-bg)`, h)));
+  const headRow = el("tr", "border-b border-slate-200 dark:border-slate-700");
+  headRow.append(
+    ...headers.map((h, i) =>
+      el(
+        "th",
+        `px-3 py-2 text-xs font-medium whitespace-nowrap text-slate-500 max-sm:px-2 dark:text-slate-400 ${align(i)}`,
+        h,
+      ),
+    ),
+  );
   thead.append(headRow);
 
   const tbody = el("tbody");
   for (const row of rows) {
-    const tr = el("tr");
-    for (const cell of row) {
-      const td = el("td", CELL);
+    const tr = el(
+      "tr",
+      "border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50",
+    );
+    row.forEach((cell, i) => {
+      const td = el(
+        "td",
+        `px-3 py-2 tabular-nums whitespace-nowrap max-sm:px-2 max-sm:text-sm ${align(i)}`,
+      );
       td.append(cell);
       tr.append(td);
-    }
+    });
     tbody.append(tr);
   }
 
@@ -97,33 +134,52 @@ function table(headers: string[], rows: Cell[][]): HTMLElement {
   return scroll;
 }
 
-const CARD =
-  "rounded-lg border bg-(--card-bg) px-5 py-3 min-w-40 max-sm:min-w-0 max-sm:flex-[1_1_calc(50%-0.25rem)] max-sm:px-3 max-sm:py-2.5";
+const TILE =
+  "rounded-lg px-4 py-3 min-w-36 ring-1 max-sm:min-w-0 max-sm:flex-[1_1_calc(50%-0.25rem)] max-sm:px-3 max-sm:py-2.5";
 
 function balancesSection(snapshot: BalanceSnapshot): HTMLElement {
   const node = section("balances", "現在の残高");
   const list = el("div", "balance-cards flex flex-wrap gap-3 max-sm:gap-2");
-  const balanceCard = (name: string, balance: number, extra: string): HTMLElement => {
-    const card = el("div", extra);
-    card.append(el("div", `account-name ${MUTED}`, name));
+  // スタットタイル。単独表示の大きい数字なので等幅数字にしない(桁揃えの必要がない)
+  const balanceCard = (name: string, balance: number, tile: string, value: string): HTMLElement => {
+    const card = el("div", tile);
     card.append(
-      el("div", "account-balance text-[1.3rem] tabular-nums max-sm:text-lg", formatYen(balance)),
+      el("div", "account-name text-xs font-medium text-slate-500 dark:text-slate-400", name),
+    );
+    card.append(
+      el(
+        "div",
+        `account-balance text-xl font-semibold max-sm:text-lg ${value}`,
+        formatYen(balance),
+      ),
     );
     return card;
   };
   for (const account of snapshot.accounts) {
     list.append(
-      balanceCard(account.name, account.balance, `balance-card ${CARD} border-(--border)`),
+      balanceCard(
+        account.name,
+        account.balance,
+        `balance-card ${TILE} bg-slate-50 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700`,
+        "",
+      ),
     );
   }
   const total = snapshot.accounts.reduce((sum, a) => sum + a.balance, 0);
-  list.append(balanceCard("合計", total, `balance-card total ${CARD} border-(--accent)`));
+  list.append(
+    balanceCard(
+      "合計",
+      total,
+      `balance-card total ${TILE} bg-sky-50 ring-sky-200 dark:bg-sky-950/50 dark:ring-sky-900`,
+      "text-sky-700 dark:text-sky-300",
+    ),
+  );
 
   node.append(list);
   node.append(
     el(
       "p",
-      `updated-at ${MUTED}`,
+      `updated-at mt-2 ${FINE_PRINT}`,
       `最終更新: ${snapshot.updatedAt ?? formatDateTime(snapshot.takenAt)}`,
     ),
   );
@@ -214,10 +270,10 @@ export function renderDashboard(
   };
 
   const periodSection = (): HTMLElement => {
-    const node = el("div", "period mt-6 flex flex-wrap items-center gap-x-6 gap-y-2");
+    const node = el("div", "period mt-5 flex flex-wrap items-center gap-x-6 gap-y-2");
 
     const monthGroup = el("div", "month-nav inline-flex items-center gap-1.5");
-    const monthButton = `${CONTROL} cursor-pointer rounded px-2.5 py-0.5`;
+    const monthButton = `${BTN_SECONDARY} px-2.5 py-1`;
     const prev = el("button", `month-prev ${monthButton}`, "◀");
     prev.title = "前の月";
     prev.addEventListener("click", () => {
@@ -225,7 +281,7 @@ export function renderDashboard(
     });
 
     const monthInput = document.createElement("input");
-    monthInput.className = `${CONTROL} rounded px-2 py-0.5`;
+    monthInput.className = `${INPUT} py-1`;
     monthInput.type = "month";
     monthInput.name = "period-month";
     monthInput.value = monthValue;
@@ -242,7 +298,7 @@ export function renderDashboard(
 
     const detail = el("div", "period-detail inline-flex flex-wrap items-center gap-2");
 
-    const dateInput = `${CONTROL} rounded px-2 py-0.5 text-sm`;
+    const dateInput = `${INPUT} py-1`;
     const fromInput = document.createElement("input");
     fromInput.className = dateInput;
     fromInput.type = "date";
@@ -271,7 +327,7 @@ export function renderDashboard(
     clear.addEventListener("click", () => selectMonth(""));
 
     detail.append(
-      el("span", "period-label text-xs text-(--muted)", "詳細指定:"),
+      el("span", `period-label ${FINE_PRINT}`, "詳細指定:"),
       fromInput,
       el("span", "period-separator", "〜"),
       toInput,
@@ -284,8 +340,9 @@ export function renderDashboard(
   const commentInput = (key: string): HTMLElement => {
     const input = document.createElement("input");
     input.className =
-      "comment w-full min-w-40 rounded border border-transparent bg-transparent px-1.5 py-0.5 text-sm " +
-      "hover:border-(--border) focus:border-(--accent) focus:bg-(--card-bg) focus:outline-none";
+      "comment w-full min-w-40 rounded-md bg-transparent px-1.5 py-0.5 text-sm ring-1 ring-transparent transition-shadow " +
+      "hover:ring-slate-300 focus:bg-white focus:ring-2 focus:ring-sky-500 focus:outline-none " +
+      "dark:hover:ring-slate-600 dark:focus:bg-slate-800";
     input.placeholder = "コメント";
     input.value = data.comments[key] ?? "";
     input.addEventListener("change", () => handlers.onCommentChange(key, input.value));
@@ -300,13 +357,14 @@ export function renderDashboard(
       { id: null, name: "すべて" },
       ...tabAccounts(data),
     ];
-    const tabBase = "tab cursor-pointer rounded-full border px-3.5 py-1 text-sm";
+    const tabBase =
+      "tab cursor-pointer rounded-full px-3.5 py-1 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500";
     for (const def of tabDefs) {
       const tab = el(
         "button",
         def.id === selectedFromId
-          ? `${tabBase} active border-(--accent) bg-(--accent) text-(--on-accent)`
-          : `${tabBase} border-(--border) bg-(--card-bg)`,
+          ? `${tabBase} active bg-sky-600 font-medium text-white dark:bg-sky-500 dark:text-slate-950`
+          : `${tabBase} bg-white ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:ring-slate-700 dark:hover:bg-slate-700`,
         def.name,
       );
       tab.addEventListener("click", () => {
@@ -322,7 +380,7 @@ export function renderDashboard(
       inPeriod(t.transferredAt),
     );
     if (filtered.length === 0) {
-      node.append(el("p", "empty text-(--muted)", "まだ記録がありません"));
+      node.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
       return node;
     }
 
@@ -336,14 +394,18 @@ export function renderDashboard(
     } else {
       const totals = flowTotals(filtered, selectedId);
       summary.append(el("span", "summary-label", "合計:"));
-      summary.append(el("span", summaryItem, `出金 ${formatSigned(-totals.outgoing)}`));
-      summary.append(el("span", summaryItem, `入金 ${formatSigned(totals.incoming)}`));
+      const flowItem = (label: string, amount: number): HTMLElement => {
+        const item = el("span", summaryItem, `${label} `);
+        item.append(signedCell(amount));
+        return item;
+      };
+      summary.append(flowItem("出金", -totals.outgoing), flowItem("入金", totals.incoming));
     }
     node.append(summary);
 
     // 口座を選んでいる間は、その口座から見た入出金を符号付きで表示する
-    const amountCell = (t: TransferRecord): string =>
-      selectedId === null ? formatYen(t.amount) : formatSigned(signedAmountFor(t, selectedId));
+    const amountCell = (t: TransferRecord): Cell =>
+      selectedId === null ? formatYen(t.amount) : signedCell(signedAmountFor(t, selectedId));
 
     const rows = filtered.map((t): Cell[] => [
       formatDateTime(t.transferredAt),
@@ -352,14 +414,16 @@ export function renderDashboard(
       amountCell(t),
       commentInput(transferCommentKey(t)),
     ]);
-    node.append(table(["日時", "出金口座", "入金口座", "金額", "コメント"], rows));
+    node.append(table(["日時", "出金口座", "入金口座", "金額", "コメント"], rows, [3]));
     return node;
   };
 
-  const externalCell = (change: BalanceChange): string => {
+  const externalCell = (change: BalanceChange): Cell => {
     if (change.externalDelta === 0) return "—";
     const kind = change.externalDelta > 0 ? "入金" : "出金";
-    return `${formatSigned(change.externalDelta)}（${kind}）`;
+    const cell = el("span");
+    cell.append(signedCell(change.externalDelta), `（${kind}）`);
+    return cell;
   };
 
   const changesSection = (): HTMLElement => {
@@ -368,18 +432,20 @@ export function renderDashboard(
       .filter((c) => inPeriod(c.toTakenAt))
       .toSorted((a, b) => b.toTakenAt - a.toTakenAt);
     if (changes.length === 0) {
-      node.append(el("p", "empty text-(--muted)", "まだ記録がありません"));
+      node.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
       return node;
     }
     const rows = changes.map((c): Cell[] => [
       formatDateTime(c.toTakenAt),
       c.accountName,
-      formatSigned(c.delta),
-      c.transferDelta === 0 ? "—" : formatSigned(c.transferDelta),
+      signedCell(c.delta),
+      c.transferDelta === 0 ? "—" : signedCell(c.transferDelta),
       externalCell(c),
       commentInput(changeCommentKey(c)),
     ]);
-    node.append(table(["記録日時", "口座", "変動", "うち振替", "外部入出金", "コメント"], rows));
+    node.append(
+      table(["記録日時", "口座", "変動", "うち振替", "外部入出金", "コメント"], rows, [2, 3, 4]),
+    );
     return node;
   };
 
@@ -387,7 +453,7 @@ export function renderDashboard(
     const node = section("snapshots", "残高推移");
     const visible = data.snapshots.filter((s) => inPeriod(s.takenAt));
     if (visible.length === 0) {
-      node.append(el("p", "empty text-(--muted)", "まだ記録がありません"));
+      node.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
       return node;
     }
     const columns = balanceSeries(visible);
@@ -401,7 +467,13 @@ export function renderDashboard(
         }),
       ];
     });
-    node.append(table(["記録日時", ...columns.map((c) => c.name)], rows));
+    node.append(
+      table(
+        ["記録日時", ...columns.map((c) => c.name)],
+        rows,
+        columns.map((_, i) => i + 1),
+      ),
+    );
     return node;
   };
 
@@ -413,10 +485,13 @@ export function renderDashboard(
     value: string,
     type = "text",
   ): [HTMLElement, HTMLInputElement] => {
-    const row = el("label", `sync-field flex flex-col gap-1 ${MUTED}`);
+    const row = el(
+      "label",
+      "sync-field flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300",
+    );
     row.append(el("span", undefined, label));
     const input = document.createElement("input");
-    input.className = `${CONTROL} rounded px-2.5 py-1.5 text-(--input-text)`;
+    input.className = `${INPUT} text-slate-900 dark:text-slate-100`;
     input.type = type;
     input.name = name;
     input.value = value;
@@ -463,12 +538,7 @@ export function renderDashboard(
       draw();
     };
 
-    const button = "cursor-pointer rounded-md border px-4 py-1.5";
-    const save = el(
-      "button",
-      `save-config ${button} border-(--border) bg-(--card-bg)`,
-      "設定を保存",
-    );
+    const save = el("button", `save-config ${BTN_SECONDARY} px-4 py-1.5`, "設定を保存");
     save.addEventListener("click", () => {
       void handlers
         .onSaveSyncConfig({
@@ -481,11 +551,7 @@ export function renderDashboard(
         .then(showStatus);
     });
 
-    const syncNow = el(
-      "button",
-      `sync-now ${button} border-(--accent) bg-(--accent) text-(--on-accent)`,
-      "今すぐ同期",
-    );
+    const syncNow = el("button", `sync-now ${BTN_PRIMARY}`, "今すぐ同期");
     syncNow.addEventListener("click", () => {
       syncStatus = "同期中…";
       draw();
@@ -498,7 +564,7 @@ export function renderDashboard(
 
     if (config !== null) {
       const exportLink = document.createElement("a");
-      exportLink.className = "export-config mt-3 inline-block text-(--accent) underline";
+      exportLink.className = `export-config mt-3 inline-block text-sm ${LINK}`;
       exportLink.download = "aozora-history-sync-config.json";
       exportLink.textContent = "同期設定をエクスポート";
       exportLink.href = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(config))}`;
@@ -531,7 +597,7 @@ export function renderDashboard(
     node.append(
       el(
         "p",
-        `note ${MUTED}`,
+        `note ${FINE_PRINT}`,
         "エクスポートした設定ファイルにはシークレットアクセスキーが平文で含まれる。他端末に取り込んだら削除すること。",
       ),
     );
@@ -547,7 +613,7 @@ export function renderDashboard(
     const node = section("import-export", "インポート / エクスポート");
 
     const exportLink = document.createElement("a");
-    exportLink.className = "export mb-3 inline-block text-(--accent) underline";
+    exportLink.className = `export mb-3 inline-block text-sm ${LINK}`;
     exportLink.download = "aozora-history.json";
     exportLink.textContent = "JSONをエクスポート";
     const ledger = {
@@ -583,7 +649,7 @@ export function renderDashboard(
     node.append(
       el(
         "p",
-        `note ${MUTED}`,
+        `note ${FINE_PRINT}`,
         "R2上のオブジェクトやエクスポートしたファイルと同じ形式のJSONを読み込めます。",
       ),
     );
@@ -605,7 +671,7 @@ export function renderDashboard(
   const settingsButton = (): HTMLElement => {
     const button = el(
       "button",
-      `settings-button ${CONTROL} absolute top-6 right-6 h-10 w-10 cursor-pointer rounded-full text-lg leading-none max-sm:top-4 max-sm:right-3`,
+      "settings-button absolute top-6 right-6 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white text-lg shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 max-sm:top-4 max-sm:right-3 dark:bg-slate-800 dark:ring-slate-700 dark:hover:bg-slate-700",
       "⚙",
     );
     button.title = "設定";
@@ -628,7 +694,7 @@ export function renderDashboard(
     root.append(settingsButton());
 
     if (data.snapshots.length === 0 && data.transfers.length === 0) {
-      root.append(el("p", "empty text-(--muted)", "まだ記録がありません"));
+      root.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
       return;
     }
 
