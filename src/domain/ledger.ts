@@ -241,10 +241,9 @@ export type LogEntry =
  * 振替・外部入出金・残高記録を新しい順の1本の時系列ログに統合する。
  * 残高記録は日カードの従属行なので、同時刻では取引の後ろに置く
  */
-export function logEntries(
-  snapshots: BalanceSnapshot[],
-  transfers: TransferRecord[],
-): LogEntry[] {
+const logRank = (e: LogEntry): number => (e.kind === "snapshot" ? 1 : 0);
+
+export function logEntries(snapshots: BalanceSnapshot[], transfers: TransferRecord[]): LogEntry[] {
   const entries: LogEntry[] = [
     ...transfers.map((t): LogEntry => ({ kind: "transfer", at: t.transferredAt, transfer: t })),
     ...detectBalanceChanges(snapshots, transfers)
@@ -259,8 +258,7 @@ export function logEntries(
       }),
     ),
   ];
-  const rank = (e: LogEntry): number => (e.kind === "snapshot" ? 1 : 0);
-  return entries.toSorted((a, b) => b.at - a.at || rank(a) - rank(b));
+  return entries.toSorted((a, b) => b.at - a.at || logRank(a) - logRank(b));
 }
 
 export function detectBalanceChanges(
