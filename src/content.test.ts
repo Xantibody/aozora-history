@@ -156,6 +156,55 @@ describe("setupContentScript", () => {
       expect(options.map((o) => o.getAttribute("value"))).toEqual(["積立", "家賃"]);
     });
 
+    it("過去のコメントを目に見えるチップとしても表示する(datalist非対応環境向け)", async () => {
+      await store.setComment("transfer:1", "家賃");
+      await store.setComment("transfer:2", "積立");
+
+      await confirmTransfer();
+
+      const chips = [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          "#aozora-history-comment button.suggestion",
+        ),
+      ];
+      expect(chips.map((c) => c.textContent)).toEqual(["積立", "家賃"]);
+    });
+
+    it("チップをタップすると入力欄に反映し、保存で永続化する", async () => {
+      await store.setComment("transfer:1", "家賃");
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      panel.querySelector<HTMLButtonElement>("button.suggestion")!.click();
+      expect(panel.querySelector("input")!.value).toBe("家賃");
+
+      panel.querySelector<HTMLButtonElement>("button.save")!.click();
+      await vi.runAllTimersAsync();
+
+      expect((await store.loadComments())["transfer:42"]).toMatchObject({ text: "家賃" });
+    });
+
+    it("チップは多くても5件に絞る(候補全体はdatalistに残す)", async () => {
+      for (let i = 1; i <= 7; i++) {
+        await store.setComment(`transfer:${i}`, `メモ${i}`);
+      }
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      expect(panel.querySelectorAll("button.suggestion")).toHaveLength(5);
+      const listId = panel.querySelector("input")!.getAttribute("list")!;
+      expect(panel.querySelectorAll(`#${listId} option`)).toHaveLength(7);
+    });
+
+    it("コメントがなければチップの列は出さない", async () => {
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      expect(panel.querySelectorAll("button.suggestion")).toHaveLength(0);
+    });
+
     it("記録に失敗した場合はパネルを出さない", async () => {
       document.body.innerHTML = transferHtml;
       document.querySelector<HTMLInputElement>("input.input-amount")!.value = "";
