@@ -5,6 +5,34 @@ import type { HistoryStore } from "./infrastructure/storage.ts";
 const CONFIRM_BUTTON_ID = "sp-account-account-to-account-confirm";
 const PANEL_ID = "aozora-history-comment";
 
+// ダッシュボードと同じ視覚言語(slate/skyのデザイントークン)。銀行サイトには
+// TailwindがないためHEX値をインラインで当てる
+const PROMPT_THEMES = {
+  light: {
+    surface: "#fff",
+    border: "#e2e8f0", // slate-200
+    text: "#0f172a", // slate-900
+    subtle: "#64748b", // slate-500
+    inputBorder: "#cbd5e1", // slate-300
+    accent: "#0284c7", // sky-600
+    accentText: "#fff",
+    focusRing: "#0ea5e9", // sky-500
+  },
+  dark: {
+    surface: "#020617", // slate-950
+    border: "#1e293b", // slate-800
+    text: "#f1f5f9", // slate-100
+    subtle: "#94a3b8", // slate-400
+    inputBorder: "#475569", // slate-600
+    accent: "#38bdf8", // sky-400
+    accentText: "#020617",
+    focusRing: "#38bdf8",
+  },
+};
+
+/** 候補チップとして見せる件数。残りはdatalist(対応環境のみ)で補う */
+const MAX_SUGGESTION_CHIPS = 5;
+
 /** 銀行サイトのCSSに影響されないよう、スタイルはすべてインラインで当てる */
 function showCommentPrompt(
   doc: Document,
@@ -13,22 +41,54 @@ function showCommentPrompt(
   suggestions: string[],
 ): void {
   doc.getElementById(PANEL_ID)?.remove();
+  const theme =
+    doc.defaultView?.matchMedia?.("(prefers-color-scheme: dark)").matches === true
+      ? PROMPT_THEMES.dark
+      : PROMPT_THEMES.light;
 
   const panel = doc.createElement("div");
   panel.id = PANEL_ID;
   panel.style.cssText =
-    "position:fixed;right:16px;bottom:16px;z-index:2147483647;display:flex;gap:8px;" +
-    "align-items:center;background:#fff;color:#333;border:1px solid #0a6cb3;border-radius:8px;" +
-    "padding:10px 12px;box-shadow:0 4px 12px rgba(0,0,0,.25);font:14px system-ui,sans-serif;";
+    "position:fixed;right:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:10px;" +
+    `width:min(360px,calc(100vw - 32px));box-sizing:border-box;background:${theme.surface};color:${theme.text};` +
+    `border:1px solid ${theme.border};border-radius:14px;padding:12px 14px;` +
+    "box-shadow:0 4px 24px rgba(15,23,42,.18);font:14px -apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans','Noto Sans JP',system-ui,sans-serif;";
 
-  const label = doc.createElement("span");
-  label.textContent = "振替を記録しました。コメント:";
+  const header = doc.createElement("div");
+  header.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;";
+  const title = doc.createElement("span");
+  title.textContent = "振替を記録しました";
+  title.style.cssText = "font-weight:600;";
+
+  const close = doc.createElement("button");
+  close.type = "button";
+  close.className = "close";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "閉じる");
+  close.style.cssText =
+    `font:inherit;font-size:16px;background:none;color:${theme.subtle};border:none;cursor:pointer;` +
+    "width:36px;height:36px;margin:-8px -10px -8px 0;border-radius:9999px;";
+  close.addEventListener("click", () => panel.remove());
+  header.append(title, close);
+
+  const inputRow = doc.createElement("div");
+  inputRow.style.cssText = "display:flex;gap:8px;";
 
   const input = doc.createElement("input");
   input.type = "text";
-  input.placeholder = "例: 家賃";
+  input.placeholder = "コメント";
   input.style.cssText =
-    "font:inherit;color:inherit;background:#fff;border:1px solid #ccc;border-radius:4px;padding:4px 8px;width:12em;";
+    `flex:1;min-width:0;box-sizing:border-box;font:inherit;color:inherit;background:transparent;` +
+    `border:1px solid ${theme.inputBorder};border-radius:8px;padding:8px 12px;min-height:40px;outline:none;`;
+  // 銀行サイトに:focusのCSSを足せないため、リングはイベントで当てる
+  input.addEventListener("focus", () => {
+    input.style.borderColor = theme.focusRing;
+    input.style.boxShadow = `0 0 0 1px ${theme.focusRing}`;
+  });
+  input.addEventListener("blur", () => {
+    input.style.borderColor = theme.inputBorder;
+    input.style.boxShadow = "none";
+  });
   input.addEventListener("keydown", (event) => {
     if ((event as KeyboardEvent).key === "Enter") save.click();
   });
@@ -47,21 +107,36 @@ function showCommentPrompt(
   save.className = "save";
   save.textContent = "保存";
   save.style.cssText =
-    "font:inherit;background:#0a6cb3;color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;";
+    `font:inherit;font-weight:600;background:${theme.accent};color:${theme.accentText};` +
+    "border:none;border-radius:8px;padding:8px 16px;min-height:40px;cursor:pointer;";
   save.addEventListener("click", () => {
     void store.setComment(key, input.value).then(() => panel.remove());
   });
 
-  const close = doc.createElement("button");
-  close.type = "button";
-  close.className = "close";
-  close.textContent = "×";
-  close.setAttribute("aria-label", "閉じる");
-  close.style.cssText =
-    "font:inherit;background:none;color:#888;border:none;cursor:pointer;padding:0 4px;";
-  close.addEventListener("click", () => panel.remove());
+  inputRow.append(input, save);
+  panel.append(header, inputRow, list);
 
-  panel.append(label, input, save, close, list);
+  // datalistが使えないAndroid Firefox向けに、よく使う候補はチップでも見せる
+  if (suggestions.length > 0) {
+    const chips = doc.createElement("div");
+    chips.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;";
+    for (const text of suggestions.slice(0, MAX_SUGGESTION_CHIPS)) {
+      const chip = doc.createElement("button");
+      chip.type = "button";
+      chip.className = "suggestion";
+      chip.textContent = text;
+      chip.style.cssText =
+        `font:inherit;font-size:13px;background:transparent;color:${theme.subtle};` +
+        `border:1px solid ${theme.border};border-radius:9999px;padding:6px 14px;min-height:36px;cursor:pointer;`;
+      chip.addEventListener("click", () => {
+        input.value = text;
+        input.focus();
+      });
+      chips.append(chip);
+    }
+    panel.append(chips);
+  }
+
   doc.body.append(panel);
   input.focus();
 }
