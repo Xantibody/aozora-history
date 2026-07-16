@@ -480,6 +480,95 @@ describe("renderDashboard", () => {
       });
     });
 
+    describe("スワイプ削除 (モバイル)", () => {
+      function touch(
+        el: Element,
+        type: "touchstart" | "touchmove" | "touchend",
+        x: number,
+        y: number,
+      ) {
+        const ev = new Event(type, { bubbles: true });
+        Object.defineProperty(ev, "touches", { value: [{ clientX: x, clientY: y }] });
+        el.dispatchEvent(ev);
+      }
+
+      function swipe(el: Element, dx: number, dy = 0) {
+        touch(el, "touchstart", 200, 300);
+        touch(el, "touchmove", 200 + dx, 300 + dy);
+        touch(el, "touchend", 200 + dx, 300 + dy);
+      }
+
+      function transferRow(): HTMLElement {
+        // 振替行だけがスワイプ削除できる(先頭2行は外部入出金)
+        return [...root.querySelectorAll<HTMLElement>(".log .log-row")].find(
+          (r) => r.querySelector(".swipe-delete") !== null,
+        )!;
+      }
+
+      it("左に大きくスワイプすると削除パネルの分だけ行が滑る", () => {
+        render(root);
+        const row = transferRow();
+
+        swipe(row, -80);
+
+        expect(row.querySelector<HTMLElement>(".swipe-slider")!.style.transform).toBe(
+          "translateX(-72px)",
+        );
+      });
+
+      it("スワイプ量が小さければ元の位置に戻る", () => {
+        render(root);
+        const row = transferRow();
+
+        swipe(row, -20);
+
+        expect(row.querySelector<HTMLElement>(".swipe-slider")!.style.transform).toBe(
+          "translateX(0px)",
+        );
+      });
+
+      it("縦方向の動きが主ならスクロールを優先して滑らせない", () => {
+        render(root);
+        const row = transferRow();
+
+        swipe(row, -80, 200);
+
+        expect(row.querySelector<HTMLElement>(".swipe-slider")!.style.transform).not.toBe(
+          "translateX(-72px)",
+        );
+      });
+
+      it("削除パネルをタップし確認するとハンドラへ振替を渡す", () => {
+        vi.spyOn(window, "confirm").mockReturnValue(true);
+        const { onDeleteTransfer } = render(root);
+        const row = transferRow();
+
+        swipe(row, -80);
+        row.querySelector<HTMLButtonElement>("button.swipe-delete")!.click();
+
+        expect(onDeleteTransfer).toHaveBeenCalledWith(transfers[0]);
+      });
+
+      it("開いた状態の行タップはパネルを閉じるだけでコメント編集を開かない", () => {
+        render(root);
+        const row = transferRow();
+
+        swipe(row, -80);
+        row.querySelector<HTMLElement>(".log-title")!.click();
+
+        expect(row.querySelector<HTMLElement>(".swipe-slider")!.style.transform).toBe(
+          "translateX(0px)",
+        );
+        expect(row.querySelector(".comment-editor")!.classList.contains("hidden")).toBe(true);
+      });
+
+      it("外部入出金と残高記録の行にはスワイプ削除を付けない", () => {
+        render(root);
+
+        expect(root.querySelectorAll(".log .swipe-delete")).toHaveLength(2);
+      });
+    });
+
     describe("振替の削除", () => {
       it("削除ボタンを押し確認するとハンドラへ振替を渡す", () => {
         vi.spyOn(window, "confirm").mockReturnValue(true);

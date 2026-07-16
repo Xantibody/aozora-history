@@ -807,14 +807,101 @@ export function renderDashboard(
     return button;
   };
 
+  // モバイルのスワイプ削除で見せるパネルの幅
+  const SWIPE_PANEL_PX = 72;
+
+  /**
+   * モバイルの左スワイプ削除。行の中身を滑らせて右端の削除パネルを見せる。
+   * settle()はタップがスワイプの後始末(閉じる等)で消費されたかを返す
+   */
+  const attachSwipeDelete = (
+    row: HTMLElement,
+    slider: HTMLElement,
+    t: TransferRecord,
+  ): { settle(): boolean } => {
+    const detail = `${formatDateTime(t.transferredAt)} ${t.from.name} → ${t.to.name} ${formatYen(t.amount)}`;
+    const panel = el(
+      "button",
+      "swipe-delete absolute inset-y-0 right-0 w-[72px] cursor-pointer bg-rose-700 text-[13px] font-semibold text-white sm:hidden dark:bg-rose-400 dark:text-slate-950",
+      "削除",
+    );
+    panel.setAttribute("aria-label", `振替を削除: ${detail}`);
+    panel.addEventListener("click", () => {
+      if (!window.confirm(`この振替の記録を削除しますか?\n${detail}`)) return;
+      handlers.onDeleteTransfer(t);
+      draw();
+    });
+    row.prepend(panel);
+
+    let open = false;
+    let swiped = false;
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let lastDx = 0;
+    const setOffset = (px: number): void => {
+      slider.style.transform = `translateX(${px}px)`;
+    };
+
+    row.addEventListener(
+      "touchstart",
+      (event) => {
+        startX = event.touches[0].clientX;
+        startY = event.touches[0].clientY;
+        dragging = false;
+      },
+      { passive: true },
+    );
+    row.addEventListener(
+      "touchmove",
+      (event) => {
+        const moveX = event.touches[0].clientX - startX;
+        const moveY = event.touches[0].clientY - startY;
+        // 縦方向の動きが主ならページのスクロールを優先する
+        if (!dragging && Math.abs(moveY) > Math.abs(moveX)) return;
+        dragging = true;
+        lastDx = moveX + (open ? -SWIPE_PANEL_PX : 0);
+        setOffset(Math.max(-SWIPE_PANEL_PX, Math.min(0, lastDx)));
+      },
+      { passive: true },
+    );
+    row.addEventListener("touchend", () => {
+      if (!dragging) return;
+      swiped = true;
+      open = lastDx < -SWIPE_PANEL_PX / 2;
+      setOffset(open ? -SWIPE_PANEL_PX : 0);
+    });
+
+    return {
+      settle: () => {
+        if (open) {
+          open = false;
+          swiped = false;
+          setOffset(0);
+          return true;
+        }
+        if (swiped) {
+          swiped = false;
+          return true;
+        }
+        return false;
+      },
+    };
+  };
+
   /** 振替・外部入出金の1行。モバイルは行タップでコメント入力を展開する */
   const transactionRow = (e: Extract<LogEntry, { kind: "transfer" | "external" }>): HTMLElement => {
     const key = e.kind === "transfer" ? transferCommentKey(e.transfer) : changeCommentKey(e.change);
     const accent =
       e.kind === "transfer" ? ACCENT.transfer : e.change.externalDelta > 0 ? ACCENT.in : ACCENT.out;
 
-    const row = el("div", "log-row group flex items-stretch");
-    row.append(el("span", `accent w-1 shrink-0 ${accent}`));
+    const row = el("div", "log-row group relative overflow-hidden");
+    // スワイプ削除のパネルを覆えるよう、行の中身はカードと同じ面に載せて滑らせる
+    const slider = el(
+      "div",
+      "swipe-slider relative flex items-stretch bg-white transition-transform duration-150 dark:bg-slate-950",
+    );
+    slider.append(el("span", `accent w-1 shrink-0 ${accent}`));
 
     const col = el("div", "min-w-0 flex-1");
     const main = el(
@@ -873,15 +960,20 @@ export function renderDashboard(
     );
     editor.append(mobileInput);
     col.append(editor);
+    slider.append(col);
+    row.append(slider);
+
+    const swipe = e.kind === "transfer" ? attachSwipeDelete(row, slider, e.transfer) : null;
 
     row.addEventListener("click", (event) => {
+      // スワイプで開いた行のタップは閉じる操作。編集の展開と混ざらないようにする
+      if (swipe?.settle() === true) return;
       const target = event.target;
       if (target instanceof Element && target.closest("input,button,a,select") !== null) return;
       editor.classList.toggle("hidden");
       if (!editor.classList.contains("hidden")) mobileInput.focus();
     });
 
-    row.append(col);
     return row;
   };
 
