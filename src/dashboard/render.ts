@@ -1,23 +1,18 @@
 import type { AccountRef } from "../domain/parser.ts";
 import {
-  type BalanceChange,
   type BalancePoint,
   type BalanceSnapshot,
-  balanceSeries,
   changeCommentKey,
   commentSuggestions,
   commentText,
-  detectBalanceChanges,
-  destinationTotals,
-  flowTotals,
   latestRecordAt,
   latestSnapshot,
-  signedAmountFor,
+  type LogEntry,
+  logEntries,
   sortTransfersDesc,
   totalBalancePoints,
   transferCommentKey,
   type TransferRecord,
-  transfersInvolving,
   type WorkspaceSummary,
   workspaceSummaries,
 } from "../domain/ledger.ts";
@@ -59,6 +54,29 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export function formatDateTime(epochMs: number): string {
   const d = new Date(epochMs);
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatTime(epochMs: number): string {
+  const d = new Date(epochMs);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatShortDateTime(epochMs: number): string {
+  const d = new Date(epochMs);
+  return `${d.getMonth() + 1}/${d.getDate()} ${formatTime(epochMs)}`;
+}
+
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+function formatDayHeading(epochMs: number): string {
+  const d = new Date(epochMs);
+  return `${d.getMonth() + 1}月${d.getDate()}日（${WEEKDAYS[d.getDay()]}）`;
+}
+
+/** 日付グループ用のキー。ローカル時刻の暦日で区切る */
+function localDayKey(epochMs: number): string {
+  const d = new Date(epochMs);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function csvField(value: string): string {
@@ -105,6 +123,8 @@ const LINK_BUTTON = `${LINK} border-none bg-transparent p-0`;
 // 極性色(WCAG AA検証済み)。符号(+/−)自体が色以外の手掛かりを担う
 const POSITIVE = "text-emerald-700 dark:text-emerald-400";
 const NEGATIVE = "text-rose-700 dark:text-rose-400";
+// ログ行・日カード・KPIカードの共通の面
+const CARD = "rounded-[14px] bg-white ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-800";
 
 /** 符号付き金額。+(入金)は緑、−(出金)は赤で表示する */
 function signedCell(amount: number): HTMLElement {
@@ -119,52 +139,6 @@ function section(className: string, title: string): HTMLElement {
   );
   node.append(el("h2", "mb-3 text-base font-semibold", title));
   return node;
-}
-
-type Cell = string | HTMLElement;
-
-/**
- * 画面幅を超える表はラッパー内で横スクロールさせる(モバイル対応)。
- * numericColsの列は右揃えにして桁を比べやすくする
- */
-function table(headers: string[], rows: Cell[][], numericCols: number[] = []): HTMLElement {
-  const numeric = new Set(numericCols);
-  const align = (i: number): string => (numeric.has(i) ? "text-right" : "text-left");
-  const tableEl = el("table", "w-full border-collapse");
-  const thead = el("thead");
-  const headRow = el("tr", "border-b border-slate-200 dark:border-slate-700");
-  headRow.append(
-    ...headers.map((h, i) =>
-      el(
-        "th",
-        `px-3 py-2 text-xs font-medium whitespace-nowrap text-slate-500 max-sm:px-2 dark:text-slate-400 ${align(i)}`,
-        h,
-      ),
-    ),
-  );
-  thead.append(headRow);
-
-  const tbody = el("tbody");
-  for (const row of rows) {
-    const tr = el(
-      "tr",
-      "border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50",
-    );
-    row.forEach((cell, i) => {
-      const td = el(
-        "td",
-        `px-3 py-2 tabular-nums whitespace-nowrap max-sm:px-2 max-sm:text-sm ${align(i)}`,
-      );
-      td.append(cell);
-      tr.append(td);
-    });
-    tbody.append(tr);
-  }
-
-  tableEl.append(thead, tbody);
-  const scroll = el("div", "table-scroll overflow-x-auto");
-  scroll.append(tableEl);
-  return scroll;
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -187,7 +161,8 @@ const CHART = { width: 640, height: 160, left: 8, right: 76, top: 16, bottom: 22
 /**
  * 残高推移の折れ線。系列は1つなので凡例は置かずアクセント1色
  * (ライト・ダーク両面で検証済みのsky-600)で描く。各点の値はホバーの
- * <title>と「残高推移」の表でも読めるため、直接ラベルは終端の1つに絞る
+ * <title>と推移タブのスナップショット一覧でも読めるため、直接ラベルは
+ * 終端の1つに絞る
  */
 function balanceChart(points: BalancePoint[]): SVGElement {
   const { width, height, left, right, top, bottom } = CHART;
@@ -208,7 +183,7 @@ function balanceChart(points: BalancePoint[]): SVGElement {
   const svg = svgEl(
     "svg",
     { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "残高推移" },
-    "balance-chart mt-3 w-full text-sky-600",
+    "balance-chart mt-3 w-full text-sky-600 dark:text-sky-400",
   );
 
   // 罫線は面から1段ずらしたヘアライン
@@ -267,7 +242,7 @@ function balanceChart(points: BalancePoint[]): SVGElement {
         fill: "currentColor",
         "stroke-width": "2",
       },
-      "chart-end stroke-slate-50 dark:stroke-slate-800",
+      "chart-end stroke-white dark:stroke-slate-950",
     ),
   );
 
@@ -307,99 +282,67 @@ function balanceChart(points: BalancePoint[]): SVGElement {
   return svg;
 }
 
-function workspaceKpi(cls: string, label: string, value: HTMLElement): HTMLElement {
-  const box = el("div", `kpi ${cls}`);
-  box.append(el("div", "text-xs font-medium text-slate-500 dark:text-slate-400", label));
-  box.append(value);
-  return box;
+/**
+ * ヘッダーと口座カード用の小さな折れ線(120×36)。値はラベルにせず
+ * 形だけ見せる(正確な値は推移タブ・口座カードの数字で読める)
+ */
+function sparkline(points: BalancePoint[], className: string): SVGElement {
+  const W = 120;
+  const H = 36;
+  const PAD = 5;
+  const t0 = points[0].takenAt;
+  const tN = points.at(-1)!.takenAt;
+  const balances = points.map((p) => p.balance);
+  const min = Math.min(...balances);
+  const max = Math.max(...balances);
+  const x = (t: number): number => (tN === t0 ? PAD : PAD + ((t - t0) / (tN - t0)) * (W - PAD * 2));
+  const y = (b: number): number =>
+    max === min ? H / 2 : H - PAD - ((b - min) / (max - min)) * (H - PAD * 2);
+
+  const svg = svgEl(
+    "svg",
+    { viewBox: `0 0 ${W} ${H}`, "aria-hidden": "true" },
+    `${className} h-9 w-[120px] shrink-0`,
+  );
+  svg.append(
+    svgEl("polyline", {
+      points: points.map((p) => `${x(p.takenAt)},${y(p.balance)}`).join(" "),
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "2",
+      "stroke-linejoin": "round",
+      "stroke-linecap": "round",
+    }),
+    svgEl("circle", {
+      cx: String(x(tN)),
+      cy: String(y(points.at(-1)!.balance)),
+      r: "3",
+      fill: "currentColor",
+    }),
+  );
+  return svg;
 }
 
-function workspaceCard(summary: WorkspaceSummary): HTMLElement {
-  const card = el(
-    "div",
-    "workspace-card rounded-lg bg-slate-50 p-4 ring-1 ring-slate-200 max-sm:p-3 dark:bg-slate-800/60 dark:ring-slate-700",
-  );
-  card.append(el("h3", "workspace-name mb-2 text-sm font-semibold", summary.name));
+// 口座色(ドット・スパークライン用)。口座IDのハッシュで安定して割り当てる
+const ACCOUNT_COLORS = [
+  { dot: "bg-sky-600 dark:bg-sky-400", line: "text-sky-600 dark:text-sky-400" },
+  { dot: "bg-amber-600 dark:bg-amber-400", line: "text-amber-600 dark:text-amber-400" },
+  { dot: "bg-emerald-600 dark:bg-emerald-400", line: "text-emerald-600 dark:text-emerald-400" },
+  { dot: "bg-indigo-600 dark:bg-indigo-400", line: "text-indigo-600 dark:text-indigo-400" },
+];
 
-  const balance = el("div");
-  balance.append(el("div", "text-xl font-semibold max-sm:text-lg", formatYen(summary.balance)));
-  const delta = el("div", "kpi-delta mt-0.5 text-xs");
-  delta.append(el("span", "text-slate-500 dark:text-slate-400", "期間内 "));
-  delta.append(signedCell(summary.delta));
-  balance.append(delta);
-
-  const flowValue = (amount: number): HTMLElement => {
-    const value = el("div", "text-base font-medium max-sm:text-sm");
-    value.append(signedCell(amount));
-    return value;
-  };
-
-  const kpis = el("div", "kpis flex flex-wrap gap-x-8 gap-y-2");
-  kpis.append(
-    workspaceKpi("kpi-balance", "残高", balance),
-    workspaceKpi("kpi-transfer", "振替", flowValue(summary.transferNet)),
-    workspaceKpi("kpi-external", "外部入出金", flowValue(summary.externalNet)),
-  );
-  card.append(kpis);
-
-  if (summary.points.length >= 2) card.append(balanceChart(summary.points));
-  return card;
+function accountColor(id: string): (typeof ACCOUNT_COLORS)[number] {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return ACCOUNT_COLORS[hash % ACCOUNT_COLORS.length];
 }
 
-const TILE =
-  "rounded-lg px-4 py-3 min-w-36 ring-1 max-sm:min-w-0 max-sm:flex-[1_1_calc(50%-0.25rem)] max-sm:px-3 max-sm:py-2.5";
-
-function balancesSection(snapshot: BalanceSnapshot): HTMLElement {
-  const node = section("balances", "現在の残高");
-  const list = el("div", "balance-cards flex flex-wrap gap-3 max-sm:gap-2");
-  // スタットタイル。単独表示の大きい数字なので等幅数字にしない(桁揃えの必要がない)
-  const balanceCard = (name: string, balance: number, tile: string, value: string): HTMLElement => {
-    const card = el("div", tile);
-    card.append(
-      el("div", "account-name text-xs font-medium text-slate-500 dark:text-slate-400", name),
-    );
-    card.append(
-      el(
-        "div",
-        `account-balance text-xl font-semibold max-sm:text-lg ${value}`,
-        formatYen(balance),
-      ),
-    );
-    return card;
-  };
-  for (const account of snapshot.accounts) {
-    list.append(
-      balanceCard(
-        account.name,
-        account.balance,
-        `balance-card ${TILE} bg-slate-50 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700`,
-        "",
-      ),
-    );
-  }
-  const total = snapshot.accounts.reduce((sum, a) => sum + a.balance, 0);
-  list.append(
-    balanceCard(
-      "合計",
-      total,
-      `balance-card total ${TILE} bg-sky-50 ring-sky-200 dark:bg-sky-950/50 dark:ring-sky-900`,
-      "text-sky-700 dark:text-sky-300",
-    ),
-  );
-
-  node.append(list);
-  node.append(
-    el(
-      "p",
-      `updated-at mt-2 ${FINE_PRINT}`,
-      `最終更新: ${snapshot.updatedAt ?? formatDateTime(snapshot.takenAt)}`,
-    ),
-  );
-  return node;
+function accountDot(id: string, sizing = "h-2 w-2"): HTMLElement {
+  return el("span", `dot ${sizing} shrink-0 rounded-full ${accountColor(id).dot}`);
 }
 
-/** タブに出す口座一覧。最新スナップショットの並びを基本に、振替にしか現れない口座を補う */
-function tabAccounts(data: DashboardData): AccountRef[] {
+/** フィルタに出す口座一覧。最新スナップショットの並びを基本に、振替にしか現れない口座を補う */
+function accountsOf(data: DashboardData): AccountRef[] {
   const accounts: AccountRef[] = [];
   const seen = new Set<string>();
   const latest = latestSnapshot(data.snapshots);
@@ -444,25 +387,34 @@ function currentMonth(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
 }
 
+/** 記録がこれだけ止まっていたら、銀行サイトの変更に追従できていない可能性を警告する */
+const STALE_AFTER_MS = 7 * DAY_MS;
+
+type ViewTab = "log" | "accounts" | "history";
+type LogFilter = "all" | "transfer" | "in" | "out";
+
 /**
  * ダッシュボードを描画する。戻り値の再描画関数は選択中のタブや期間などの
  * UI状態を保ったまま、dataの現在の内容を描き直す(自動更新用)
  */
-/** 記録がこれだけ止まっていたら、銀行サイトの変更に追従できていない可能性を警告する */
-const STALE_AFTER_MS = 7 * DAY_MS;
-
 export function renderDashboard(
   root: HTMLElement,
   data: DashboardData,
   handlers: DashboardHandlers,
   now: () => number = Date.now,
 ): () => void {
-  let selectedFromId: string | null = null;
+  let view: "dashboard" | "settings" = "dashboard";
+  let activeTab: ViewTab = "log";
+  let logFilter: LogFilter = "all";
+  let filterAccountId: string | null = null;
+  let detailOpen = false;
   let periodFrom: number | null = null;
   let periodToExclusive: number | null = null;
   let periodFromValue = "";
   let periodToValue = "";
   let monthValue = "";
+  let syncStatus = "";
+  let importStatus = "";
 
   const inPeriod = (ms: number): boolean => {
     if (periodFrom !== null && ms < periodFrom) return false;
@@ -489,34 +441,46 @@ export function renderDashboard(
     draw();
   };
 
-  const periodSection = (): HTMLElement => {
-    const node = el("div", "period mt-5 flex flex-wrap items-center gap-x-6 gap-y-2");
+  /** ◀ 月 ▶ のナビ。詳細指定を開くと日付範囲の入力に切り替えられる */
+  const monthNav = (): HTMLElement => {
+    const node = el("div", "period flex flex-wrap items-center gap-x-1 gap-y-2 pt-3 pb-2");
 
-    const monthGroup = el("div", "month-nav inline-flex items-center gap-1.5");
-    const monthButton = `${BTN_SECONDARY} px-2.5 py-1`;
-    const prev = el("button", `month-prev ${monthButton}`, "◀");
+    const roundButton =
+      "shrink-0 cursor-pointer rounded-full bg-white text-[13px] text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 max-sm:h-11 max-sm:w-11 sm:h-9 sm:w-9 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-800 dark:hover:bg-slate-800";
+    const prev = el("button", `month-prev ${roundButton}`, "◀");
     prev.title = "前の月";
     prev.addEventListener("click", () => {
       selectMonth(shiftMonth(monthValue === "" ? currentMonth() : monthValue, -1));
     });
 
     const monthInput = document.createElement("input");
-    monthInput.className = `${INPUT} py-1`;
+    monthInput.className =
+      "month-input flex-1 cursor-pointer border-none bg-transparent text-center text-[15px] font-semibold tabular-nums focus:outline-2 focus:outline-sky-500 sm:max-w-44 sm:flex-none";
     monthInput.type = "month";
     monthInput.name = "period-month";
     monthInput.value = monthValue;
+    monthInput.title = "表示月(空欄は全期間)";
     monthInput.addEventListener("change", () => selectMonth(monthInput.value));
 
-    const next = el("button", `month-next ${monthButton}`, "▶");
+    const next = el("button", `month-next ${roundButton}`, "▶");
     next.title = "次の月";
     next.addEventListener("click", () => {
       selectMonth(shiftMonth(monthValue === "" ? currentMonth() : monthValue, 1));
     });
 
-    monthGroup.append(prev, monthInput, next);
-    node.append(el("span", `period-label ${MUTED}`, "表示月:"), monthGroup);
+    const toggle = el("button", `period-detail-toggle ${LINK_BUTTON} ml-1 text-[13px]`, "詳細指定");
+    toggle.setAttribute("aria-expanded", String(detailOpen));
+    toggle.addEventListener("click", () => {
+      detailOpen = !detailOpen;
+      draw();
+    });
 
-    const detail = el("div", "period-detail inline-flex flex-wrap items-center gap-2");
+    node.append(prev, monthInput, next, toggle);
+
+    const detail = el(
+      "div",
+      `period-detail w-full flex-wrap items-center gap-2 ${detailOpen ? "flex" : "hidden"}`,
+    );
 
     const dateInput = `${INPUT} py-1`;
     const fromInput = document.createElement("input");
@@ -547,40 +511,13 @@ export function renderDashboard(
     clear.addEventListener("click", () => selectMonth(""));
 
     detail.append(
-      el("span", `period-label ${FINE_PRINT}`, "詳細指定:"),
+      el("span", `period-label ${FINE_PRINT}`, "期間:"),
       fromInput,
       el("span", "period-separator", "〜"),
       toInput,
       clear,
     );
     node.append(detail);
-    return node;
-  };
-
-  /** 最終記録・最終同期の時刻。記録が止まっていたら警告も出す */
-  const freshnessSection = (latest: number): HTMLElement => {
-    const node = el("div", `freshness mt-1 flex flex-wrap gap-x-4 gap-y-1 ${FINE_PRINT}`);
-    node.append(el("span", "latest-record", `最終記録: ${formatDateTime(latest)}`));
-    if (data.syncConfig !== null) {
-      node.append(
-        el(
-          "span",
-          "last-synced",
-          data.lastSyncedAt === null
-            ? "最終同期: まだ同期していません"
-            : `最終同期: ${formatDateTime(data.lastSyncedAt)}`,
-        ),
-      );
-    }
-    if (now() - latest > STALE_AFTER_MS) {
-      node.append(
-        el(
-          "span",
-          "stale-warning font-medium text-amber-700 dark:text-amber-400",
-          "⚠ 7日以上記録が増えていません。銀行サイトを見ても記録されない場合、サイトの変更に拡張が追従できていない可能性があります",
-        ),
-      );
-    }
     return node;
   };
 
@@ -597,10 +534,10 @@ export function renderDashboard(
     return list;
   };
 
-  const commentInput = (key: string): HTMLElement => {
+  const commentInput = (key: string): HTMLInputElement => {
     const input = document.createElement("input");
     input.className =
-      "comment w-full min-w-40 rounded-md bg-transparent px-1.5 py-0.5 text-sm ring-1 ring-transparent transition-shadow " +
+      "comment w-full min-w-0 rounded-md bg-transparent px-1.5 py-0.5 text-sm ring-1 ring-transparent transition-shadow " +
       "hover:ring-slate-300 focus:bg-white focus:ring-2 focus:ring-sky-500 focus:outline-none " +
       "dark:hover:ring-slate-600 dark:focus:bg-slate-800";
     input.placeholder = "コメント";
@@ -610,183 +547,559 @@ export function renderDashboard(
     return input;
   };
 
-  /** 口座(workspace)ごとのKPIと残高推移。期間フィルタに追随する */
-  const workspacesSection = (): HTMLElement | null => {
+  /** ヘッダー右上の鮮度表示。記録が止まっていたら同期表示の位置に警告を出す */
+  const freshness = (latest: number): HTMLElement => {
+    const node = el("span", "freshness text-right text-[11px] text-slate-500 dark:text-slate-400");
+    if (now() - latest > STALE_AFTER_MS) {
+      const warning = el(
+        "span",
+        "stale-warning font-medium text-amber-700 dark:text-amber-400",
+        "⚠ 7日以上記録が増えていません",
+      );
+      warning.title =
+        "銀行サイトを見ても記録されない場合、サイトの変更に拡張が追従できていない可能性があります";
+      node.append(warning);
+      return node;
+    }
+    node.append(
+      el("span", "latest-record max-sm:hidden", `最終記録 ${formatShortDateTime(latest)}`),
+    );
+    if (data.syncConfig !== null) {
+      node.append(el("span", "freshness-separator max-sm:hidden", " · "));
+      node.append(
+        el(
+          "span",
+          "last-synced",
+          data.lastSyncedAt === null
+            ? "まだ同期していません"
+            : `同期済 ${formatShortDateTime(data.lastSyncedAt)}`,
+        ),
+      );
+    }
+    return node;
+  };
+
+  const settingsButton = (): HTMLElement => {
+    const button = el(
+      "button",
+      "settings-button flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-slate-50 text-base ring-1 ring-slate-200 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 max-sm:h-11 max-sm:w-11 sm:h-10 sm:w-10 dark:bg-slate-900 dark:ring-slate-700 dark:hover:bg-slate-800",
+      "⚙",
+    );
+    button.title = "設定";
+    button.setAttribute("aria-label", "設定");
+    button.addEventListener("click", () => {
+      view = "settings";
+      draw();
+    });
+    return button;
+  };
+
+  /** 期間の増減ラベル。「7月 +272,520円」のように月名または期間の種類を添える */
+  const periodLabel = (): string => {
+    if (monthValue !== "") {
+      const [, m] = monthValue.split("-").map(Number);
+      return `${m}月`;
+    }
+    if (periodFrom !== null || periodToExclusive !== null) return "期間内";
+    return "全期間";
+  };
+
+  const TABS: { key: ViewTab; label: string }[] = [
+    { key: "log", label: "ログ" },
+    { key: "accounts", label: "口座別" },
+    { key: "history", label: "推移" },
+  ];
+
+  const viewTabs = (): HTMLElement => {
+    const tabs = el("div", "view-tabs flex gap-4 sm:gap-5");
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "表示切り替え");
+    const tabBase =
+      "view-tab min-h-11 cursor-pointer border-b-2 bg-transparent px-0.5 pt-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500";
+    for (const def of TABS) {
+      const selected = def.key === activeTab;
+      const tab = el(
+        "button",
+        selected
+          ? `${tabBase} active border-sky-600 font-semibold text-slate-900 dark:border-sky-400 dark:text-slate-100`
+          : `${tabBase} border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200`,
+        def.label,
+      );
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", String(selected));
+      tab.addEventListener("click", () => {
+        activeTab = def.key;
+        draw();
+      });
+      tabs.append(tab);
+    }
+    return tabs;
+  };
+
+  /** ヘッダー: タイトル・鮮度・合計残高とスパークライン・タブ */
+  const header = (): HTMLElement => {
+    const node = el(
+      "header",
+      "dashboard-header border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950",
+    );
+    const inner = el("div", "mx-auto max-w-[760px] px-4 pt-3 sm:px-6 sm:pt-4");
+    node.append(inner);
+
+    const latest = latestRecordAt(data.snapshots, data.transfers);
+
+    const row = el("div", "flex items-center justify-between gap-3");
+    row.append(el("h1", "text-[15px] font-bold sm:text-base", "つかいわけ口座"));
+    const side = el("div", "flex items-center gap-2 sm:gap-3");
+    if (latest !== null) side.append(freshness(latest));
+    side.append(settingsButton());
+    row.append(side);
+    inner.append(row);
+
+    if (latest === null) {
+      inner.append(el("div", "pb-3"));
+      return node;
+    }
+
+    const visible = data.snapshots.filter((s) => inPeriod(s.takenAt));
+    const totals = totalBalancePoints(visible);
+    const summary = el("div", "total-summary pt-1 pb-3");
+
+    const label = el("div", FINE_PRINT);
+    label.append(`合計残高 · ${periodLabel()} `);
+    const delta = totals.length === 0 ? 0 : totals.at(-1)!.balance - totals[0].balance;
+    const deltaCell = signedCell(delta);
+    deltaCell.classList.add("total-delta", "font-semibold", "tabular-nums");
+    label.append(deltaCell);
+    summary.append(label);
+
+    // 大きい数字は期間内最新の合計。期間を絞っていなければ現在の合計と一致する
+    const total = totals.at(-1) ?? totalBalancePoints(data.snapshots).at(-1);
+    if (total !== undefined) {
+      const balanceRow = el("div", "flex items-end justify-between gap-3");
+      const big = el(
+        "div",
+        "total-balance text-3xl font-bold tracking-tight tabular-nums sm:text-[34px]",
+        total.balance.toLocaleString("ja-JP"),
+      );
+      big.append(el("span", "text-[15px] font-medium sm:text-[17px]", "円"));
+      balanceRow.append(big);
+      if (totals.length >= 2) {
+        balanceRow.append(sparkline(totals, "total-sparkline text-sky-600 dark:text-sky-400"));
+      }
+      summary.append(balanceRow);
+    }
+    inner.append(summary, viewTabs());
+    return node;
+  };
+
+  // ---- ログタブ ----
+
+  const FILTERS: { key: LogFilter; label: string }[] = [
+    { key: "all", label: "すべて" },
+    { key: "transfer", label: "振替" },
+    { key: "in", label: "入金" },
+    { key: "out", label: "出金" },
+  ];
+
+  const chipBase =
+    "min-h-9 shrink-0 cursor-pointer rounded-full px-3.5 text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500";
+  const chipOn = "bg-slate-900 font-semibold text-white dark:bg-sky-400 dark:text-slate-950";
+  const chipOff =
+    "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-800 dark:hover:bg-slate-800";
+
+  const filterChips = (): HTMLElement => {
+    const row = el("div", "log-filters flex gap-1.5 overflow-x-auto pb-2");
+    for (const def of FILTERS) {
+      const active = logFilter === def.key;
+      const chip = el(
+        "button",
+        `filter-${def.key} ${chipBase} ${active ? `active ${chipOn}` : chipOff}`,
+        def.label,
+      );
+      chip.setAttribute("aria-pressed", String(active));
+      chip.addEventListener("click", () => {
+        logFilter = def.key;
+        draw();
+      });
+      row.append(chip);
+    }
+
+    // 口座での絞り込み。チップ列の見た目に合わせたセレクト
+    const select = document.createElement("select");
+    select.className = `account-filter ${chipBase} appearance-none ${
+      filterAccountId === null ? chipOff : `active ${chipOn}`
+    }`;
+    select.name = "account-filter";
+    select.setAttribute("aria-label", "口座で絞り込み");
+    select.append(new Option("口座 ▾", ""));
+    for (const account of accountsOf(data)) {
+      select.append(new Option(account.name, account.id));
+    }
+    select.value = filterAccountId ?? "";
+    select.addEventListener("change", () => {
+      filterAccountId = select.value === "" ? null : select.value;
+      draw();
+    });
+    row.append(select);
+    return row;
+  };
+
+  const matchesLog = (e: LogEntry): boolean => {
+    if (!inPeriod(e.at)) return false;
+    switch (e.kind) {
+      case "transfer":
+        if (logFilter === "in" || logFilter === "out") return false;
+        return (
+          filterAccountId === null ||
+          e.transfer.from.id === filterAccountId ||
+          e.transfer.to.id === filterAccountId
+        );
+      case "external":
+        if (logFilter === "transfer") return false;
+        if (logFilter === "in" && e.change.externalDelta < 0) return false;
+        if (logFilter === "out" && e.change.externalDelta > 0) return false;
+        return filterAccountId === null || e.change.accountId === filterAccountId;
+      case "snapshot":
+        // 記録行は従属情報。何かで絞り込んでいる間はノイズになるため出さない
+        return logFilter === "all" && filterAccountId === null;
+    }
+  };
+
+  // 左端のアクセントバー。種類が色以外でも読めるよう、本文の矢印表記が向きを担う
+  const ACCENT = {
+    transfer: "bg-sky-600 dark:bg-sky-400",
+    in: "bg-emerald-600 dark:bg-emerald-400",
+    out: "bg-rose-700 dark:bg-rose-400",
+  };
+
+  const strongName = (name: string): HTMLElement => el("strong", "font-semibold", name);
+
+  const logTitle = (e: Extract<LogEntry, { kind: "transfer" | "external" }>): HTMLElement => {
+    const title = el("div", "log-title text-[15px] leading-snug");
+    if (e.kind === "transfer") {
+      title.append(strongName(e.transfer.from.name), " → ", strongName(e.transfer.to.name));
+    } else if (e.change.externalDelta > 0) {
+      title.append("外部 → ", strongName(e.change.accountName));
+    } else {
+      title.append(strongName(e.change.accountName), " → 外部");
+    }
+    return title;
+  };
+
+  /** 誤記録(確認後のキャンセルなど)を取り除くための削除ボタン(デスクトップはホバーで表示) */
+  const deleteButton = (t: TransferRecord): HTMLElement => {
+    const button = el(
+      "button",
+      "delete-transfer cursor-pointer rounded px-1.5 text-slate-400 opacity-0 transition-opacity " +
+        "group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-700 " +
+        "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 " +
+        "max-sm:hidden dark:hover:bg-rose-950 dark:hover:text-rose-400",
+      "×",
+    );
+    const detail = `${formatDateTime(t.transferredAt)} ${t.from.name} → ${t.to.name} ${formatYen(t.amount)}`;
+    button.title = "この振替を削除";
+    button.setAttribute("aria-label", `振替を削除: ${detail}`);
+    button.addEventListener("click", () => {
+      if (!window.confirm(`この振替の記録を削除しますか?\n${detail}`)) return;
+      handlers.onDeleteTransfer(t);
+      draw();
+    });
+    return button;
+  };
+
+  /** 振替・外部入出金の1行。モバイルは行タップでコメント入力を展開する */
+  const transactionRow = (e: Extract<LogEntry, { kind: "transfer" | "external" }>): HTMLElement => {
+    const key = e.kind === "transfer" ? transferCommentKey(e.transfer) : changeCommentKey(e.change);
+    const accent =
+      e.kind === "transfer" ? ACCENT.transfer : e.change.externalDelta > 0 ? ACCENT.in : ACCENT.out;
+
+    const row = el("div", "log-row group flex items-stretch");
+    row.append(el("span", `accent w-1 shrink-0 ${accent}`));
+
+    const col = el("div", "min-w-0 flex-1");
+    const main = el(
+      "div",
+      "flex min-h-14 items-center gap-3 py-2 pr-3 pl-3.5 sm:min-h-[52px] sm:pl-3",
+    );
+
+    // デスクトップは時刻を左の列に出す(モバイルはサブ行)
+    main.append(
+      el(
+        "span",
+        "time w-[38px] shrink-0 text-xs tabular-nums text-slate-400 max-sm:hidden",
+        formatTime(e.at),
+      ),
+    );
+
+    const body = el("div", "min-w-0 flex-1");
+    body.append(logTitle(e));
+    const comment = commentText(data.comments, key);
+    body.append(
+      el(
+        "div",
+        "subline truncate text-xs text-slate-500 sm:hidden dark:text-slate-400",
+        comment === "" ? formatTime(e.at) : `${formatTime(e.at)} · ${comment}`,
+      ),
+    );
+    main.append(body);
+
+    // デスクトップは常時インラインで編集できる
+    const inline = commentInput(key);
+    inline.classList.add("max-sm:hidden", "sm:w-[220px]", "shrink-0");
+    main.append(inline);
+
+    const amount =
+      e.kind === "transfer"
+        ? el("span", "amount text-base font-bold tabular-nums", formatYen(e.transfer.amount))
+        : el(
+            "span",
+            `amount text-base font-bold tabular-nums ${e.change.externalDelta > 0 ? POSITIVE : NEGATIVE}`,
+            formatSigned(e.change.externalDelta),
+          );
+    main.append(amount);
+
+    if (e.kind === "transfer") main.append(deleteButton(e.transfer));
+    col.append(main);
+
+    // モバイル: 行タップでコメント入力を展開。空で確定すると削除になる(onCommentChange側の仕様)
+    const editor = el("div", "comment-editor hidden pr-3 pb-2.5 pl-3.5 sm:hidden");
+    const mobileInput = commentInput(key);
+    mobileInput.classList.add(
+      "min-h-10",
+      "bg-white",
+      "ring-slate-300",
+      "dark:bg-slate-800",
+      "dark:ring-slate-600",
+    );
+    editor.append(mobileInput);
+    col.append(editor);
+
+    row.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("input,button,a,select") !== null) return;
+      editor.classList.toggle("hidden");
+      if (!editor.classList.contains("hidden")) mobileInput.focus();
+    });
+
+    row.append(col);
+    return row;
+  };
+
+  /** 残高記録の従属行。取引ではないので背景をわずかに沈めて区別する */
+  const snapshotRow = (e: Extract<LogEntry, { kind: "snapshot" }>): HTMLElement => {
+    const row = el(
+      "div",
+      "snapshot-row flex items-center gap-2.5 bg-[#fcfdfe] py-2 pr-3.5 pl-[18px] dark:bg-transparent",
+    );
+    row.append(
+      el(
+        "span",
+        "badge rounded bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+        "記録",
+      ),
+    );
+    const text = el("span", FINE_PRINT);
+    text.append(`${formatTime(e.at)} · 残高スナップショット · 合計 `);
+    text.append(
+      el(
+        "strong",
+        "font-semibold text-slate-700 tabular-nums dark:text-slate-300",
+        formatYen(e.total),
+      ),
+    );
+    row.append(text);
+    return row;
+  };
+
+  const logSection = (): HTMLElement => {
+    const node = el("section", "log");
+    node.append(filterChips());
+
+    const entries = logEntries(data.snapshots, data.transfers).filter(matchesLog);
+    if (entries.length === 0) {
+      node.append(el("p", `empty mt-2 ${MUTED}`, "まだ記録がありません"));
+      return node;
+    }
+
+    // 日計は外部入出金の合計のみ(振替は口座間移動なので合計に含めない)
+    const dayTotals = new Map<string, number>();
+    for (const e of entries) {
+      if (e.kind !== "external") continue;
+      const key = localDayKey(e.at);
+      dayTotals.set(key, (dayTotals.get(key) ?? 0) + e.change.externalDelta);
+    }
+
+    let currentDay = "";
+    let card: HTMLElement | null = null;
+    for (const e of entries) {
+      const day = localDayKey(e.at);
+      if (day !== currentDay) {
+        currentDay = day;
+        const heading = el(
+          "div",
+          "day-heading flex items-baseline justify-between px-0.5 pt-1.5 pb-1",
+        );
+        heading.append(
+          el(
+            "span",
+            "text-xs font-bold text-slate-500 dark:text-slate-400",
+            formatDayHeading(e.at),
+          ),
+        );
+        const total = dayTotals.get(day);
+        if (total !== undefined) {
+          const cell = signedCell(total);
+          cell.classList.add("day-total", "text-xs", "font-semibold", "tabular-nums");
+          heading.append(cell);
+        }
+        card = el(
+          "div",
+          `day-card mb-2 divide-y divide-slate-100 overflow-hidden ${CARD} dark:divide-slate-800`,
+        );
+        node.append(heading, card);
+      }
+      card!.append(e.kind === "snapshot" ? snapshotRow(e) : transactionRow(e));
+    }
+    return node;
+  };
+
+  // ---- 口座別タブ ----
+
+  const workspaceKpi = (cls: string, label: string, amount: number): HTMLElement => {
+    const box = el("div", `kpi ${cls}`);
+    box.append(el("div", "text-[11px] text-slate-500 dark:text-slate-400", label));
+    const value = el("div", "text-sm font-semibold tabular-nums");
+    value.append(signedCell(amount));
+    box.append(value);
+    return box;
+  };
+
+  const workspaceCard = (summary: WorkspaceSummary): HTMLElement => {
+    const card = el("div", `workspace-card p-3.5 ${CARD}`);
+
+    const head = el("div", "mb-1 flex items-center gap-2");
+    head.append(accountDot(summary.id));
+    head.append(el("h3", "workspace-name text-sm font-semibold", summary.name));
+    card.append(head);
+
+    const mid = el("div", "flex items-end justify-between gap-3");
+    const balance = el("div", "kpi kpi-balance");
+    balance.append(el("div", "text-[22px] font-bold tabular-nums", formatYen(summary.balance)));
+    const delta = el("div", `kpi-delta ${FINE_PRINT}`);
+    delta.append("期間内 ", signedCell(summary.delta));
+    balance.append(delta);
+    mid.append(balance);
+    if (summary.points.length >= 2) {
+      mid.append(sparkline(summary.points, `workspace-sparkline ${accountColor(summary.id).line}`));
+    }
+    card.append(mid);
+
+    const kpis = el(
+      "div",
+      "kpis mt-2.5 flex gap-5 border-t border-slate-100 pt-2.5 dark:border-slate-800",
+    );
+    kpis.append(
+      workspaceKpi("kpi-transfer", "振替", summary.transferNet),
+      workspaceKpi("kpi-external", "外部入出金", summary.externalNet),
+    );
+    card.append(kpis);
+    return card;
+  };
+
+  const accountsSection = (): HTMLElement => {
+    const node = el("section", "accounts pt-1");
     const summaries = workspaceSummaries(data.snapshots, data.transfers, inPeriod);
-    if (summaries.length === 0) return null;
-    const node = section("workspaces", "口座別サマリー");
-    // minmax(0,1fr)の明示的なカラムにしてSVGの固有幅(viewBox)でカードが広がるのを防ぐ
-    const grid = el("div", "workspace-grid grid grid-cols-1 gap-3 lg:grid-cols-2");
+    if (summaries.length === 0) {
+      node.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
+      return node;
+    }
+    const grid = el("div", "workspace-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2");
     for (const summary of summaries) grid.append(workspaceCard(summary));
     node.append(grid);
     return node;
   };
 
-  const transfersSection = (): HTMLElement => {
-    const node = section("transfers", "振替履歴");
+  // ---- 推移タブ ----
 
-    const tabs = el("div", "tabs mb-3 flex flex-wrap gap-1.5");
-    tabs.setAttribute("role", "tablist");
-    tabs.setAttribute("aria-label", "振替履歴の口座");
-    const tabDefs: { id: string | null; name: string }[] = [
-      { id: null, name: "すべて" },
-      ...tabAccounts(data),
-    ];
-    const tabBase =
-      "tab cursor-pointer rounded-full px-3.5 py-1 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500";
-    for (const def of tabDefs) {
-      const selected = def.id === selectedFromId;
-      const tab = el(
-        "button",
-        selected
-          ? `${tabBase} active bg-sky-600 font-medium text-white dark:bg-sky-500 dark:text-slate-950`
-          : `${tabBase} bg-white ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:ring-slate-700 dark:hover:bg-slate-700`,
-        def.name,
-      );
-      tab.setAttribute("role", "tab");
-      tab.setAttribute("aria-selected", String(selected));
-      tab.addEventListener("click", () => {
-        selectedFromId = def.id;
-        draw();
-      });
-      tabs.append(tab);
-    }
-    node.append(tabs);
+  const snapshotItem = (
+    snapshot: BalanceSnapshot,
+    total: number,
+    prevTotal: number | null,
+  ): HTMLElement => {
+    const item = document.createElement("details");
+    item.className = "snapshot-item";
 
-    const selectedId = selectedFromId;
-    const filtered = sortTransfersDesc(transfersInvolving(data.transfers, selectedId)).filter((t) =>
-      inPeriod(t.transferredAt),
+    const summary = el(
+      "summary",
+      "snapshot-summary flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-2.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-900",
     );
-    if (filtered.length === 0) {
-      node.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
-      return node;
-    }
-
-    const summary = el("div", `destination-summary mb-2.5 ${MUTED}`);
-    const summaryItem = "summary-item ml-3 inline-block tabular-nums";
-    if (selectedId === null) {
-      summary.append(el("span", "summary-label", "入金先ごとの合計:"));
-      for (const dest of destinationTotals(filtered)) {
-        summary.append(el("span", summaryItem, `${dest.name} ${formatYen(dest.total)}`));
-      }
-    } else {
-      const totals = flowTotals(filtered, selectedId);
-      summary.append(el("span", "summary-label", "合計:"));
-      const flowItem = (label: string, amount: number): HTMLElement => {
-        const item = el("span", summaryItem, `${label} `);
-        item.append(signedCell(amount));
-        return item;
-      };
-      summary.append(flowItem("出金", -totals.outgoing), flowItem("入金", totals.incoming));
-    }
-    node.append(summary);
-
-    // 口座を選んでいる間は、その口座から見た入出金を符号付きで表示する
-    const amountCell = (t: TransferRecord): Cell =>
-      selectedId === null ? formatYen(t.amount) : signedCell(signedAmountFor(t, selectedId));
-
-    /** 誤記録(確認後のキャンセルなど)を取り除くための削除ボタン */
-    const deleteButton = (t: TransferRecord): HTMLElement => {
-      const button = el(
-        "button",
-        "delete-transfer cursor-pointer rounded px-1.5 text-slate-400 transition-colors " +
-          "hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-2 focus-visible:outline-offset-2 " +
-          "focus-visible:outline-sky-500 dark:hover:bg-rose-950 dark:hover:text-rose-400",
-        "×",
-      );
-      const detail = `${formatDateTime(t.transferredAt)} ${t.from.name} → ${t.to.name} ${formatYen(t.amount)}`;
-      button.title = "この振替を削除";
-      button.setAttribute("aria-label", `振替を削除: ${detail}`);
-      button.addEventListener("click", () => {
-        if (!window.confirm(`この振替の記録を削除しますか?\n${detail}`)) return;
-        handlers.onDeleteTransfer(t);
-        draw();
-      });
-      return button;
-    };
-
-    const rows = filtered.map((t): Cell[] => [
-      formatDateTime(t.transferredAt),
-      t.from.name,
-      t.to.name,
-      amountCell(t),
-      commentInput(transferCommentKey(t)),
-      deleteButton(t),
-    ]);
-    node.append(table(["日時", "出金口座", "入金口座", "金額", "コメント", ""], rows, [3]));
-    return node;
-  };
-
-  const externalCell = (change: BalanceChange): Cell => {
-    if (change.externalDelta === 0) return "—";
-    const kind = change.externalDelta > 0 ? "入金" : "出金";
-    const cell = el("span");
-    cell.append(signedCell(change.externalDelta), `（${kind}）`);
-    return cell;
-  };
-
-  const changesSection = (): HTMLElement => {
-    const node = section("changes", "残高変動");
-    const changes = detectBalanceChanges(data.snapshots, data.transfers)
-      .filter((c) => inPeriod(c.toTakenAt))
-      .toSorted((a, b) => b.toTakenAt - a.toTakenAt);
-    if (changes.length === 0) {
-      node.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
-      return node;
-    }
-    const rows = changes.map((c): Cell[] => [
-      formatDateTime(c.toTakenAt),
-      c.accountName,
-      signedCell(c.delta),
-      c.transferDelta === 0 ? "—" : signedCell(c.transferDelta),
-      externalCell(c),
-      commentInput(changeCommentKey(c)),
-    ]);
-    node.append(
-      table(["記録日時", "口座", "変動", "うち振替", "外部入出金", "コメント"], rows, [2, 3, 4]),
+    const left = el("div");
+    left.append(
+      el("div", "text-sm font-semibold tabular-nums", formatShortDateTime(snapshot.takenAt)),
     );
-    return node;
+    left.append(el("div", FINE_PRINT, "残高スナップショット"));
+    const right = el("div", "text-right");
+    right.append(el("div", "snapshot-total text-[15px] font-bold tabular-nums", formatYen(total)));
+    if (prevTotal !== null) {
+      const diff = el("div", `snapshot-diff tabular-nums ${FINE_PRINT}`);
+      diff.append(signedCell(total - prevTotal));
+      right.append(diff);
+    }
+    summary.append(left, right);
+    item.append(summary);
+
+    // 行タップで口座ごとの内訳を開く
+    const breakdown = el(
+      "div",
+      "snapshot-detail border-t border-slate-100 px-3.5 py-2 dark:border-slate-800",
+    );
+    for (const account of snapshot.accounts) {
+      const line = el("div", "flex items-center justify-between gap-3 py-1 text-sm");
+      const name = el("span", "flex items-center gap-2");
+      name.append(accountDot(account.id, "h-1.5 w-1.5"), account.name);
+      line.append(name, el("span", "tabular-nums", formatYen(account.balance)));
+      breakdown.append(line);
+    }
+    item.append(breakdown);
+    return item;
   };
 
-  const snapshotsSection = (): HTMLElement => {
-    const node = section("snapshots", "残高推移");
+  const historySection = (): HTMLElement => {
+    const node = el("section", "history flex flex-col gap-2.5 pt-1");
     const visible = data.snapshots.filter((s) => inPeriod(s.takenAt));
     if (visible.length === 0) {
       node.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
       return node;
     }
 
-    // 表は口座ごとの内訳なので、全体の動きは合計の折れ線で補う
     const totals = totalBalancePoints(visible);
     if (totals.length >= 2) {
-      const chartBox = el("div", "total-chart mb-4");
-      chartBox.append(el("div", `chart-label ${FINE_PRINT}`, "合計"));
+      const chartBox = el("div", `total-chart p-3.5 ${CARD}`);
+      chartBox.append(
+        el(
+          "div",
+          `chart-label text-xs font-semibold text-slate-500 dark:text-slate-400`,
+          "合計残高の推移",
+        ),
+      );
       chartBox.append(balanceChart(totals));
       node.append(chartBox);
     }
 
-    const columns = balanceSeries(visible);
-    const rows = visible.toReversed().map((snapshot): Cell[] => {
-      const byId = new Map(snapshot.accounts.map((a) => [a.id, a.balance]));
-      return [
-        formatDateTime(snapshot.takenAt),
-        ...columns.map((c) => {
-          const balance = byId.get(c.id);
-          return balance === undefined ? "—" : formatYen(balance);
-        }),
-      ];
-    });
-    node.append(
-      table(
-        ["記録日時", ...columns.map((c) => c.name)],
-        rows,
-        columns.map((_, i) => i + 1),
-      ),
+    const list = el(
+      "div",
+      `snapshot-list divide-y divide-slate-100 overflow-hidden ${CARD} dark:divide-slate-800`,
     );
+    visible.forEach((snapshot, i) => {
+      const total = totals[i].balance;
+      const prevTotal = i > 0 ? totals[i - 1].balance : null;
+      list.prepend(snapshotItem(snapshot, total, prevTotal));
+    });
+    node.append(list);
     return node;
   };
 
-  let syncStatus = "";
+  // ---- 設定画面 ----
 
   const syncField = (
     label: string,
@@ -915,9 +1228,6 @@ export function renderDashboard(
     return node;
   };
 
-  let view: "dashboard" | "settings" = "dashboard";
-  let importStatus = "";
-
   const importExportSection = (): HTMLElement => {
     const node = section("import-export", "インポート / エクスポート");
 
@@ -977,7 +1287,7 @@ export function renderDashboard(
   };
 
   const settingsView = (): HTMLElement => {
-    const node = el("div", "settings-view");
+    const node = el("div", "settings-view mx-auto max-w-[760px] px-4 py-4 sm:px-6");
     const back = el("button", `back-button ${LINK_BUTTON}`, "← ダッシュボードに戻る");
     back.addEventListener("click", () => {
       view = "dashboard";
@@ -985,21 +1295,6 @@ export function renderDashboard(
     });
     node.append(back, syncSection(), importExportSection());
     return node;
-  };
-
-  const settingsButton = (): HTMLElement => {
-    const button = el(
-      "button",
-      "settings-button absolute top-6 right-6 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-white text-lg shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 max-sm:top-4 max-sm:right-3 dark:bg-slate-800 dark:ring-slate-700 dark:hover:bg-slate-700",
-      "⚙",
-    );
-    button.title = "設定";
-    button.setAttribute("aria-label", "設定");
-    button.addEventListener("click", () => {
-      view = "settings";
-      draw();
-    });
-    return button;
   };
 
   /**
@@ -1040,23 +1335,20 @@ export function renderDashboard(
       return;
     }
 
-    root.append(settingsButton(), suggestionList());
+    root.append(suggestionList(), header());
 
-    const latestAt = latestRecordAt(data.snapshots, data.transfers);
-    if (latestAt === null) {
-      root.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
+    const main = el("main", "mx-auto max-w-[760px] px-4 pb-8 sm:px-6");
+    root.append(main);
+
+    if (latestRecordAt(data.snapshots, data.transfers) === null) {
+      main.append(el("p", `empty pt-4 ${MUTED}`, "まだ記録がありません"));
       return;
     }
-    root.append(freshnessSection(latestAt));
 
-    const latest = latestSnapshot(data.snapshots);
-    if (latest !== null) root.append(balancesSection(latest));
-    root.append(periodSection());
-    const workspaces = workspacesSection();
-    if (workspaces !== null) root.append(workspaces);
-    root.append(transfersSection());
-    root.append(changesSection());
-    root.append(snapshotsSection());
+    main.append(monthNav());
+    if (activeTab === "log") main.append(logSection());
+    else if (activeTab === "accounts") main.append(accountsSection());
+    else main.append(historySection());
   };
 
   draw();
