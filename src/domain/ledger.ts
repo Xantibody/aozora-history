@@ -231,6 +231,36 @@ export function changeCommentKey(change: BalanceChange): string {
   return `change:${change.accountId}:${change.toTakenAt}`;
 }
 
+/** カードログの1行。振替・振替で説明できない外部入出金・残高記録のいずれか */
+export type LogEntry =
+  | { kind: "transfer"; at: number; transfer: TransferRecord }
+  | { kind: "external"; at: number; change: BalanceChange }
+  | { kind: "snapshot"; at: number; snapshot: BalanceSnapshot; total: number };
+
+/**
+ * 振替・外部入出金・残高記録を新しい順の1本の時系列ログに統合する。
+ * 残高記録は日カードの従属行なので、同時刻では取引の後ろに置く
+ */
+const logRank = (e: LogEntry): number => (e.kind === "snapshot" ? 1 : 0);
+
+export function logEntries(snapshots: BalanceSnapshot[], transfers: TransferRecord[]): LogEntry[] {
+  const entries: LogEntry[] = [
+    ...transfers.map((t): LogEntry => ({ kind: "transfer", at: t.transferredAt, transfer: t })),
+    ...detectBalanceChanges(snapshots, transfers)
+      .filter((c) => c.externalDelta !== 0)
+      .map((c): LogEntry => ({ kind: "external", at: c.toTakenAt, change: c })),
+    ...snapshots.map(
+      (s): LogEntry => ({
+        kind: "snapshot",
+        at: s.takenAt,
+        snapshot: s,
+        total: s.accounts.reduce((sum, a) => sum + a.balance, 0),
+      }),
+    ),
+  ];
+  return entries.toSorted((a, b) => b.at - a.at || logRank(a) - logRank(b));
+}
+
 export function detectBalanceChanges(
   snapshots: BalanceSnapshot[],
   transfers: TransferRecord[],
