@@ -9,6 +9,7 @@ import {
   destinationTotals,
   latestRecordAt,
   latestSnapshot,
+  logEntries,
   sortTransfersDesc,
   totalBalancePoints,
   type TransferRecord,
@@ -553,5 +554,56 @@ describe("sortTransfersDesc", () => {
 
     expect(sortTransfersDesc(transfers).map((x) => x.transferredAt)).toEqual([3, 2, 1]);
     expect(transfers.map((x) => x.transferredAt)).toEqual([1, 3, 2]);
+  });
+});
+
+describe("logEntries", () => {
+  it("記録がなければ空を返す", () => {
+    expect(logEntries([], [])).toEqual([]);
+  });
+
+  it("振替・外部入出金・残高記録を新しい順の1本のログに統合する", () => {
+    const s1 = snapshot(10, accounts(["お財布", 100], ["積立", 50]));
+    // 積立が振替なしで +30 → 外部入金
+    const s2 = snapshot(40, accounts(["お財布", 80], ["積立", 80]));
+    const t = transfer(20, ["100", "お財布"], ["101", "積立"], 1000);
+
+    const entries = logEntries([s1, s2], [t]);
+
+    expect(entries.map((e) => [e.kind, e.at])).toEqual([
+      ["external", 40],
+      ["external", 40],
+      ["snapshot", 40],
+      ["transfer", 20],
+      ["snapshot", 10],
+    ]);
+  });
+
+  it("スナップショットのエントリは全口座の合計残高を持つ", () => {
+    const s = snapshot(10, accounts(["お財布", 100], ["積立", 50]));
+
+    const entries = logEntries([s], []);
+
+    expect(entries).toEqual([{ kind: "snapshot", at: 10, snapshot: s, total: 150 }]);
+  });
+
+  it("振替で説明できる変動は外部入出金として出さない", () => {
+    const s1 = snapshot(10, accounts(["お財布", 100], ["積立", 50]));
+    const s2 = snapshot(40, accounts(["お財布", 90], ["積立", 60]));
+    const t = transfer(20, ["100", "お財布"], ["101", "積立"], 10);
+
+    const entries = logEntries([s1, s2], [t]);
+
+    expect(entries.filter((e) => e.kind === "external")).toEqual([]);
+  });
+
+  it("同時刻の振替は残高記録より先に置く(記録は日カードの従属行のため)", () => {
+    const s1 = snapshot(10, accounts(["お財布", 100]));
+    const s2 = snapshot(20, accounts(["お財布", 100]));
+    const t = transfer(20, ["100", "お財布"], ["999", "外"], 0);
+
+    const entries = logEntries([s1, s2], [t]);
+
+    expect(entries.map((e) => e.kind)).toEqual(["transfer", "snapshot", "snapshot"]);
   });
 });
