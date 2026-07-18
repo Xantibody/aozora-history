@@ -4,8 +4,114 @@
     "browser": true,
     "webextensions": true
   },
+  "plugins": ["unicorn", "oxc", "typescript", "import", "promise", "vitest"],
   "categories": {
     "correctness": "error",
-    "suspicious": "warn"
-  }
+    "suspicious": "error",
+    "pedantic": "error",
+    "perf": "error",
+    "style": "error",
+    "restriction": "error"
+  },
+  "rules": {
+    // ---- 相互に矛盾するルールは片方だけ残す ----
+    // named exportを禁止する側を無効化。no-default-exportと両立不能で、
+    // このコードベースはTS慣用のnamed exportで統一している
+    "import/no-named-export": "off",
+    "import/prefer-default-export": "off",
+    // no-undefined(undefined禁止)とno-null(null禁止)は同時に満たせない。
+    // このコードベースは「解析失敗=null」のセンチネルを型で表現している
+    "unicorn/no-null": "off",
+    "eslint/no-undefined": "off",
+    // require-hook(セットアップはフックへ)と矛盾。beforeEach/afterEachは使う
+    "vitest/no-hooks": "off",
+    // vitestのglobals設定は無効にしており、明示importが正
+    "vitest/no-importing-vitest-globals": "off",
+
+    // ---- 言語機能そのものを禁止するルール(ES5ターゲット向け)は対象外 ----
+    "oxc/no-async-await": "off",
+    "oxc/no-optional-chaining": "off",
+    "oxc/no-rest-spread-properties": "off",
+
+    // ---- ルール間の整合をとるための設定 ----
+    // inline型指定子はno-import-type-side-effectsと矛盾するためtop-levelに統一
+    "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
+    // TS非対応で、必要な値import/型importの分離を誤検知する。
+    // 型importを正しく扱うimport/no-duplicatesの方を有効にしている
+    "eslint/no-duplicate-imports": "off",
+    // valid-title(タイトルは文字列)と矛盾するため関数参照タイトルは使わない
+    "vitest/prefer-describe-function-title": "off",
+    // 既存慣用は関数宣言+アロー式。式スタイル強制は全宣言の書き換えになるだけ
+    "eslint/func-style": ["error", "declaration", { "allowArrowFunctions": true }],
+    // 恒等値(-1/0/1)は名前を与えても意味が増えない。それ以外は定数へ抽出する
+    "eslint/no-magic-numbers": ["error", { "ignore": [-1, 0, 1] }],
+    // プロパティ名はSVG属性(x/y/r)やAPIレスポンス形状など外部仕様に従う
+    // 必要があるため検査対象から外す。変数・関数名は2文字以上を強制
+    "eslint/id-length": ["error", { "properties": "never" }],
+
+    // ---- プロジェクトの慣用と衝突するもの(理由付きで除外) ----
+    // 三項演算子・continue・voidは慣用的に使用。禁止すると冗長になるだけ
+    "eslint/no-ternary": "off",
+    "eslint/no-continue": "off",
+    // fire-and-forgetなPromiseの明示にvoid演算子を使う規約のため
+    "eslint/no-void": "off",
+    // コメントは日本語主体。英字始まりは v-show 等の技術語で大文字化できない
+    "eslint/capitalized-comments": "off",
+    // 色トークンの行内注記(// slate-200 等)は定義の隣にあることに意味がある
+    "eslint/no-inline-comments": "off",
+    // オブジェクトキーはドメインの意味順(from/to/amount等)を優先する
+    "eslint/sort-keys": "off",
+    // 宣言位置でのexportがTS慣用。単一exportブロック化は定義の局所性を損なう
+    "import/group-exports": "off",
+    "import/exports-last": "off",
+    // パスエイリアス未導入のフラットなsrc構成では相対親importが唯一の手段
+    "import/no-relative-parent-imports": "off",
+    // ダッシュボードの削除確認はネイティブconfirmを意図的に使用している
+    "eslint/no-alert": "off",
+    // toBe(true)の方がtoBeTruthy()より厳密。緩い比較への書き換えは退行
+    "vitest/prefer-to-be-truthy": "off",
+    "vitest/prefer-to-be-falsy": "off",
+    // 全テストへのexpect.assertions()付与は同期テストでは冗長
+    "vitest/prefer-expect-assertions": "off",
+    // タイムアウトはvitest設定でグローバルに管理する
+    "vitest/require-test-timeout": "off",
+    // テスト名は日本語文。英字頭字語(CSV/JSON)の小文字化は誤り
+    "vitest/prefer-lowercase-title": "off",
+    // エントリポイントはiife形式でバンドルするためtop-level awaitは使えない
+    "unicorn/prefer-top-level-await": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts"],
+      "rules": {
+        // テストはデータ(金額・日時・件数)そのものを扱うため数値リテラルが本体
+        "eslint/no-magic-numbers": "off",
+        // テーブル駆動・多ケースのテストは長くなるのが自然
+        "eslint/max-lines": "off",
+        "eslint/max-lines-per-function": "off",
+        "eslint/max-statements": "off",
+        // フィクスチャ取得の`!`は「nullなら即テスト失敗」として意図通りに働く。
+        // ?.への置換はアサーションを黙って素通りさせる退行になる
+        "typescript/no-non-null-assertion": "off",
+        // テストダブルで解決タイミングを制御するためのPromise生成は正当
+        "promise/avoid-new": "off",
+        // フェイクタイマーの逐次進行など、順番にawaitすること自体が本質のループがある
+        "eslint/no-await-in-loop": "off"
+      }
+    },
+    {
+      "files": ["vitest.config.ts"],
+      "rules": {
+        // vitestの設定ファイルはdefault exportが必須
+        "import/no-default-export": "off"
+      }
+    },
+    {
+      "files": ["**/*.d.ts"],
+      "rules": {
+        // ambient型宣言ファイルはimport/exportを持たないのが正
+        "import/unambiguous": "off"
+      }
+    }
+  ]
 }
