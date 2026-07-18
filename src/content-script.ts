@@ -170,10 +170,22 @@ export function setupContentScript(
   let pendingTransfer: TransferInput | null = null;
   let completionVisible = false;
 
-  const hasCompletionMessage = () => doc.body?.textContent?.includes(COMPLETION_MESSAGE) === true;
+  // 実サイト(Vue)は確認/完了ブロックをv-showで切り替えるため、完了文言は確認
+  // 段階でも display:none のままDOMに存在する。文言の有無ではなく表示状態で判定する
+  const isDisplayed = (el: Element): boolean => {
+    for (let node: Element | null = el; node instanceof HTMLElement; node = node.parentElement) {
+      if (node.style.display === "none") return false;
+    }
+    return true;
+  };
+
+  const hasVisibleCompletionMessage = () =>
+    [...doc.querySelectorAll("p")].some(
+      (p) => p.textContent?.includes(COMPLETION_MESSAGE) === true && isDisplayed(p),
+    );
 
   const commitOnCompletion = () => {
-    const visible = hasCompletionMessage();
+    const visible = hasVisibleCompletionMessage();
     const appeared = visible && !completionVisible;
     completionVisible = visible;
     if (!appeared) return;
@@ -214,9 +226,15 @@ export function setupContentScript(
     scheduleCapture();
     commitOnCompletion();
   });
-  observer.observe(doc, { childList: true, subtree: true });
+  // v-showの表示切替はstyle属性の変更として現れるため、属性変更も監視する
+  observer.observe(doc, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["style"],
+  });
   doc.addEventListener("click", onClick, true);
-  completionVisible = hasCompletionMessage();
+  completionVisible = hasVisibleCompletionMessage();
   scheduleCapture();
 
   return () => {

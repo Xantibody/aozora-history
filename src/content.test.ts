@@ -41,12 +41,40 @@ const transferHtml = `
 </div>
 <button id="sp-account-account-to-account-confirm" type="button">確認</button>`;
 
-const completionHtml = `
+// 実サイト(Vue)は確認クリックでモーダルを挿入し、確認/完了ブロックをv-showで
+// 切り替える。完了文言は確認段階でも display:none のままDOMに存在する
+const confirmModalHtml = `
 <div class="modal">
-  <h2>つかいわけ口座振替 完了</h2>
-  <p>つかいわけ口座の振替が完了しました。</p>
-  <button type="button">閉じる</button>
+  <div class="confirm-info panel inner-block">
+    <header class="header-accent"><h4>つかいわけ口座振替　確認</h4></header>
+    <div class="bottom-buttons">
+      <button id="sp-account-account-to-account-back" type="button">戻る</button>
+      <button id="sp-account-account-to-account-execute" type="button">実行</button>
+    </div>
+  </div>
+  <div class="confirm-info panel inner-block" style="display: none;">
+    <header class="header-accent"><h4>つかいわけ口座振替　完了</h4></header>
+    <p class="panel-body">つかいわけ口座の振替が完了しました。</p>
+    <div class="bottom-buttons">
+      <button id="sp-account-account-to-account-close" type="button">閉じる</button>
+    </div>
+  </div>
 </div>`;
+
+async function openConfirmModal() {
+  document.getElementById("sp-account-account-to-account-confirm")!.click();
+  document.body.insertAdjacentHTML("beforeend", confirmModalHtml);
+  await vi.runAllTimersAsync();
+}
+
+async function executeTransfer() {
+  const [confirmStep, completeStep] =
+    document.querySelectorAll<HTMLElement>(".modal .confirm-info");
+  document.getElementById("sp-account-account-to-account-execute")!.click();
+  confirmStep.style.display = "none";
+  completeStep.style.display = "";
+  await vi.runAllTimersAsync();
+}
 
 describe("setupContentScript", () => {
   let store: HistoryStore;
@@ -91,24 +119,24 @@ describe("setupContentScript", () => {
     expect(await store.loadSnapshots()).toHaveLength(1);
   });
 
-  it("確認を押しただけでは記録もパネル表示もしない", async () => {
+  it("確認モーダルが開いただけ(完了文言は非表示でDOMに存在)では記録もパネル表示もしない", async () => {
     document.body.innerHTML = transferHtml;
     await vi.runAllTimersAsync();
 
-    document.getElementById("sp-account-account-to-account-confirm")!.click();
-    await vi.runAllTimersAsync();
+    await openConfirmModal();
 
     expect(await store.loadTransfers()).toEqual([]);
     expect(document.getElementById("aozora-history-comment")).toBeNull();
   });
 
-  it("確認後に完了ダイアログが表示されたら振替を記録する", async () => {
+  it("実行後に完了ブロックが表示されたら振替を記録する", async () => {
     document.body.innerHTML = transferHtml;
     await vi.runAllTimersAsync();
 
-    document.getElementById("sp-account-account-to-account-confirm")!.click();
-    document.body.insertAdjacentHTML("beforeend", completionHtml);
-    await vi.runAllTimersAsync();
+    await openConfirmModal();
+    expect(await store.loadTransfers()).toEqual([]);
+
+    await executeTransfer();
 
     expect(await store.loadTransfers()).toEqual([
       {
@@ -120,42 +148,40 @@ describe("setupContentScript", () => {
     ]);
   });
 
-  it("確認を押さずに完了ダイアログが出ても記録しない", async () => {
+  it("戻るでモーダルを閉じた場合は記録しない", async () => {
     document.body.innerHTML = transferHtml;
     await vi.runAllTimersAsync();
 
-    document.body.insertAdjacentHTML("beforeend", completionHtml);
+    await openConfirmModal();
+    document.getElementById("sp-account-account-to-account-back")!.click();
+    document.querySelector(".modal")!.remove();
     await vi.runAllTimersAsync();
 
     expect(await store.loadTransfers()).toEqual([]);
   });
 
-  it("完了ダイアログが表示されたままの間は再度確認を押しても記録しない", async () => {
+  it("完了ブロックが表示されたままの間のDOM変化では再記録しない", async () => {
     document.body.innerHTML = transferHtml;
-    document.getElementById("sp-account-account-to-account-confirm")!.click();
-    document.body.insertAdjacentHTML("beforeend", completionHtml);
-    await vi.runAllTimersAsync();
+    await openConfirmModal();
+    await executeTransfer();
 
-    // 前回の完了ダイアログが閉じられないまま次の確認を押した状況
-    document.getElementById("sp-account-account-to-account-confirm")!.click();
     document.body.insertAdjacentHTML("beforeend", "<p>別の変化</p>");
     await vi.runAllTimersAsync();
 
     expect(await store.loadTransfers()).toHaveLength(1);
   });
 
-  it("完了ダイアログを閉じた後の2回目の振替も記録する", async () => {
+  it("完了モーダルを閉じた後の2回目の振替も記録する", async () => {
     document.body.innerHTML = transferHtml;
-    document.getElementById("sp-account-account-to-account-confirm")!.click();
-    document.body.insertAdjacentHTML("beforeend", completionHtml);
-    await vi.runAllTimersAsync();
+    await openConfirmModal();
+    await executeTransfer();
 
+    document.getElementById("sp-account-account-to-account-close")!.click();
     document.querySelector(".modal")!.remove();
     await vi.runAllTimersAsync();
 
-    document.getElementById("sp-account-account-to-account-confirm")!.click();
-    document.body.insertAdjacentHTML("beforeend", completionHtml);
-    await vi.runAllTimersAsync();
+    await openConfirmModal();
+    await executeTransfer();
 
     expect(await store.loadTransfers()).toHaveLength(2);
   });
@@ -163,9 +189,8 @@ describe("setupContentScript", () => {
   describe("振替直後のコメント入力", () => {
     async function confirmTransfer() {
       document.body.innerHTML = transferHtml;
-      document.getElementById("sp-account-account-to-account-confirm")!.click();
-      document.body.insertAdjacentHTML("beforeend", completionHtml);
-      await vi.runAllTimersAsync();
+      await openConfirmModal();
+      await executeTransfer();
     }
 
     it("記録後にコメント入力パネルを表示する", async () => {
@@ -330,9 +355,8 @@ describe("setupContentScript", () => {
       document.body.innerHTML = transferHtml;
       document.querySelector<HTMLInputElement>("input.input-amount")!.value = "";
 
-      document.getElementById("sp-account-account-to-account-confirm")!.click();
-      document.body.insertAdjacentHTML("beforeend", completionHtml);
-      await vi.runAllTimersAsync();
+      await openConfirmModal();
+      await executeTransfer();
 
       expect(document.getElementById("aozora-history-comment")).toBeNull();
     });
@@ -342,9 +366,8 @@ describe("setupContentScript", () => {
     document.body.innerHTML = transferHtml;
     document.querySelector<HTMLInputElement>("input.input-amount")!.value = "";
 
-    document.getElementById("sp-account-account-to-account-confirm")!.click();
-    document.body.insertAdjacentHTML("beforeend", completionHtml);
-    await vi.runAllTimersAsync();
+    await openConfirmModal();
+    await executeTransfer();
 
     expect(await store.loadTransfers()).toEqual([]);
   });
