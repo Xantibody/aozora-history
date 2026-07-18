@@ -119,24 +119,36 @@ function showCommentPrompt(
   inputRow.append(input, save);
   panel.append(header, inputRow, list);
 
-  // datalistが使えないAndroid Firefox向けに、よく使う候補はチップでも見せる
+  // datalistが使えないAndroid Firefox向けに、よく使う候補はチップでも見せる。
+  // 入力中はその文字を含む候補に絞り込み、タイプ中でも候補が使えるようにする
   if (suggestions.length > 0) {
     const chips = doc.createElement("div");
     chips.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;";
-    for (const text of suggestions.slice(0, MAX_SUGGESTION_CHIPS)) {
-      const chip = doc.createElement("button");
-      chip.type = "button";
-      chip.className = "suggestion";
-      chip.textContent = text;
-      chip.style.cssText =
-        `font:inherit;font-size:13px;background:transparent;color:${theme.subtle};` +
-        `border:1px solid ${theme.border};border-radius:9999px;padding:6px 14px;min-height:36px;cursor:pointer;`;
-      chip.addEventListener("click", () => {
-        input.value = text;
-        input.focus();
-      });
-      chips.append(chip);
-    }
+
+    const renderChips = () => {
+      chips.textContent = "";
+      const query = input.value.trim();
+      const matches = suggestions.filter((text) => text.includes(query));
+      for (const text of matches.slice(0, MAX_SUGGESTION_CHIPS)) {
+        const chip = doc.createElement("button");
+        chip.type = "button";
+        chip.className = "suggestion";
+        chip.textContent = text;
+        chip.style.cssText =
+          `font:inherit;font-size:13px;background:transparent;color:${theme.subtle};` +
+          `border:1px solid ${theme.border};border-radius:9999px;padding:6px 14px;min-height:36px;cursor:pointer;`;
+        chip.addEventListener("click", () => {
+          input.value = text;
+          input.focus();
+          renderChips();
+        });
+        chips.append(chip);
+      }
+      chips.style.display = matches.length > 0 ? "flex" : "none";
+    };
+
+    input.addEventListener("input", renderChips);
+    renderChips();
     panel.append(chips);
   }
 

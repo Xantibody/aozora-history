@@ -258,6 +258,67 @@ describe("setupContentScript", () => {
       expect(panel.querySelectorAll(`#${listId} option`)).toHaveLength(7);
     });
 
+    it("入力するとその文字を含む候補だけをチップに表示する", async () => {
+      await store.setComment("transfer:1", "家賃");
+      await store.setComment("transfer:2", "積立");
+      await store.setComment("transfer:3", "積立NISA");
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      const input = panel.querySelector("input")!;
+      input.value = "積";
+      input.dispatchEvent(new Event("input"));
+
+      const chips = [...panel.querySelectorAll<HTMLButtonElement>("button.suggestion")];
+      expect(chips.map((c) => c.textContent)).toEqual(["積立NISA", "積立"]);
+    });
+
+    it("入力を空に戻すと全候補のチップに戻る", async () => {
+      await store.setComment("transfer:1", "家賃");
+      await store.setComment("transfer:2", "積立");
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      const input = panel.querySelector("input")!;
+      input.value = "積";
+      input.dispatchEvent(new Event("input"));
+      input.value = "";
+      input.dispatchEvent(new Event("input"));
+
+      const chips = [...panel.querySelectorAll<HTMLButtonElement>("button.suggestion")];
+      expect(chips.map((c) => c.textContent)).toEqual(["積立", "家賃"]);
+    });
+
+    it("どの候補にも一致しない入力ではチップを出さない", async () => {
+      await store.setComment("transfer:1", "家賃");
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      const input = panel.querySelector("input")!;
+      input.value = "旅行";
+      input.dispatchEvent(new Event("input"));
+
+      expect(panel.querySelectorAll("button.suggestion")).toHaveLength(0);
+    });
+
+    it("絞り込み後もチップのタップで入力欄に反映できる", async () => {
+      await store.setComment("transfer:1", "家賃");
+      await store.setComment("transfer:2", "積立");
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      const input = panel.querySelector("input")!;
+      input.value = "家";
+      input.dispatchEvent(new Event("input"));
+
+      panel.querySelector<HTMLButtonElement>("button.suggestion")!.click();
+      expect(input.value).toBe("家賃");
+    });
+
     it("コメントがなければチップの列は出さない", async () => {
       await confirmTransfer();
 
