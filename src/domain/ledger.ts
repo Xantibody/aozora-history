@@ -14,8 +14,8 @@ export interface TransferRecord {
 }
 
 /** 振替の同一性を表すキー。端末間マージの重複排除と削除の記録に使う */
-export function transferKey(t: TransferRecord): string {
-  return `${t.transferredAt}:${t.from.id}:${t.to.id}:${t.amount}`;
+export function transferKey(transfer: TransferRecord): string {
+  return `${transfer.transferredAt}:${transfer.from.id}:${transfer.to.id}:${transfer.amount}`;
 }
 
 /**
@@ -45,18 +45,18 @@ export interface BalanceSeries {
   points: BalancePoint[];
 }
 
-function sameAccounts(a: SubAccount[], b: SubAccount[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((x, i) => x.id === b[i].id && x.name === b[i].name && x.balance === b[i].balance);
+function sameAccount(left: SubAccount, right: SubAccount): boolean {
+  return left.id === right.id && left.name === right.name && left.balance === right.balance;
 }
 
-export function appendSnapshot(
-  history: BalanceSnapshot[],
-  snapshot: BalanceSnapshot,
-): BalanceSnapshot[] {
-  const last = history.at(-1);
-  if (last !== undefined && sameAccounts(last.accounts, snapshot.accounts)) return [...history];
-  return [...history, snapshot];
+function sameAccounts(left: SubAccount[], right: SubAccount[]): boolean {
+  return left.length === right.length && left.every((ac, ix) => sameAccount(ac, right[ix]));
+}
+
+export function appendSnapshot(list: BalanceSnapshot[], snap: BalanceSnapshot): BalanceSnapshot[] {
+  const last = list.at(-1);
+  const unchanged = last !== undefined && sameAccounts(last.accounts, snap.accounts);
+  return unchanged ? [...list] : [...list, snap];
 }
 
 export function latestSnapshot(history: BalanceSnapshot[]): BalanceSnapshot | null {
@@ -64,11 +64,8 @@ export function latestSnapshot(history: BalanceSnapshot[]): BalanceSnapshot | nu
 }
 
 /** 最後に記録が増えた時刻。銀行サイトの構造変化などで記録が止まっていないかの確認に使う */
-export function latestRecordAt(
-  snapshots: BalanceSnapshot[],
-  transfers: TransferRecord[],
-): number | null {
-  const times = [...snapshots.map((s) => s.takenAt), ...transfers.map((t) => t.transferredAt)];
+export function latestRecordAt(snaps: BalanceSnapshot[], records: TransferRecord[]): number | null {
+  const times = [...snaps.map((sn) => sn.takenAt), ...records.map((tr) => tr.transferredAt)];
   return times.length === 0 ? null : Math.max(...times);
 }
 
@@ -89,12 +86,12 @@ export function balanceSeries(history: BalanceSnapshot[]): BalanceSeries[] {
 export function totalBalancePoints(history: BalanceSnapshot[]): BalancePoint[] {
   return history.map((snapshot) => ({
     takenAt: snapshot.takenAt,
-    balance: snapshot.accounts.reduce((sum, a) => sum + a.balance, 0),
+    balance: snapshot.accounts.reduce((sum, account) => sum + account.balance, 0),
   }));
 }
 
 export function sortTransfersDesc(transfers: TransferRecord[]): TransferRecord[] {
-  return transfers.toSorted((a, b) => b.transferredAt - a.transferredAt);
+  return transfers.toSorted((left, right) => right.transferredAt - left.transferredAt);
 }
 
 /** 指定口座が出金側・入金側どちらかで関わる振替。nullなら全件 */
@@ -102,8 +99,9 @@ export function transfersInvolving(
   transfers: TransferRecord[],
   accountId: string | null,
 ): TransferRecord[] {
-  if (accountId === null) return transfers;
-  return transfers.filter((t) => t.from.id === accountId || t.to.id === accountId);
+  return accountId === null
+    ? transfers
+    : transfers.filter((tr) => tr.from.id === accountId || tr.to.id === accountId);
 }
 
 /** 口座から見た符号付き金額。出金は負、入金は正 */
@@ -119,9 +117,9 @@ export interface FlowTotals {
 /** 口座から見た出金・入金それぞれの合計(絶対値) */
 export function flowTotals(transfers: TransferRecord[], accountId: string): FlowTotals {
   const totals = { outgoing: 0, incoming: 0 };
-  for (const t of transfers) {
-    if (t.from.id === accountId) totals.outgoing += t.amount;
-    if (t.to.id === accountId) totals.incoming += t.amount;
+  for (const tr of transfers) {
+    totals.outgoing += tr.from.id === accountId ? tr.amount : 0;
+    totals.incoming += tr.to.id === accountId ? tr.amount : 0;
   }
   return totals;
 }
@@ -134,11 +132,11 @@ export interface DestinationTotal {
 
 export function destinationTotals(transfers: TransferRecord[]): DestinationTotal[] {
   const byId = new Map<string, DestinationTotal>();
-  for (const t of transfers) {
-    const entry = byId.get(t.to.id) ?? { id: t.to.id, name: t.to.name, total: 0 };
-    entry.name = t.to.name;
-    entry.total += t.amount;
-    byId.set(t.to.id, entry);
+  for (const tr of transfers) {
+    const entry = byId.get(tr.to.id) ?? { id: tr.to.id, name: tr.to.name, total: 0 };
+    entry.name = tr.to.name;
+    entry.total += tr.amount;
+    byId.set(tr.to.id, entry);
   }
   return [...byId.values()];
 }
@@ -154,6 +152,46 @@ export interface BalanceChange {
   transferDelta: number;
   /** 振替で説明できない増減。正なら給与などの外部入金、負なら振込などの外部出金 */
   externalDelta: number;
+}
+
+function changesBetween(
+  prev: BalanceSnapshot,
+  curr: BalanceSnapshot,
+  transfers: TransferRecord[],
+): BalanceChange[] {
+  const window = transfers.filter(
+    (tr) => prev.takenAt < tr.transferredAt && tr.transferredAt <= curr.takenAt,
+  );
+  const prevById = new Map(prev.accounts.map((account) => [account.id, account.balance]));
+  const changes: BalanceChange[] = [];
+  for (const account of curr.accounts) {
+    const delta = account.balance - (prevById.get(account.id) ?? 0);
+    const flows = flowTotals(window, account.id);
+    const transferDelta = flows.incoming - flows.outgoing;
+    if (delta !== 0 || delta !== transferDelta) {
+      changes.push({
+        accountId: account.id,
+        accountName: account.name,
+        fromTakenAt: prev.takenAt,
+        toTakenAt: curr.takenAt,
+        delta,
+        transferDelta,
+        externalDelta: delta - transferDelta,
+      });
+    }
+  }
+  return changes;
+}
+
+export function detectBalanceChanges(
+  snapshots: BalanceSnapshot[],
+  transfers: TransferRecord[],
+): BalanceChange[] {
+  const changes: BalanceChange[] = [];
+  for (let index = 1; index < snapshots.length; index += 1) {
+    changes.push(...changesBetween(snapshots[index - 1], snapshots[index], transfers));
+  }
+  return changes;
 }
 
 export interface WorkspaceSummary {
@@ -181,20 +219,19 @@ export function workspaceSummaries(
   transfers: TransferRecord[],
   inPeriod: (epochMs: number) => boolean = () => true,
 ): WorkspaceSummary[] {
-  const changes = detectBalanceChanges(snapshots, transfers).filter((c) => inPeriod(c.toTakenAt));
-  const visibleTransfers = transfers.filter((t) => inPeriod(t.transferredAt));
-  return balanceSeries(snapshots.filter((s) => inPeriod(s.takenAt))).map((series) => {
-    const first = series.points[0].balance;
-    const last = series.points.at(-1)!.balance;
+  const changes = detectBalanceChanges(snapshots, transfers).filter((ch) => inPeriod(ch.toTakenAt));
+  const visibleTransfers = transfers.filter((tr) => inPeriod(tr.transferredAt));
+  return balanceSeries(snapshots.filter((sn) => inPeriod(sn.takenAt))).map((series) => {
+    const lastPoint = series.points.at(-1) ?? series.points[0];
     const flows = flowTotals(visibleTransfers, series.id);
     const externalNet = changes
-      .filter((c) => c.accountId === series.id)
-      .reduce((sum, c) => sum + c.externalDelta, 0);
+      .filter((ch) => ch.accountId === series.id)
+      .reduce((sum, ch) => sum + ch.externalDelta, 0);
     return {
       id: series.id,
       name: series.name,
-      balance: last,
-      delta: last - first,
+      balance: lastPoint.balance,
+      delta: lastPoint.balance - series.points[0].balance,
       transferNet: flows.incoming - flows.outgoing,
       externalNet,
       points: series.points,
@@ -209,16 +246,17 @@ export function workspaceSummaries(
 export function commentSuggestions(comments: Comments): string[] {
   const stats = new Map<string, { count: number; lastAt: number }>();
   for (const [key, { text, updatedAt }] of Object.entries(comments)) {
-    if (text === "") continue;
-    // 旧形式から移行したコメントはupdatedAtが0のため、キー末尾の記録時刻でも比べる
-    const at = Math.max(updatedAt, Number(key.slice(key.lastIndexOf(":") + 1)) || 0);
-    const entry = stats.get(text) ?? { count: 0, lastAt: 0 };
-    entry.count += 1;
-    entry.lastAt = Math.max(entry.lastAt, at);
-    stats.set(text, entry);
+    if (text !== "") {
+      // 旧形式から移行したコメントはupdatedAtが0のため、キー末尾の記録時刻でも比べる
+      const recordedAt = Number(key.slice(key.lastIndexOf(":") + 1)) || 0;
+      const entry = stats.get(text) ?? { count: 0, lastAt: 0 };
+      entry.count += 1;
+      entry.lastAt = Math.max(entry.lastAt, updatedAt, recordedAt);
+      stats.set(text, entry);
+    }
   }
   return [...stats.entries()]
-    .toSorted(([, a], [, b]) => b.count - a.count || b.lastAt - a.lastAt)
+    .toSorted(([, left], [, right]) => right.count - left.count || right.lastAt - left.lastAt)
     .map(([text]) => text);
 }
 
@@ -237,62 +275,24 @@ export type LogEntry =
   | { kind: "external"; at: number; change: BalanceChange }
   | { kind: "snapshot"; at: number; snapshot: BalanceSnapshot; total: number };
 
+function snapshotEntry(snapshot: BalanceSnapshot): LogEntry {
+  const total = snapshot.accounts.reduce((sum, account) => sum + account.balance, 0);
+  return { kind: "snapshot", at: snapshot.takenAt, snapshot, total };
+}
+
 /**
  * 振替・外部入出金・残高記録を新しい順の1本の時系列ログに統合する。
  * 残高記録は日カードの従属行なので、同時刻では取引の後ろに置く
  */
-const logRank = (e: LogEntry): number => (e.kind === "snapshot" ? 1 : 0);
+const logRank = (entry: LogEntry): number => (entry.kind === "snapshot" ? 1 : 0);
 
 export function logEntries(snapshots: BalanceSnapshot[], transfers: TransferRecord[]): LogEntry[] {
   const entries: LogEntry[] = [
-    ...transfers.map((t): LogEntry => ({ kind: "transfer", at: t.transferredAt, transfer: t })),
+    ...transfers.map((tr): LogEntry => ({ kind: "transfer", at: tr.transferredAt, transfer: tr })),
     ...detectBalanceChanges(snapshots, transfers)
-      .filter((c) => c.externalDelta !== 0)
-      .map((c): LogEntry => ({ kind: "external", at: c.toTakenAt, change: c })),
-    ...snapshots.map(
-      (s): LogEntry => ({
-        kind: "snapshot",
-        at: s.takenAt,
-        snapshot: s,
-        total: s.accounts.reduce((sum, a) => sum + a.balance, 0),
-      }),
-    ),
+      .filter((ch) => ch.externalDelta !== 0)
+      .map((ch): LogEntry => ({ kind: "external", at: ch.toTakenAt, change: ch })),
+    ...snapshots.map((sn) => snapshotEntry(sn)),
   ];
-  return entries.toSorted((a, b) => b.at - a.at || logRank(a) - logRank(b));
-}
-
-export function detectBalanceChanges(
-  snapshots: BalanceSnapshot[],
-  transfers: TransferRecord[],
-): BalanceChange[] {
-  const changes: BalanceChange[] = [];
-  for (let i = 1; i < snapshots.length; i++) {
-    const prev = snapshots[i - 1];
-    const curr = snapshots[i];
-    const window = transfers.filter(
-      (t) => prev.takenAt < t.transferredAt && t.transferredAt <= curr.takenAt,
-    );
-    const prevById = new Map(prev.accounts.map((a) => [a.id, a.balance]));
-
-    for (const account of curr.accounts) {
-      const delta = account.balance - (prevById.get(account.id) ?? 0);
-      const transferDelta = window.reduce((sum, t) => {
-        if (t.to.id === account.id) return sum + t.amount;
-        if (t.from.id === account.id) return sum - t.amount;
-        return sum;
-      }, 0);
-      const externalDelta = delta - transferDelta;
-      if (delta === 0 && externalDelta === 0) continue;
-      changes.push({
-        accountId: account.id,
-        accountName: account.name,
-        fromTakenAt: prev.takenAt,
-        toTakenAt: curr.takenAt,
-        delta,
-        transferDelta,
-        externalDelta,
-      });
-    }
-  }
-  return changes;
+  return entries.toSorted((left, right) => right.at - left.at || logRank(left) - logRank(right));
 }

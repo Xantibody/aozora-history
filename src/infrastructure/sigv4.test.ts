@@ -3,7 +3,7 @@ import { sha256Hex, signRequest } from "./sigv4.ts";
 
 describe("sha256Hex", () => {
   it("空文字のハッシュを計算する", async () => {
-    expect(await sha256Hex("")).toBe(
+    await expect(sha256Hex("")).resolves.toBe(
       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     );
   });

@@ -51,6 +51,7 @@
             typescript-go
             oxfmt
             oxlint
+            agent-browser
           ];
         };
       }

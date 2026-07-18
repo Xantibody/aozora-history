@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setupContentScript } from "./content-script.ts";
 import { HistoryStore } from "./infrastructure/storage.ts";
 import type { StorageArea } from "./infrastructure/storage.ts";
+import { setupContentScript } from "./content-script.ts";
 
 function fakeStorage(): StorageArea {
   const data = new Map<string, unknown>();
   return {
     get: (key) => Promise.resolve(data.has(key) ? { [key]: data.get(key) } : {}),
     set: (items) => {
-      for (const [k, v] of Object.entries(items)) data.set(k, v);
+      for (const [key, value] of Object.entries(items)) {
+        data.set(key, value);
+      }
       return Promise.resolve();
     },
   };
@@ -61,35 +63,38 @@ const confirmModalHtml = `
   </div>
 </div>`;
 
-async function openConfirmModal() {
-  document.getElementById("sp-account-account-to-account-confirm")!.click();
+async function openConfirmModal(): Promise<void> {
+  document.querySelector<HTMLElement>("#sp-account-account-to-account-confirm")!.click();
   document.body.insertAdjacentHTML("beforeend", confirmModalHtml);
   await vi.runAllTimersAsync();
 }
 
-async function executeTransfer() {
+async function executeTransfer(): Promise<void> {
   const [confirmStep, completeStep] =
     document.querySelectorAll<HTMLElement>(".modal .confirm-info");
-  document.getElementById("sp-account-account-to-account-execute")!.click();
+  document.querySelector<HTMLElement>("#sp-account-account-to-account-execute")!.click();
   confirmStep.style.display = "none";
   completeStep.style.display = "";
   await vi.runAllTimersAsync();
 }
 
 describe("setupContentScript", () => {
-  let store: HistoryStore;
-  let teardown: () => void;
+  let store: HistoryStore | null = null;
+  let teardown: (() => void) | null = null;
 
   beforeEach(() => {
     vi.useFakeTimers();
     document.body.innerHTML = "";
     let tick = 0;
-    store = new HistoryStore(fakeStorage(), () => ++tick);
+    store = new HistoryStore(fakeStorage(), () => {
+      tick += 1;
+      return tick;
+    });
     teardown = setupContentScript(document, store, () => 42);
   });
 
   afterEach(() => {
-    teardown();
+    teardown!();
     vi.useRealTimers();
   });
 
@@ -98,11 +103,11 @@ describe("setupContentScript", () => {
 
     await vi.runAllTimersAsync();
 
-    expect(await store.loadSnapshots()).toEqual([
+    await expect(store!.loadSnapshots()).resolves.toStrictEqual([
       {
         takenAt: 42,
         updatedAt: null,
-        accounts: [{ id: "133331", name: "01: お財布", balance: 129392 }],
+        accounts: [{ id: "133331", name: "01: お財布", balance: 129_392 }],
       },
     ]);
   });
@@ -116,7 +121,7 @@ describe("setupContentScript", () => {
     document.body.innerHTML = accountsHtml;
     await vi.runAllTimersAsync();
 
-    expect(await store.loadSnapshots()).toHaveLength(1);
+    await expect(store!.loadSnapshots()).resolves.toHaveLength(1);
   });
 
   it("確認モーダルが開いただけ(完了文言は非表示でDOMに存在)では記録もパネル表示もしない", async () => {
@@ -125,8 +130,8 @@ describe("setupContentScript", () => {
 
     await openConfirmModal();
 
-    expect(await store.loadTransfers()).toEqual([]);
-    expect(document.getElementById("aozora-history-comment")).toBeNull();
+    await expect(store!.loadTransfers()).resolves.toStrictEqual([]);
+    expect(document.querySelector("#aozora-history-comment")).toBeNull();
   });
 
   it("実行後に完了ブロックが表示されたら振替を記録する", async () => {
@@ -134,11 +139,11 @@ describe("setupContentScript", () => {
     await vi.runAllTimersAsync();
 
     await openConfirmModal();
-    expect(await store.loadTransfers()).toEqual([]);
+    await expect(store!.loadTransfers()).resolves.toStrictEqual([]);
 
     await executeTransfer();
 
-    expect(await store.loadTransfers()).toEqual([
+    await expect(store!.loadTransfers()).resolves.toStrictEqual([
       {
         transferredAt: 42,
         from: { id: "133331", name: "01: お財布" },
@@ -153,11 +158,11 @@ describe("setupContentScript", () => {
     await vi.runAllTimersAsync();
 
     await openConfirmModal();
-    document.getElementById("sp-account-account-to-account-back")!.click();
+    document.querySelector<HTMLElement>("#sp-account-account-to-account-back")!.click();
     document.querySelector(".modal")!.remove();
     await vi.runAllTimersAsync();
 
-    expect(await store.loadTransfers()).toEqual([]);
+    await expect(store!.loadTransfers()).resolves.toStrictEqual([]);
   });
 
   it("完了ブロックが表示されたままの間のDOM変化では再記録しない", async () => {
@@ -168,7 +173,7 @@ describe("setupContentScript", () => {
     document.body.insertAdjacentHTML("beforeend", "<p>別の変化</p>");
     await vi.runAllTimersAsync();
 
-    expect(await store.loadTransfers()).toHaveLength(1);
+    await expect(store!.loadTransfers()).resolves.toHaveLength(1);
   });
 
   it("完了モーダルを閉じた後の2回目の振替も記録する", async () => {
@@ -176,18 +181,18 @@ describe("setupContentScript", () => {
     await openConfirmModal();
     await executeTransfer();
 
-    document.getElementById("sp-account-account-to-account-close")!.click();
+    document.querySelector<HTMLElement>("#sp-account-account-to-account-close")!.click();
     document.querySelector(".modal")!.remove();
     await vi.runAllTimersAsync();
 
     await openConfirmModal();
     await executeTransfer();
 
-    expect(await store.loadTransfers()).toHaveLength(2);
+    await expect(store!.loadTransfers()).resolves.toHaveLength(2);
   });
 
   describe("振替直後のコメント入力", () => {
-    async function confirmTransfer() {
+    async function confirmTransfer(): Promise<void> {
       document.body.innerHTML = transferHtml;
       await openConfirmModal();
       await executeTransfer();
@@ -196,7 +201,7 @@ describe("setupContentScript", () => {
     it("記録後にコメント入力パネルを表示する", async () => {
       await confirmTransfer();
 
-      const panel = document.getElementById("aozora-history-comment")!;
+      const panel = document.querySelector("#aozora-history-comment")!;
       expect(panel.textContent).toContain("振替を記録しました");
       expect(panel.querySelector("input")).not.toBeNull();
     });
@@ -204,46 +209,46 @@ describe("setupContentScript", () => {
     it("保存すると振替と同じキーでコメントを保存しパネルを閉じる", async () => {
       await confirmTransfer();
 
-      const panel = document.getElementById("aozora-history-comment")!;
+      const panel = document.querySelector("#aozora-history-comment")!;
       panel.querySelector("input")!.value = "家賃の移動";
       panel.querySelector<HTMLButtonElement>("button.save")!.click();
       await vi.runAllTimersAsync();
 
-      expect(await store.loadComments()).toEqual({
+      await expect(store!.loadComments()).resolves.toStrictEqual({
         "transfer:42": { text: "家賃の移動", updatedAt: 1 },
       });
-      expect(document.getElementById("aozora-history-comment")).toBeNull();
+      expect(document.querySelector("#aozora-history-comment")).toBeNull();
     });
 
     it("閉じるボタンで保存せずに閉じる", async () => {
       await confirmTransfer();
 
       document
-        .getElementById("aozora-history-comment")!
+        .querySelector("#aozora-history-comment")!
         .querySelector<HTMLButtonElement>("button.close")!
         .click();
       await vi.runAllTimersAsync();
 
-      expect(await store.loadComments()).toEqual({});
-      expect(document.getElementById("aozora-history-comment")).toBeNull();
+      await expect(store!.loadComments()).resolves.toStrictEqual({});
+      expect(document.querySelector("#aozora-history-comment")).toBeNull();
     });
 
     it("過去のコメントを入力候補として提示する", async () => {
-      await store.setComment("transfer:1", "家賃");
-      await store.setComment("transfer:2", "積立");
+      await store!.setComment("transfer:1", "家賃");
+      await store!.setComment("transfer:2", "積立");
 
       await confirmTransfer();
 
-      const panel = document.getElementById("aozora-history-comment")!;
+      const panel = document.querySelector("#aozora-history-comment")!;
       const input = panel.querySelector("input")!;
       const listId = input.getAttribute("list")!;
       const options = [...panel.querySelectorAll(`#${listId} option`)];
-      expect(options.map((o) => o.getAttribute("value"))).toEqual(["積立", "家賃"]);
+      expect(options.map((option) => option.getAttribute("value"))).toStrictEqual(["積立", "家賃"]);
     });
 
     it("過去のコメントを目に見えるチップとしても表示する(datalist非対応環境向け)", async () => {
-      await store.setComment("transfer:1", "家賃");
-      await store.setComment("transfer:2", "積立");
+      await store!.setComment("transfer:1", "家賃");
+      await store!.setComment("transfer:2", "積立");
 
       await confirmTransfer();
 
@@ -252,60 +257,61 @@ describe("setupContentScript", () => {
           "#aozora-history-comment button.suggestion",
         ),
       ];
-      expect(chips.map((c) => c.textContent)).toEqual(["積立", "家賃"]);
+      expect(chips.map((chip) => chip.textContent)).toStrictEqual(["積立", "家賃"]);
     });
 
     it("チップをタップすると入力欄に反映し、保存で永続化する", async () => {
-      await store.setComment("transfer:1", "家賃");
+      await store!.setComment("transfer:1", "家賃");
 
       await confirmTransfer();
 
-      const panel = document.getElementById("aozora-history-comment")!;
+      const panel = document.querySelector("#aozora-history-comment")!;
       panel.querySelector<HTMLButtonElement>("button.suggestion")!.click();
       expect(panel.querySelector("input")!.value).toBe("家賃");
 
       panel.querySelector<HTMLButtonElement>("button.save")!.click();
       await vi.runAllTimersAsync();
 
-      expect((await store.loadComments())["transfer:42"]).toMatchObject({ text: "家賃" });
+      const comments = await store!.loadComments();
+      expect(comments["transfer:42"]).toMatchObject({ text: "家賃" });
     });
 
     it("チップは多くても5件に絞る(候補全体はdatalistに残す)", async () => {
-      for (let i = 1; i <= 7; i++) {
-        await store.setComment(`transfer:${i}`, `メモ${i}`);
+      for (let index = 1; index <= 7; index += 1) {
+        await store!.setComment(`transfer:${index}`, `メモ${index}`);
       }
 
       await confirmTransfer();
 
-      const panel = document.getElementById("aozora-history-comment")!;
+      const panel = document.querySelector("#aozora-history-comment")!;
       expect(panel.querySelectorAll("button.suggestion")).toHaveLength(5);
       const listId = panel.querySelector("input")!.getAttribute("list")!;
       expect(panel.querySelectorAll(`#${listId} option`)).toHaveLength(7);
     });
 
     it("入力するとその文字を含む候補だけをチップに表示する", async () => {
-      await store.setComment("transfer:1", "家賃");
-      await store.setComment("transfer:2", "積立");
-      await store.setComment("transfer:3", "積立NISA");
+      await store!.setComment("transfer:1", "家賃");
+      await store!.setComment("transfer:2", "積立");
+      await store!.setComment("transfer:3", "積立NISA");
 
       await confirmTransfer();
 
-      const panel = document.getElementById("aozora-history-comment")!;
+      const panel = document.querySelector("#aozora-history-comment")!;
       const input = panel.querySelector("input")!;
       input.value = "積";
       input.dispatchEvent(new Event("input"));
 
       const chips = [...panel.querySelectorAll<HTMLButtonElement>("button.suggestion")];
-      expect(chips.map((c) => c.textContent)).toEqual(["積立NISA", "積立"]);
+      expect(chips.map((chip) => chip.textContent)).toStrictEqual(["積立NISA", "積立"]);
     });
 
     it("入力を空に戻すと全候補のチップに戻る", async () => {
-      await store.setComment("transfer:1", "家賃");
-      await store.setComment("transfer:2", "積立");
+      await store!.setComment("transfer:1", "家賃");
+      await store!.setComment("transfer:2", "積立");
 
       await confirmTransfer();
 
-      const panel = document.getElementById("aozora-history-comment")!;
+      const panel = document.querySelector("#aozora-history-comment")!;
       const input = panel.querySelector("input")!;
       input.value = "積";
       input.dispatchEvent(new Event("input"));
@@ -313,15 +319,15 @@ describe("setupContentScript", () => {
       input.dispatchEvent(new Event("input"));
 
       const chips = [...panel.querySelectorAll<HTMLButtonElement>("button.suggestion")];
-      expect(chips.map((c) => c.textContent)).toEqual(["積立", "家賃"]);
+      expect(chips.map((chip) => chip.textContent)).toStrictEqual(["積立", "家賃"]);
     });
 
     it("どの候補にも一致しない入力ではチップを出さない", async () => {
-      await store.setComment("transfer:1", "家賃");
+      await store!.setComment("transfer:1", "家賃");
 
       await confirmTransfer();
 
-      const panel = document.getElementById("aozora-history-comment")!;
+      const panel = document.querySelector("#aozora-history-comment")!;
       const input = panel.querySelector("input")!;
       input.value = "旅行";
       input.dispatchEvent(new Event("input"));
@@ -330,12 +336,12 @@ describe("setupContentScript", () => {
     });
 
     it("絞り込み後もチップのタップで入力欄に反映できる", async () => {
-      await store.setComment("transfer:1", "家賃");
-      await store.setComment("transfer:2", "積立");
+      await store!.setComment("transfer:1", "家賃");
+      await store!.setComment("transfer:2", "積立");
 
       await confirmTransfer();
 
-      const panel = document.getElementById("aozora-history-comment")!;
+      const panel = document.querySelector("#aozora-history-comment")!;
       const input = panel.querySelector("input")!;
       input.value = "家";
       input.dispatchEvent(new Event("input"));
@@ -347,7 +353,7 @@ describe("setupContentScript", () => {
     it("コメントがなければチップの列は出さない", async () => {
       await confirmTransfer();
 
-      const panel = document.getElementById("aozora-history-comment")!;
+      const panel = document.querySelector("#aozora-history-comment")!;
       expect(panel.querySelectorAll("button.suggestion")).toHaveLength(0);
     });
 
@@ -358,7 +364,7 @@ describe("setupContentScript", () => {
       await openConfirmModal();
       await executeTransfer();
 
-      expect(document.getElementById("aozora-history-comment")).toBeNull();
+      expect(document.querySelector("#aozora-history-comment")).toBeNull();
     });
   });
 
@@ -369,7 +375,7 @@ describe("setupContentScript", () => {
     await openConfirmModal();
     await executeTransfer();
 
-    expect(await store.loadTransfers()).toEqual([]);
+    await expect(store!.loadTransfers()).resolves.toStrictEqual([]);
   });
 
   it("DOMの変化が続いていてもスナップショットを保存する", async () => {
@@ -378,12 +384,12 @@ describe("setupContentScript", () => {
     document.body.append(ticker);
 
     // チャットボット等でDOMがデバウンス間隔より短い周期で変化し続ける状況
-    for (let i = 0; i < 20; i++) {
-      ticker.textContent = String(i);
+    for (let index = 0; index < 20; index += 1) {
+      ticker.textContent = String(index);
       await vi.advanceTimersByTimeAsync(100);
     }
 
-    expect(await store.loadSnapshots()).toHaveLength(1);
+    await expect(store!.loadSnapshots()).resolves.toHaveLength(1);
   });
 
   it("口座一覧のないページでは何も保存しない", async () => {
@@ -391,6 +397,6 @@ describe("setupContentScript", () => {
 
     await vi.runAllTimersAsync();
 
-    expect(await store.loadSnapshots()).toEqual([]);
+    await expect(store!.loadSnapshots()).resolves.toStrictEqual([]);
   });
 });

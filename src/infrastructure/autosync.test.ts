@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AutoSync } from "./autosync.ts";
+import { HistoryStore } from "./storage.ts";
 import type { LedgerData } from "../domain/merge.ts";
-import { AutoSync, type SyncRunner } from "./autosync.ts";
+import type { StorageArea } from "./storage.ts";
 import type { SyncConfig } from "./r2sync.ts";
-import { HistoryStore, type StorageArea } from "./storage.ts";
+import type { SyncRunner } from "./autosync.ts";
 
 const config: SyncConfig = {
   accountId: "abc123",
@@ -26,11 +28,27 @@ function fakeStorage(): StorageArea {
   return {
     get: (key) => Promise.resolve(data.has(key) ? { [key]: data.get(key) } : {}),
     set: (items) => {
-      for (const [k, v] of Object.entries(items)) data.set(k, v);
+      for (const [key, value] of Object.entries(items)) {
+        data.set(key, value);
+      }
       return Promise.resolve();
     },
   };
 }
+
+function noop(): void {
+  /* empty */
+}
+
+function deferred(): { promise: Promise<void>; release: () => void } {
+  let release: () => void = noop;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+const failingSync: SyncRunner = () => Promise.reject(new Error("network down"));
 
 /** syncWithR2と同じ契約: マージ結果をローカルへ書き戻して返す */
 function fakeSync(store: HistoryStore): { runSync: SyncRunner; calls: SyncConfig[] } {
@@ -44,24 +62,37 @@ function fakeSync(store: HistoryStore): { runSync: SyncRunner; calls: SyncConfig
   return { runSync, calls };
 }
 
-async function setup() {
+interface SetupResult {
+  store: HistoryStore;
+  calls: SyncConfig[];
+  errors: unknown[];
+  autoSync: AutoSync;
+}
+
+async function setup(): Promise<SetupResult> {
   const store = new HistoryStore(fakeStorage());
   await store.saveSyncConfig(config);
   const { runSync, calls } = fakeSync(store);
   const errors: unknown[] = [];
-  const autoSync = new AutoSync(store, runSync, DELAY_MS, (error) => errors.push(error));
+  const autoSync = new AutoSync(store, {
+    runSync,
+    delayMs: DELAY_MS,
+    onError: (error): void => {
+      errors.push(error);
+    },
+  });
   return { store, calls, errors, autoSync };
 }
 
-beforeEach(() => {
-  vi.useFakeTimers();
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
-
 describe("AutoSync", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("台帳キーの変更後、待ち時間を置いて同期する", async () => {
     const { store, calls, autoSync } = await setup();
     await store.recordTransfer(transfer);
@@ -70,7 +101,7 @@ describe("AutoSync", () => {
     expect(calls).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(DELAY_MS);
 
-    expect(calls).toEqual([config]);
+    expect(calls).toStrictEqual([config]);
   });
 
   it("台帳以外のキーの変更では同期しない", async () => {
@@ -86,7 +117,13 @@ describe("AutoSync", () => {
     const store = new HistoryStore(fakeStorage());
     await store.recordTransfer(transfer);
     const { runSync, calls } = fakeSync(store);
-    const autoSync = new AutoSync(store, runSync, DELAY_MS, () => {});
+    const autoSync = new AutoSync(store, {
+      runSync,
+      delayMs: DELAY_MS,
+      onError: (): void => {
+        /* empty */
+      },
+    });
 
     autoSync.handleChange({ transferRecords: {} });
     await vi.advanceTimersByTimeAsync(DELAY_MS);
@@ -139,10 +176,7 @@ describe("AutoSync", () => {
     const store = new HistoryStore(fakeStorage());
     await store.saveSyncConfig(config);
     await store.recordTransfer(transfer);
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: gate, release } = deferred();
     const emptyLedger: LedgerData = { snapshots: [], transfers: [], comments: {}, deletions: {} };
     const results: LedgerData[] = [];
     // 同期中の変更を取りこぼした(=ローカルより古い)結果を返す遅い同期
@@ -151,7 +185,13 @@ describe("AutoSync", () => {
       results.push(await store.loadLedger());
       return emptyLedger;
     };
-    const autoSync = new AutoSync(store, runSync, DELAY_MS, () => {});
+    const autoSync = new AutoSync(store, {
+      runSync,
+      delayMs: DELAY_MS,
+      onError: (): void => {
+        /* empty */
+      },
+    });
 
     autoSync.handleChange({ transferRecords: {} });
     await vi.advanceTimersByTimeAsync(DELAY_MS);
@@ -172,19 +212,20 @@ describe("AutoSync", () => {
     await store.saveSyncConfig(config);
     await store.recordTransfer(transfer);
     const errors: unknown[] = [];
-    let fail = true;
-    const runSync: SyncRunner = async () => {
-      if (fail) throw new Error("network down");
-      const merged = await store.loadLedger();
-      return merged;
-    };
-    const autoSync = new AutoSync(store, runSync, DELAY_MS, (error) => errors.push(error));
+    let runSyncImpl = failingSync;
+    const autoSync = new AutoSync(store, {
+      runSync: (cfg): Promise<LedgerData> => runSyncImpl(cfg),
+      delayMs: DELAY_MS,
+      onError: (error): void => {
+        errors.push(error);
+      },
+    });
 
     autoSync.handleChange({ transferRecords: {} });
     await vi.advanceTimersByTimeAsync(DELAY_MS);
     expect(errors).toHaveLength(1);
 
-    fail = false;
+    runSyncImpl = (): Promise<LedgerData> => store.loadLedger();
     autoSync.handleChange({ transferRecords: {} });
     await vi.advanceTimersByTimeAsync(DELAY_MS);
     expect(errors).toHaveLength(1);

@@ -6,7 +6,7 @@ const validLedger = {
     {
       takenAt: 100,
       updatedAt: "2026/07/10 22:34",
-      accounts: [{ id: "133331", name: "01: お財布", balance: 129392 }],
+      accounts: [{ id: "133331", name: "01: お財布", balance: 129_392 }],
     },
   ],
   transfers: [
@@ -23,7 +23,7 @@ const validLedger = {
 
 describe("parseLedgerJson", () => {
   it("R2オブジェクトと同じ形式のJSONを読み込む", () => {
-    expect(parseLedgerJson(JSON.stringify(validLedger))).toEqual(validLedger);
+    expect(parseLedgerJson(JSON.stringify(validLedger))).toStrictEqual(validLedger);
   });
 
   it("updatedAtがないスナップショットはnullとして読み込む", () => {
@@ -37,7 +37,7 @@ describe("parseLedgerJson", () => {
   });
 
   it("欠けているセクションは空として読み込む", () => {
-    expect(parseLedgerJson("{}")).toEqual({
+    expect(parseLedgerJson("{}")).toStrictEqual({
       snapshots: [],
       transfers: [],
       comments: {},
@@ -79,19 +79,19 @@ describe("parseLedgerJson", () => {
   it("旧形式(文字列)のコメントは更新時刻0として読み込む", () => {
     const json = JSON.stringify({ comments: { "transfer:200": "家賃" } });
 
-    expect(parseLedgerJson(json).comments).toEqual({
+    expect(parseLedgerJson(json).comments).toStrictEqual({
       "transfer:200": { text: "家賃", updatedAt: 0 },
     });
   });
 
   it("削除の記録の形式が壊れていればエラーにする", () => {
-    expect(() => parseLedgerJson(JSON.stringify({ deletions: { k: "文字列" } }))).toThrow("形式");
+    expect(() => parseLedgerJson(JSON.stringify({ deletions: { key: "文字列" } }))).toThrow("形式");
     expect(() => parseLedgerJson(JSON.stringify({ deletions: [1] }))).toThrow("形式");
   });
 
   it("コメントの形式が壊れていればエラーにする", () => {
-    expect(() => parseLedgerJson(JSON.stringify({ comments: { k: 123 } }))).toThrow("形式");
-    expect(() => parseLedgerJson(JSON.stringify({ comments: { k: { text: "a" } } }))).toThrow(
+    expect(() => parseLedgerJson(JSON.stringify({ comments: { key: 123 } }))).toThrow("形式");
+    expect(() => parseLedgerJson(JSON.stringify({ comments: { key: { text: "a" } } }))).toThrow(
       "形式",
     );
   });
