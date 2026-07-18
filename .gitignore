@@ -8,3 +8,6 @@ aozora-history-source-v*.zip
 
 # 実際の口座情報を含むローカル保存ページ
 sample/
+
+# ブラウザ検証用ハーネス(ビルド成果物のコピー+フェイクstorage)
+.preview/
