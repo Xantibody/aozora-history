@@ -1,26 +1,25 @@
-import { describe, expect, it } from "vitest";
-import type { SubAccount } from "./parser.ts";
+import type { BalanceSnapshot, TransferRecord } from "./ledger.ts";
 import {
   appendSnapshot,
-  type BalanceSnapshot,
   balanceSeries,
   commentSuggestions,
-  detectBalanceChanges,
   destinationTotals,
+  detectBalanceChanges,
+  flowTotals,
   latestRecordAt,
   latestSnapshot,
   logEntries,
+  signedAmountFor,
   sortTransfersDesc,
   totalBalancePoints,
-  type TransferRecord,
-  flowTotals,
-  signedAmountFor,
   transfersInvolving,
   workspaceSummaries,
 } from "./ledger.ts";
+import { describe, expect, it } from "vitest";
+import type { SubAccount } from "./parser.ts";
 
 function accounts(...balances: [string, number][]): SubAccount[] {
-  return balances.map(([name, balance], i) => ({ id: String(100 + i), name, balance }));
+  return balances.map(([name, balance], index) => ({ id: String(100 + index), name, balance }));
 }
 
 function snapshot(takenAt: number, accs: SubAccount[]): BalanceSnapshot {
@@ -29,37 +28,37 @@ function snapshot(takenAt: number, accs: SubAccount[]): BalanceSnapshot {
 
 describe("appendSnapshot", () => {
   it("空の履歴に追加する", () => {
-    const s = snapshot(1, accounts(["お財布", 100]));
+    const snap = snapshot(1, accounts(["お財布", 100]));
 
-    expect(appendSnapshot([], s)).toEqual([s]);
+    expect(appendSnapshot([], snap)).toStrictEqual([snap]);
   });
 
   it("直前と同じ残高なら追加しない", () => {
     const s1 = snapshot(1, accounts(["お財布", 100]));
     const s2 = snapshot(2, accounts(["お財布", 100]));
 
-    expect(appendSnapshot([s1], s2)).toEqual([s1]);
+    expect(appendSnapshot([s1], s2)).toStrictEqual([s1]);
   });
 
   it("残高が変わっていれば追加する", () => {
     const s1 = snapshot(1, accounts(["お財布", 100]));
     const s2 = snapshot(2, accounts(["お財布", 200]));
 
-    expect(appendSnapshot([s1], s2)).toEqual([s1, s2]);
+    expect(appendSnapshot([s1], s2)).toStrictEqual([s1, s2]);
   });
 
   it("口座名の変更も追加する", () => {
     const s1 = snapshot(1, accounts(["お財布", 100]));
     const s2 = snapshot(2, accounts(["生活費", 100]));
 
-    expect(appendSnapshot([s1], s2)).toEqual([s1, s2]);
+    expect(appendSnapshot([s1], s2)).toStrictEqual([s1, s2]);
   });
 
   it("口座の追加・削除も追加する", () => {
     const s1 = snapshot(1, accounts(["お財布", 100]));
     const s2 = snapshot(2, accounts(["お財布", 100], ["積立", 0]));
 
-    expect(appendSnapshot([s1], s2)).toEqual([s1, s2]);
+    expect(appendSnapshot([s1], s2)).toStrictEqual([s1, s2]);
   });
 
   it("直前と違えば過去と同じ残高でも追加する", () => {
@@ -67,7 +66,7 @@ describe("appendSnapshot", () => {
     const s2 = snapshot(2, accounts(["お財布", 200]));
     const s3 = snapshot(3, accounts(["お財布", 100]));
 
-    expect(appendSnapshot([s1, s2], s3)).toEqual([s1, s2, s3]);
+    expect(appendSnapshot([s1, s2], s3)).toStrictEqual([s1, s2, s3]);
   });
 
   it("元の配列を変更しない", () => {
@@ -88,20 +87,20 @@ describe("latestSnapshot", () => {
     const s1 = snapshot(1, accounts(["お財布", 100]));
     const s2 = snapshot(2, accounts(["お財布", 200]));
 
-    expect(latestSnapshot([s1, s2])).toEqual(s2);
+    expect(latestSnapshot([s1, s2])).toStrictEqual(s2);
   });
 });
 
 describe("balanceSeries", () => {
   it("空の履歴は空の系列を返す", () => {
-    expect(balanceSeries([])).toEqual([]);
+    expect(balanceSeries([])).toStrictEqual([]);
   });
 
   it("口座ごとに残高の推移をまとめる", () => {
     const s1 = snapshot(1, accounts(["お財布", 100], ["積立", 50]));
     const s2 = snapshot(2, accounts(["お財布", 80], ["積立", 70]));
 
-    expect(balanceSeries([s1, s2])).toEqual([
+    expect(balanceSeries([s1, s2])).toStrictEqual([
       {
         id: "100",
         name: "お財布",
@@ -132,9 +131,9 @@ describe("balanceSeries", () => {
       { id: "999", name: "新名", balance: 20 },
     ]);
 
-    const series = balanceSeries([s1, s2, s3]);
+    const seriesList = balanceSeries([s1, s2, s3]);
 
-    expect(series.find((s) => s.id === "999")).toEqual({
+    expect(seriesList.find((series) => series.id === "999")).toStrictEqual({
       id: "999",
       name: "新名",
       points: [
@@ -152,81 +151,83 @@ const transferAt = (at: number): TransferRecord => ({
   amount: 1000,
 });
 
-function transfer(
-  at: number,
-  from: [string, string],
-  to: [string, string],
-  amount: number,
-): TransferRecord {
+function transfer(record: {
+  at: number;
+  from: [string, string];
+  to: [string, string];
+  amount: number;
+}): TransferRecord {
   return {
-    transferredAt: at,
-    from: { id: from[0], name: from[1] },
-    to: { id: to[0], name: to[1] },
-    amount,
+    transferredAt: record.at,
+    from: { id: record.from[0], name: record.from[1] },
+    to: { id: record.to[0], name: record.to[1] },
+    amount: record.amount,
   };
 }
 
 describe("transfersInvolving", () => {
   const transfers = [
-    transfer(1, ["100", "お財布"], ["101", "積立"], 1000),
-    transfer(2, ["101", "積立"], ["100", "お財布"], 2000),
-    transfer(3, ["100", "お財布"], ["102", "支払い箱"], 3000),
+    transfer({ at: 1, from: ["100", "お財布"], to: ["101", "積立"], amount: 1000 }),
+    transfer({ at: 2, from: ["101", "積立"], to: ["100", "お財布"], amount: 2000 }),
+    transfer({ at: 3, from: ["100", "お財布"], to: ["102", "支払い箱"], amount: 3000 }),
   ];
 
   it("nullなら全件返す", () => {
-    expect(transfersInvolving(transfers, null)).toEqual(transfers);
+    expect(transfersInvolving(transfers, null)).toStrictEqual(transfers);
   });
 
   it("出金側でも入金側でも関わる振替を返す", () => {
-    expect(transfersInvolving(transfers, "101").map((t) => t.transferredAt)).toEqual([1, 2]);
+    expect(
+      transfersInvolving(transfers, "101").map((record) => record.transferredAt),
+    ).toStrictEqual([1, 2]);
   });
 
   it("該当がなければ空配列を返す", () => {
-    expect(transfersInvolving(transfers, "999")).toEqual([]);
+    expect(transfersInvolving(transfers, "999")).toStrictEqual([]);
   });
 });
 
 describe("signedAmountFor", () => {
-  const t = transfer(1, ["100", "お財布"], ["101", "積立"], 1000);
+  const record = transfer({ at: 1, from: ["100", "お財布"], to: ["101", "積立"], amount: 1000 });
 
   it("出金は負にする", () => {
-    expect(signedAmountFor(t, "100")).toBe(-1000);
+    expect(signedAmountFor(record, "100")).toBe(-1000);
   });
 
   it("入金は正にする", () => {
-    expect(signedAmountFor(t, "101")).toBe(1000);
+    expect(signedAmountFor(record, "101")).toBe(1000);
   });
 });
 
 describe("flowTotals", () => {
   const transfers = [
-    transfer(1, ["100", "お財布"], ["101", "積立"], 1000),
-    transfer(2, ["101", "積立"], ["100", "お財布"], 2000),
-    transfer(3, ["101", "積立"], ["102", "支払い箱"], 3000),
+    transfer({ at: 1, from: ["100", "お財布"], to: ["101", "積立"], amount: 1000 }),
+    transfer({ at: 2, from: ["101", "積立"], to: ["100", "お財布"], amount: 2000 }),
+    transfer({ at: 3, from: ["101", "積立"], to: ["102", "支払い箱"], amount: 3000 }),
   ];
 
   it("口座から見た出金合計と入金合計を返す", () => {
-    expect(flowTotals(transfers, "101")).toEqual({ outgoing: 5000, incoming: 1000 });
+    expect(flowTotals(transfers, "101")).toStrictEqual({ outgoing: 5000, incoming: 1000 });
   });
 
   it("関わる振替がなければゼロを返す", () => {
-    expect(flowTotals(transfers, "999")).toEqual({ outgoing: 0, incoming: 0 });
+    expect(flowTotals(transfers, "999")).toStrictEqual({ outgoing: 0, incoming: 0 });
   });
 });
 
 describe("destinationTotals", () => {
   it("空の振替は空の集計を返す", () => {
-    expect(destinationTotals([])).toEqual([]);
+    expect(destinationTotals([])).toStrictEqual([]);
   });
 
   it("入金口座ごとに合計する", () => {
     const transfers = [
-      transfer(1, ["100", "お財布"], ["101", "積立"], 1000),
-      transfer(2, ["100", "お財布"], ["101", "積立"], 500),
-      transfer(3, ["100", "お財布"], ["102", "支払い箱"], 3000),
+      transfer({ at: 1, from: ["100", "お財布"], to: ["101", "積立"], amount: 1000 }),
+      transfer({ at: 2, from: ["100", "お財布"], to: ["101", "積立"], amount: 500 }),
+      transfer({ at: 3, from: ["100", "お財布"], to: ["102", "支払い箱"], amount: 3000 }),
     ];
 
-    expect(destinationTotals(transfers)).toEqual([
+    expect(destinationTotals(transfers)).toStrictEqual([
       { id: "101", name: "積立", total: 1500 },
       { id: "102", name: "支払い箱", total: 3000 },
     ]);
@@ -234,31 +235,33 @@ describe("destinationTotals", () => {
 
   it("入金口座の最新の名前を使う", () => {
     const transfers = [
-      transfer(1, ["100", "お財布"], ["101", "旧名"], 1000),
-      transfer(2, ["100", "お財布"], ["101", "新名"], 500),
+      transfer({ at: 1, from: ["100", "お財布"], to: ["101", "旧名"], amount: 1000 }),
+      transfer({ at: 2, from: ["100", "お財布"], to: ["101", "新名"], amount: 500 }),
     ];
 
-    expect(destinationTotals(transfers)).toEqual([{ id: "101", name: "新名", total: 1500 }]);
+    expect(destinationTotals(transfers)).toStrictEqual([{ id: "101", name: "新名", total: 1500 }]);
   });
 });
 
 describe("detectBalanceChanges", () => {
-  const wallet: SubAccount = { id: "100", name: "お財布", balance: 100000 };
+  const wallet: SubAccount = { id: "100", name: "お財布", balance: 100_000 };
 
   it("スナップショットが1件以下なら何も検出しない", () => {
-    expect(detectBalanceChanges([], [])).toEqual([]);
-    expect(detectBalanceChanges([snapshot(1, [wallet])], [])).toEqual([]);
+    expect(detectBalanceChanges([], [])).toStrictEqual([]);
+    expect(detectBalanceChanges([snapshot(1, [wallet])], [])).toStrictEqual([]);
   });
 
   it("振替で説明できる増減は外部入出金にしない", () => {
-    const s1 = snapshot(10, [wallet, { id: "101", name: "積立", balance: 50000 }]);
+    const s1 = snapshot(10, [wallet, { id: "101", name: "積立", balance: 50_000 }]);
     const s2 = snapshot(20, [
-      { ...wallet, balance: 95000 },
-      { id: "101", name: "積立", balance: 55000 },
+      { ...wallet, balance: 95_000 },
+      { id: "101", name: "積立", balance: 55_000 },
     ]);
-    const transfers = [transfer(15, ["100", "お財布"], ["101", "積立"], 5000)];
+    const transfers = [
+      transfer({ at: 15, from: ["100", "お財布"], to: ["101", "積立"], amount: 5000 }),
+    ];
 
-    expect(detectBalanceChanges([s1, s2], transfers)).toEqual([
+    expect(detectBalanceChanges([s1, s2], transfers)).toStrictEqual([
       {
         accountId: "100",
         accountName: "お財布",
@@ -282,17 +285,17 @@ describe("detectBalanceChanges", () => {
 
   it("振替記録のない急な増加は外部入金として検出する", () => {
     const s1 = snapshot(10, [wallet]);
-    const s2 = snapshot(20, [{ ...wallet, balance: 380000 }]);
+    const s2 = snapshot(20, [{ ...wallet, balance: 380_000 }]);
 
-    expect(detectBalanceChanges([s1, s2], [])).toEqual([
+    expect(detectBalanceChanges([s1, s2], [])).toStrictEqual([
       {
         accountId: "100",
         accountName: "お財布",
         fromTakenAt: 10,
         toTakenAt: 20,
-        delta: 280000,
+        delta: 280_000,
         transferDelta: 0,
-        externalDelta: 280000,
+        externalDelta: 280_000,
       },
     ]);
   });
@@ -300,159 +303,167 @@ describe("detectBalanceChanges", () => {
   it("振替と外部出金が混ざった減少を分離する", () => {
     const s1 = snapshot(10, [wallet, { id: "101", name: "積立", balance: 0 }]);
     const s2 = snapshot(20, [
-      { ...wallet, balance: 60000 },
-      { id: "101", name: "積立", balance: 10000 },
+      { ...wallet, balance: 60_000 },
+      { id: "101", name: "積立", balance: 10_000 },
     ]);
-    const transfers = [transfer(12, ["100", "お財布"], ["101", "積立"], 10000)];
+    const transfers = [
+      transfer({ at: 12, from: ["100", "お財布"], to: ["101", "積立"], amount: 10_000 }),
+    ];
 
     const changes = detectBalanceChanges([s1, s2], transfers);
 
-    expect(changes.find((c) => c.accountId === "100")).toEqual({
+    expect(changes.find((change) => change.accountId === "100")).toStrictEqual({
       accountId: "100",
       accountName: "お財布",
       fromTakenAt: 10,
       toTakenAt: 20,
-      delta: -40000,
-      transferDelta: -10000,
-      externalDelta: -30000,
+      delta: -40_000,
+      transferDelta: -10_000,
+      externalDelta: -30_000,
     });
   });
 
   it("期間外の振替は集計に含めない", () => {
     const s1 = snapshot(10, [wallet]);
-    const s2 = snapshot(20, [{ ...wallet, balance: 90000 }]);
+    const s2 = snapshot(20, [{ ...wallet, balance: 90_000 }]);
     const transfers = [
-      transfer(5, ["100", "お財布"], ["101", "積立"], 999),
-      transfer(25, ["100", "お財布"], ["101", "積立"], 999),
-      transfer(15, ["100", "お財布"], ["101", "積立"], 10000),
+      transfer({ at: 5, from: ["100", "お財布"], to: ["101", "積立"], amount: 999 }),
+      transfer({ at: 25, from: ["100", "お財布"], to: ["101", "積立"], amount: 999 }),
+      transfer({ at: 15, from: ["100", "お財布"], to: ["101", "積立"], amount: 10_000 }),
     ];
 
-    expect(detectBalanceChanges([s1, s2], transfers)).toEqual([
+    expect(detectBalanceChanges([s1, s2], transfers)).toStrictEqual([
       {
         accountId: "100",
         accountName: "お財布",
         fromTakenAt: 10,
         toTakenAt: 20,
-        delta: -10000,
-        transferDelta: -10000,
+        delta: -10_000,
+        transferDelta: -10_000,
         externalDelta: 0,
       },
     ]);
   });
 
   it("変化のない口座は含めない", () => {
-    const s1 = snapshot(10, [wallet, { id: "101", name: "積立", balance: 50000 }]);
+    const s1 = snapshot(10, [wallet, { id: "101", name: "積立", balance: 50_000 }]);
     const s2 = snapshot(20, [
-      { ...wallet, balance: 90000 },
-      { id: "101", name: "積立", balance: 50000 },
+      { ...wallet, balance: 90_000 },
+      { id: "101", name: "積立", balance: 50_000 },
     ]);
 
     const changes = detectBalanceChanges([s1, s2], []);
 
-    expect(changes.map((c) => c.accountId)).toEqual(["100"]);
+    expect(changes.map((change) => change.accountId)).toStrictEqual(["100"]);
   });
 
   it("途中で現れた口座は残高0からの変化として扱う", () => {
     const s1 = snapshot(10, [wallet]);
-    const s2 = snapshot(20, [wallet, { id: "101", name: "積立", balance: 30000 }]);
+    const s2 = snapshot(20, [wallet, { id: "101", name: "積立", balance: 30_000 }]);
 
-    expect(detectBalanceChanges([s1, s2], [])).toEqual([
+    expect(detectBalanceChanges([s1, s2], [])).toStrictEqual([
       {
         accountId: "101",
         accountName: "積立",
         fromTakenAt: 10,
         toTakenAt: 20,
-        delta: 30000,
+        delta: 30_000,
         transferDelta: 0,
-        externalDelta: 30000,
+        externalDelta: 30_000,
       },
     ]);
   });
 
   it("複数のスナップショット区間をそれぞれ検出する", () => {
     const s1 = snapshot(10, [wallet]);
-    const s2 = snapshot(20, [{ ...wallet, balance: 120000 }]);
-    const s3 = snapshot(30, [{ ...wallet, balance: 110000 }]);
+    const s2 = snapshot(20, [{ ...wallet, balance: 120_000 }]);
+    const s3 = snapshot(30, [{ ...wallet, balance: 110_000 }]);
 
     const changes = detectBalanceChanges([s1, s2, s3], []);
 
-    expect(changes.map((c) => [c.toTakenAt, c.delta])).toEqual([
-      [20, 20000],
-      [30, -10000],
+    expect(changes.map((change) => [change.toTakenAt, change.delta])).toStrictEqual([
+      [20, 20_000],
+      [30, -10_000],
     ]);
   });
 });
 
 describe("workspaceSummaries", () => {
   it("スナップショットがなければ空を返す", () => {
-    expect(workspaceSummaries([], [])).toEqual([]);
+    expect(workspaceSummaries([], [])).toStrictEqual([]);
   });
 
   it("口座ごとに残高・期間内変動・振替純額・外部入出金・推移をまとめる", () => {
-    const s1 = snapshot(10, accounts(["お財布", 100000], ["積立", 50000]));
-    const s2 = snapshot(20, accounts(["お財布", 65000], ["積立", 55000]));
-    const transfers = [transfer(15, ["100", "お財布"], ["101", "積立"], 5000)];
+    const s1 = snapshot(10, accounts(["お財布", 100_000], ["積立", 50_000]));
+    const s2 = snapshot(20, accounts(["お財布", 65_000], ["積立", 55_000]));
+    const transfers = [
+      transfer({ at: 15, from: ["100", "お財布"], to: ["101", "積立"], amount: 5000 }),
+    ];
 
-    expect(workspaceSummaries([s1, s2], transfers)).toEqual([
+    expect(workspaceSummaries([s1, s2], transfers)).toStrictEqual([
       {
         id: "100",
         name: "お財布",
-        balance: 65000,
-        delta: -35000,
+        balance: 65_000,
+        delta: -35_000,
         transferNet: -5000,
-        externalNet: -30000,
+        externalNet: -30_000,
         points: [
-          { takenAt: 10, balance: 100000 },
-          { takenAt: 20, balance: 65000 },
+          { takenAt: 10, balance: 100_000 },
+          { takenAt: 20, balance: 65_000 },
         ],
       },
       {
         id: "101",
         name: "積立",
-        balance: 55000,
+        balance: 55_000,
         delta: 5000,
         transferNet: 5000,
         externalNet: 0,
         points: [
-          { takenAt: 10, balance: 50000 },
-          { takenAt: 20, balance: 55000 },
+          { takenAt: 10, balance: 50_000 },
+          { takenAt: 20, balance: 55_000 },
         ],
       },
     ]);
   });
 
   it("スナップショットが1件だけなら変動はゼロにする", () => {
-    const s = snapshot(10, accounts(["お財布", 100000]));
+    const snap = snapshot(10, accounts(["お財布", 100_000]));
 
-    const summaries = workspaceSummaries([s], []);
+    const summaries = workspaceSummaries([snap], []);
 
     expect(summaries).toHaveLength(1);
     expect(summaries[0].delta).toBe(0);
-    expect(summaries[0].balance).toBe(100000);
+    expect(summaries[0].balance).toBe(100_000);
   });
 
   it("スナップショットに現れない口座は含めない", () => {
-    const s = snapshot(10, accounts(["お財布", 100000]));
-    const transfers = [transfer(15, ["100", "お財布"], ["999", "外部"], 5000)];
+    const snap = snapshot(10, accounts(["お財布", 100_000]));
+    const transfers = [
+      transfer({ at: 15, from: ["100", "お財布"], to: ["999", "外部"], amount: 5000 }),
+    ];
 
-    expect(workspaceSummaries([s], transfers).map((w) => w.id)).toEqual(["100"]);
+    expect(workspaceSummaries([snap], transfers).map((summary) => summary.id)).toStrictEqual([
+      "100",
+    ]);
   });
 
   it("外部入出金は期間境界をまたぐ変動も含める(残高変動の表と一致させる)", () => {
     // 期間前(10)と期間内(20)のスナップショットの間に外部入金があったケース。
     // 期間で絞ったスナップショットだけから計算すると区間ごと消えてしまう
-    const s1 = snapshot(10, accounts(["お財布", 100000]));
-    const s2 = snapshot(20, accounts(["お財布", 130000]));
+    const s1 = snapshot(10, accounts(["お財布", 100_000]));
+    const s2 = snapshot(20, accounts(["お財布", 130_000]));
 
-    expect(workspaceSummaries([s1, s2], [], (ms) => ms >= 15)).toEqual([
+    expect(workspaceSummaries([s1, s2], [], (ms) => ms >= 15)).toStrictEqual([
       {
         id: "100",
         name: "お財布",
-        balance: 130000,
+        balance: 130_000,
         delta: 0,
         transferNet: 0,
-        externalNet: 30000,
-        points: [{ takenAt: 20, balance: 130000 }],
+        externalNet: 30_000,
+        points: [{ takenAt: 20, balance: 130_000 }],
       },
     ]);
   });
@@ -460,14 +471,14 @@ describe("workspaceSummaries", () => {
 
 describe("totalBalancePoints", () => {
   it("スナップショットがなければ空を返す", () => {
-    expect(totalBalancePoints([])).toEqual([]);
+    expect(totalBalancePoints([])).toStrictEqual([]);
   });
 
   it("スナップショットごとに全口座の合計を返す", () => {
     const s1 = snapshot(10, accounts(["お財布", 100], ["積立", 50]));
     const s2 = snapshot(20, accounts(["お財布", 70], ["積立", 90]));
 
-    expect(totalBalancePoints([s1, s2])).toEqual([
+    expect(totalBalancePoints([s1, s2])).toStrictEqual([
       { takenAt: 10, balance: 150 },
       { takenAt: 20, balance: 160 },
     ]);
@@ -480,71 +491,71 @@ describe("latestRecordAt", () => {
   });
 
   it("スナップショットと振替のうち最新の時刻を返す", () => {
-    const s = snapshot(10, accounts(["お財布", 100]));
-    const t = transfer(25, ["100", "お財布"], ["101", "積立"], 500);
+    const snap = snapshot(10, accounts(["お財布", 100]));
+    const record = transfer({ at: 25, from: ["100", "お財布"], to: ["101", "積立"], amount: 500 });
 
-    expect(latestRecordAt([s], [t])).toBe(25);
-    expect(latestRecordAt([s], [])).toBe(10);
+    expect(latestRecordAt([snap], [record])).toBe(25);
+    expect(latestRecordAt([snap], [])).toBe(10);
   });
 });
 
-const c = (text: string, updatedAt = 0): { text: string; updatedAt: number } => ({
+const comment = (text: string, updatedAt = 0): { text: string; updatedAt: number } => ({
   text,
   updatedAt,
 });
 
 describe("commentSuggestions", () => {
   it("コメントがなければ空を返す", () => {
-    expect(commentSuggestions({})).toEqual([]);
+    expect(commentSuggestions({})).toStrictEqual([]);
   });
 
   it("同じ内容のコメントは1つの候補にまとめる", () => {
     const comments = {
-      "transfer:100": c("家賃"),
-      "transfer:200": c("家賃"),
-      "change:101:300": c("給料"),
+      "transfer:100": comment("家賃"),
+      "transfer:200": comment("家賃"),
+      "change:101:300": comment("給料"),
     };
 
-    expect(commentSuggestions(comments)).toEqual(["家賃", "給料"]);
+    expect(commentSuggestions(comments)).toStrictEqual(["家賃", "給料"]);
   });
 
   it("使用回数の多い順に並べる", () => {
     const comments = {
-      "transfer:100": c("積立"),
-      "transfer:200": c("家賃"),
-      "transfer:300": c("家賃"),
-      "transfer:400": c("家賃"),
-      "transfer:500": c("積立"),
+      "transfer:100": comment("積立"),
+      "transfer:200": comment("家賃"),
+      "transfer:300": comment("家賃"),
+      "transfer:400": comment("家賃"),
+      "transfer:500": comment("積立"),
     };
 
-    expect(commentSuggestions(comments)).toEqual(["家賃", "積立"]);
+    expect(commentSuggestions(comments)).toStrictEqual(["家賃", "積立"]);
   });
 
   it("使用回数が同じなら新しい記録のコメントを先にする", () => {
     const comments = {
-      "transfer:100": c("古いメモ"),
-      "transfer:200": c("新しいメモ"),
+      "transfer:100": comment("古いメモ"),
+      "transfer:200": comment("新しいメモ"),
     };
 
-    expect(commentSuggestions(comments)).toEqual(["新しいメモ", "古いメモ"]);
+    expect(commentSuggestions(comments)).toStrictEqual(["新しいメモ", "古いメモ"]);
   });
 
   it("編集時刻が記録より新しければそちらで比べる", () => {
     const comments = {
-      "transfer:100": c("後から編集", 900),
-      "transfer:200": c("新しい記録"),
+      "transfer:100": comment("後から編集", 900),
+      "transfer:200": comment("新しい記録"),
     };
 
-    expect(commentSuggestions(comments)).toEqual(["後から編集", "新しい記録"]);
+    expect(commentSuggestions(comments)).toStrictEqual(["後から編集", "新しい記録"]);
   });
 
   it("削除の記録(tombstone)は候補に出さない", () => {
     const comments = {
-      "transfer:100": c("家賃"),
-      "transfer:200": c("", 900),
+      "transfer:100": comment("家賃"),
+      "transfer:200": comment("", 900),
     };
 
-    expect(commentSuggestions(comments)).toEqual(["家賃"]);
+    expect(commentSuggestions(comments)).toStrictEqual(["家賃"]);
   });
 });
 
@@ -552,25 +563,27 @@ describe("sortTransfersDesc", () => {
   it("振替日時の新しい順に並べ、元の配列は変更しない", () => {
     const transfers = [transferAt(1), transferAt(3), transferAt(2)];
 
-    expect(sortTransfersDesc(transfers).map((x) => x.transferredAt)).toEqual([3, 2, 1]);
-    expect(transfers.map((x) => x.transferredAt)).toEqual([1, 3, 2]);
+    expect(sortTransfersDesc(transfers).map((record) => record.transferredAt)).toStrictEqual([
+      3, 2, 1,
+    ]);
+    expect(transfers.map((record) => record.transferredAt)).toStrictEqual([1, 3, 2]);
   });
 });
 
 describe("logEntries", () => {
   it("記録がなければ空を返す", () => {
-    expect(logEntries([], [])).toEqual([]);
+    expect(logEntries([], [])).toStrictEqual([]);
   });
 
   it("振替・外部入出金・残高記録を新しい順の1本のログに統合する", () => {
     const s1 = snapshot(10, accounts(["お財布", 100], ["積立", 50]));
     // 積立が振替なしで +30 → 外部入金
     const s2 = snapshot(40, accounts(["お財布", 80], ["積立", 80]));
-    const t = transfer(20, ["100", "お財布"], ["101", "積立"], 1000);
+    const record = transfer({ at: 20, from: ["100", "お財布"], to: ["101", "積立"], amount: 1000 });
 
-    const entries = logEntries([s1, s2], [t]);
+    const entries = logEntries([s1, s2], [record]);
 
-    expect(entries.map((e) => [e.kind, e.at])).toEqual([
+    expect(entries.map((entry) => [entry.kind, entry.at])).toStrictEqual([
       ["external", 40],
       ["external", 40],
       ["snapshot", 40],
@@ -580,30 +593,30 @@ describe("logEntries", () => {
   });
 
   it("スナップショットのエントリは全口座の合計残高を持つ", () => {
-    const s = snapshot(10, accounts(["お財布", 100], ["積立", 50]));
+    const snap = snapshot(10, accounts(["お財布", 100], ["積立", 50]));
 
-    const entries = logEntries([s], []);
+    const entries = logEntries([snap], []);
 
-    expect(entries).toEqual([{ kind: "snapshot", at: 10, snapshot: s, total: 150 }]);
+    expect(entries).toStrictEqual([{ kind: "snapshot", at: 10, snapshot: snap, total: 150 }]);
   });
 
   it("振替で説明できる変動は外部入出金として出さない", () => {
     const s1 = snapshot(10, accounts(["お財布", 100], ["積立", 50]));
     const s2 = snapshot(40, accounts(["お財布", 90], ["積立", 60]));
-    const t = transfer(20, ["100", "お財布"], ["101", "積立"], 10);
+    const record = transfer({ at: 20, from: ["100", "お財布"], to: ["101", "積立"], amount: 10 });
 
-    const entries = logEntries([s1, s2], [t]);
+    const entries = logEntries([s1, s2], [record]);
 
-    expect(entries.filter((e) => e.kind === "external")).toEqual([]);
+    expect(entries.filter((entry) => entry.kind === "external")).toStrictEqual([]);
   });
 
   it("同時刻の振替は残高記録より先に置く(記録は日カードの従属行のため)", () => {
     const s1 = snapshot(10, accounts(["お財布", 100]));
     const s2 = snapshot(20, accounts(["お財布", 100]));
-    const t = transfer(20, ["100", "お財布"], ["999", "外"], 0);
+    const record = transfer({ at: 20, from: ["100", "お財布"], to: ["999", "外"], amount: 0 });
 
-    const entries = logEntries([s1, s2], [t]);
+    const entries = logEntries([s1, s2], [record]);
 
-    expect(entries.map((e) => e.kind)).toEqual(["transfer", "snapshot", "snapshot"]);
+    expect(entries.map((entry) => entry.kind)).toStrictEqual(["transfer", "snapshot", "snapshot"]);
   });
 });

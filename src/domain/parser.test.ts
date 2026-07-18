@@ -75,7 +75,7 @@ const transferPageHtml = `
 
 describe("parseYen", () => {
   it("カンマ区切りの金額をパースする", () => {
-    expect(parseYen("129,392")).toBe(129392);
+    expect(parseYen("129,392")).toBe(129_392);
   });
 
   it("0をパースする", () => {
@@ -99,11 +99,11 @@ describe("parseAccountsPage", () => {
   it("つかいわけ口座一覧から口座ID・名前・残高を抽出する", () => {
     const snapshot = parseAccountsPage(documentFrom(accountsPageHtml));
 
-    expect(snapshot).toEqual({
+    expect(snapshot).toStrictEqual({
       accounts: [
-        { id: "133331", name: "01: お財布", balance: 129392 },
-        { id: "133332", name: "02: 積立", balance: 82520 },
-        { id: "133805", name: "03: 支払い箱", balance: 272469 },
+        { id: "133331", name: "01: お財布", balance: 129_392 },
+        { id: "133332", name: "02: 積立", balance: 82_520 },
+        { id: "133805", name: "03: 支払い箱", balance: 272_469 },
       ],
       updatedAt: "2026/07/10 22:34",
     });
@@ -114,7 +114,7 @@ describe("parseAccountsPage", () => {
   });
 
   it("最終更新日時がなくても口座一覧は抽出する", () => {
-    const withoutUpdatedAt = accountsPageHtml.replace(/<small>.*<\/small>/, "");
+    const withoutUpdatedAt = accountsPageHtml.replace(/<small>.*<\/small>/u, "");
 
     const snapshot = parseAccountsPage(documentFrom(withoutUpdatedAt));
 
@@ -131,7 +131,7 @@ describe("parseTransferForm", () => {
     to.value = "133805";
     doc.querySelector("input")!.value = "5000";
 
-    expect(parseTransferForm(doc)).toEqual({
+    expect(parseTransferForm(doc)).toStrictEqual({
       from: { id: "133331", name: "01: お財布" },
       to: { id: "133805", name: "03: 支払い箱" },
       amount: 5000,

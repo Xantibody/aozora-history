@@ -1,4 +1,4 @@
-import { setupContentScript } from "./content-script.ts";
 import { HistoryStore } from "./infrastructure/storage.ts";
+import { setupContentScript } from "./content-script.ts";
 
-setupContentScript(document, new HistoryStore(browser.storage.local), Date.now);
+void setupContentScript(document, new HistoryStore(browser.storage.local), Date.now);

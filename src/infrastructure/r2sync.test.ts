@@ -1,13 +1,9 @@
+import type { FetchLike, SyncConfig } from "./r2sync.ts";
+import { R2Client, parseSyncConfigJson, syncWithR2 } from "./r2sync.ts";
 import { describe, expect, it } from "vitest";
+import { HistoryStore } from "./storage.ts";
 import type { LedgerData } from "../domain/merge.ts";
-import {
-  type FetchLike,
-  parseSyncConfigJson,
-  R2Client,
-  type SyncConfig,
-  syncWithR2,
-} from "./r2sync.ts";
-import { HistoryStore, type StorageArea } from "./storage.ts";
+import type { StorageArea } from "./storage.ts";
 
 const config: SyncConfig = {
   accountId: "abc123",
@@ -52,12 +48,44 @@ function fakeFetch(responses: { status: number; body?: string }[]): {
   return { fetchFn, requests };
 }
 
+function noop(): void {
+  /* empty */
+}
+
+function deferred(): { promise: Promise<void>; release: () => void } {
+  let release: () => void = noop;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+/** GETは gate の解放まで待たせて404、PUTは即時200を返す */
+function gatedFetch(gate: Promise<void>): { fetchFn: FetchLike; requests: Request[] } {
+  const requests: Request[] = [];
+  const fetchFn: FetchLike = async (url, init) => {
+    requests.push({ url, method: init.method, headers: init.headers, body: init.body });
+    if (init.method === "GET") {
+      await gate;
+    }
+    const status = init.method === "GET" ? 404 : 200;
+    return {
+      status,
+      ok: status >= 200 && status < 300,
+      text: () => Promise.resolve(""),
+    };
+  };
+  return { fetchFn, requests };
+}
+
 function fakeStorage(): StorageArea {
   const data = new Map<string, unknown>();
   return {
     get: (key) => Promise.resolve(data.has(key) ? { [key]: data.get(key) } : {}),
     set: (items) => {
-      for (const [k, v] of Object.entries(items)) data.set(k, v);
+      for (const [key, value] of Object.entries(items)) {
+        data.set(key, value);
+      }
       return Promise.resolve();
     },
   };
@@ -73,7 +101,7 @@ describe("R2Client", () => {
 
     const data = await client(fetchFn).download();
 
-    expect(data).toEqual(remoteLedger);
+    expect(data).toStrictEqual(remoteLedger);
     expect(requests[0].url).toBe(
       "https://abc123.r2.cloudflarestorage.com/aozora/aozora-history.json",
     );
@@ -86,7 +114,7 @@ describe("R2Client", () => {
   it("404はまだ同期データがないものとしてnullを返す", async () => {
     const { fetchFn } = fakeFetch([{ status: 404 }]);
 
-    expect(await client(fetchFn).download()).toBeNull();
+    await expect(client(fetchFn).download()).resolves.toBeNull();
   });
 
   it("その他のエラーは例外にする", async () => {
@@ -114,7 +142,7 @@ describe("R2Client", () => {
     await client(fetchFn).upload(remoteLedger);
 
     expect(requests[0].method).toBe("PUT");
-    expect(JSON.parse(requests[0].body!)).toEqual(remoteLedger);
+    expect(JSON.parse(requests[0].body!)).toStrictEqual(remoteLedger);
     expect(requests[0].headers["content-type"]).toBe("application/json");
   });
 });
@@ -122,12 +150,13 @@ describe("R2Client", () => {
 describe("syncWithR2", () => {
   it("リモートとマージした結果をローカルとR2の両方に書き戻す", async () => {
     const store = new HistoryStore(fakeStorage());
-    await store.recordTransfer({
+    const localTransfer = {
       transferredAt: 5,
       from: { id: "100", name: "お財布" },
       to: { id: "101", name: "積立" },
       amount: 1000,
-    });
+    };
+    await store.recordTransfer(localTransfer);
     const { fetchFn, requests } = fakeFetch([
       { status: 200, body: JSON.stringify(remoteLedger) },
       { status: 200 },
@@ -135,16 +164,17 @@ describe("syncWithR2", () => {
 
     const merged = await syncWithR2(store, client(fetchFn));
 
-    expect(merged.snapshots).toHaveLength(1);
-    expect(merged.transfers).toHaveLength(1);
-    expect(merged.comments).toEqual(remoteLedger.comments);
+    expect(merged).toStrictEqual({
+      snapshots: remoteLedger.snapshots,
+      transfers: [localTransfer],
+      comments: remoteLedger.comments,
+      deletions: {},
+    });
     // ローカルへ反映
-    expect(await store.loadSnapshots()).toEqual(remoteLedger.snapshots);
-    expect(await store.loadTransfers()).toHaveLength(1);
-    expect(await store.loadComments()).toEqual(remoteLedger.comments);
+    await expect(store.loadLedger()).resolves.toStrictEqual(merged);
     // R2へ反映
     expect(requests[1].method).toBe("PUT");
-    expect(JSON.parse(requests[1].body!)).toEqual(merged);
+    expect(JSON.parse(requests[1].body!)).toStrictEqual(merged);
   });
 
   it("同期が完了したら最終同期時刻を記録する", async () => {
@@ -153,15 +183,15 @@ describe("syncWithR2", () => {
 
     await syncWithR2(store, client(fetchFn));
 
-    expect(await store.loadLastSyncedAt()).toBe(777);
+    await expect(store.loadLastSyncedAt()).resolves.toBe(777);
   });
 
   it("アップロードに失敗したら最終同期時刻は記録しない", async () => {
     const store = new HistoryStore(fakeStorage(), () => 777);
     const { fetchFn } = fakeFetch([{ status: 404 }, { status: 500 }]);
 
-    await expect(syncWithR2(store, client(fetchFn))).rejects.toThrow();
-    expect(await store.loadLastSyncedAt()).toBeNull();
+    await expect(syncWithR2(store, client(fetchFn))).rejects.toThrow("R2への保存に失敗しました");
+    await expect(store.loadLastSyncedAt()).resolves.toBeNull();
   });
 
   it("リモートが未作成ならローカルの内容をそのままアップロードする", async () => {
@@ -170,27 +200,14 @@ describe("syncWithR2", () => {
 
     const merged = await syncWithR2(store, client(fetchFn));
 
-    expect(merged).toEqual(emptyLedger);
-    expect(JSON.parse(requests[1].body!)).toEqual(emptyLedger);
+    expect(merged).toStrictEqual(emptyLedger);
+    expect(JSON.parse(requests[1].body!)).toStrictEqual(emptyLedger);
   });
 
   it("ダウンロード待ちの間に記録された振替を消さずに同期する", async () => {
     const store = new HistoryStore(fakeStorage());
-    const requests: Request[] = [];
-    let releaseDownload!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      releaseDownload = resolve;
-    });
-    const fetchFn: FetchLike = async (url, init) => {
-      requests.push({ url, method: init.method, headers: init.headers, body: init.body });
-      if (init.method === "GET") await gate;
-      const status = init.method === "GET" ? 404 : 200;
-      return {
-        status,
-        ok: status >= 200 && status < 300,
-        text: () => Promise.resolve(""),
-      };
-    };
+    const { promise: gate, release: releaseDownload } = deferred();
+    const { fetchFn, requests } = gatedFetch(gate);
 
     const syncing = syncWithR2(store, client(fetchFn));
     // R2からの応答を待っている間に新しい振替が記録される
@@ -204,21 +221,21 @@ describe("syncWithR2", () => {
     const merged = await syncing;
 
     expect(merged.transfers).toHaveLength(1);
-    expect(await store.loadTransfers()).toHaveLength(1);
-    const putRequest = requests.find((r) => r.method === "PUT");
+    await expect(store.loadTransfers()).resolves.toHaveLength(1);
+    const putRequest = requests.find((request) => request.method === "PUT");
     expect(JSON.parse(putRequest!.body!).transfers).toHaveLength(1);
   });
 });
 
 describe("parseSyncConfigJson", () => {
   it("エクスポートした同期設定を読み込める", () => {
-    expect(parseSyncConfigJson(JSON.stringify(config))).toEqual(config);
+    expect(parseSyncConfigJson(JSON.stringify(config))).toStrictEqual(config);
   });
 
   it("objectKeyが無ければデフォルトを補う", () => {
-    const { objectKey: _, ...withoutKey } = config;
+    const { objectKey: _removed, ...withoutKey } = config;
 
-    expect(parseSyncConfigJson(JSON.stringify(withoutKey))).toEqual({
+    expect(parseSyncConfigJson(JSON.stringify(withoutKey))).toStrictEqual({
       ...config,
       objectKey: "aozora-history.json",
     });

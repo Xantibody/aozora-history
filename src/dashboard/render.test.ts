@@ -1,31 +1,32 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
+import type { DashboardData, DashboardHandlers } from "./render.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  type DashboardData,
   formatDateTime,
   formatSigned,
   formatYen,
   renderDashboard,
   transfersCsv,
 } from "./render.ts";
+import type { SyncConfig } from "../infrastructure/r2sync.ts";
 
 const snapshots: BalanceSnapshot[] = [
   {
     takenAt: Date.UTC(2026, 6, 9, 13, 0),
     updatedAt: "2026/07/09 21:59",
     accounts: [
-      { id: "133331", name: "01: お財布", balance: 134392 },
-      { id: "133332", name: "02: 積立", balance: 82520 },
+      { id: "133331", name: "01: お財布", balance: 134_392 },
+      { id: "133332", name: "02: 積立", balance: 82_520 },
     ],
   },
   {
     takenAt: Date.UTC(2026, 6, 10, 13, 34),
     updatedAt: "2026/07/10 22:34",
     accounts: [
-      { id: "133331", name: "01: お財布", balance: 129392 },
-      { id: "133332", name: "02: 積立", balance: 82520 },
-      { id: "133805", name: "03: 支払い箱", balance: 272469 },
+      { id: "133331", name: "01: お財布", balance: 129_392 },
+      { id: "133332", name: "02: 積立", balance: 82_520 },
+      { id: "133805", name: "03: 支払い箱", balance: 272_469 },
     ],
   },
 ];
@@ -42,7 +43,7 @@ const transfers: TransferRecord[] = [
     transferredAt: Date.UTC(2026, 6, 8, 0, 0),
     from: { id: "133332", name: "02: 積立" },
     to: { id: "133805", name: "03: 支払い箱" },
-    amount: 30000,
+    amount: 30_000,
   },
 ];
 
@@ -51,12 +52,28 @@ const transfers: TransferRecord[] = [
 //   外部入出金 2件 (02: 積立 -5,000円、03: 支払い箱 +272,469円; どちらも2つ目のスナップショット時点)
 //   残高記録 2件 (合計 216,912円 → 484,381円、期間の増減 +267,469円)
 
-const pad = (n: number) => String(n).padStart(2, "0");
+const pad = (value: number): string => String(value).padStart(2, "0");
 
 /** ヘッダーやログ行と同じ「M/D HH:MM」表記(ローカル時刻) */
 function shortDateTime(epochMs: number): string {
-  const d = new Date(epochMs);
-  return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const date = new Date(epochMs);
+  return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function dispatchTouch(
+  target: Element,
+  type: "touchstart" | "touchmove" | "touchend",
+  point: { clientX: number; clientY: number },
+): void {
+  const event = new Event(type, { bubbles: true });
+  Object.defineProperty(event, "touches", { value: [point] });
+  target.dispatchEvent(event);
+}
+
+function swipe(target: Element, dx: number, dy = 0): void {
+  dispatchTouch(target, "touchstart", { clientX: 200, clientY: 300 });
+  dispatchTouch(target, "touchmove", { clientX: 200 + dx, clientY: 300 + dy });
+  dispatchTouch(target, "touchend", { clientX: 200 + dx, clientY: 300 + dy });
 }
 
 function data(overrides: Partial<DashboardData> = {}): DashboardData {
@@ -71,15 +88,19 @@ function data(overrides: Partial<DashboardData> = {}): DashboardData {
   };
 }
 
-function render(root: HTMLElement, d = data(), now?: () => number) {
+type RenderResult = DashboardHandlers & { redraw: () => void };
+
+function render(root: HTMLElement, dashboardData = data(), now?: () => number): RenderResult {
   const handlers = {
     onCommentChange: vi.fn<(key: string, text: string) => void>(),
     onDeleteTransfer: vi.fn<(transfer: TransferRecord) => void>(),
-    onSaveSyncConfig: vi.fn(async () => "保存しました"),
-    onSyncNow: vi.fn(async () => "同期しました"),
-    onImportFile: vi.fn(async () => "読み込みました"),
+    onSaveSyncConfig: vi.fn<(config: SyncConfig) => Promise<string>>(() =>
+      Promise.resolve("保存しました"),
+    ),
+    onSyncNow: vi.fn<() => Promise<string>>(() => Promise.resolve("同期しました")),
+    onImportFile: vi.fn<(text: string) => Promise<string>>(() => Promise.resolve("読み込みました")),
   };
-  const redraw = renderDashboard(root, d, handlers, now);
+  const redraw = renderDashboard(root, dashboardData, { handlers, now });
   return { ...handlers, redraw };
 }
 
@@ -99,14 +120,14 @@ describe("transfersCsv", () => {
   });
 
   it("カンマや引用符を含むフィールドはRFC4180形式でエスケープする", () => {
-    const t = {
+    const transfer = {
       transferredAt: 1,
       from: { id: "1", name: 'A,B"C' },
       to: { id: "2", name: "D" },
       amount: 100,
     };
 
-    const csv = transfersCsv([t], {});
+    const csv = transfersCsv([transfer], {});
 
     expect(csv).toContain('"A,B""C",D,100,');
   });
@@ -114,14 +135,14 @@ describe("transfersCsv", () => {
 
 describe("formatYen", () => {
   it("カンマ区切りと円記号を付ける", () => {
-    expect(formatYen(129392)).toBe("129,392円");
+    expect(formatYen(129_392)).toBe("129,392円");
     expect(formatYen(0)).toBe("0円");
   });
 });
 
 describe("formatSigned", () => {
   it("符号付きで金額を表示する", () => {
-    expect(formatSigned(280000)).toBe("+280,000円");
+    expect(formatSigned(280_000)).toBe("+280,000円");
     expect(formatSigned(-5000)).toBe("-5,000円");
     expect(formatSigned(0)).toBe("±0円");
   });
@@ -136,22 +157,22 @@ describe("formatDateTime", () => {
 });
 
 describe("renderDashboard", () => {
-  let root: HTMLElement;
+  const root = document.createElement("div");
 
   beforeEach(() => {
-    document.body.innerHTML = '<div id="app"></div>';
-    root = document.getElementById("app")!;
+    root.replaceChildren();
+    document.body.replaceChildren(root);
   });
 
-  function clickTab(label: string) {
+  function clickTab(label: string): void {
     [...root.querySelectorAll<HTMLButtonElement>(".view-tab")]
-      .find((t) => t.textContent === label)!
+      .find((tab) => tab.textContent === label)!
       .click();
   }
 
-  function clickChip(label: string) {
+  function clickChip(label: string): void {
     [...root.querySelectorAll<HTMLButtonElement>(".log-filters button")]
-      .find((c) => c.textContent === label)!
+      .find((chip) => chip.textContent === label)!
       .click();
   }
 
@@ -233,7 +254,7 @@ describe("renderDashboard", () => {
       render(root);
 
       const tab = [...root.querySelectorAll<HTMLButtonElement>(".view-tab")].find(
-        (t) => t.textContent === "口座別",
+        (candidate) => candidate.textContent === "口座別",
       )!;
       tab.focus();
       tab.click();
@@ -251,14 +272,12 @@ describe("renderDashboard", () => {
       const rows = [...root.querySelectorAll(".log .log-row")];
       expect(rows).toHaveLength(4);
       // 2つ目のスナップショット時点の外部入出金 → 振替 5,000円 → 7/8の振替 30,000円
-      expect(rows[0].textContent).toContain("02: 積立 → 外部");
-      expect(rows[0].textContent).toContain("-5,000円");
-      expect(rows[1].textContent).toContain("外部 → 03: 支払い箱");
-      expect(rows[1].textContent).toContain("+272,469円");
-      expect(rows[2].textContent).toContain("01: お財布 → 02: 積立");
-      expect(rows[2].textContent).toContain("5,000円");
-      expect(rows[3].textContent).toContain("02: 積立 → 03: 支払い箱");
-      expect(rows[3].textContent).toContain("30,000円");
+      expect(rows.map((row) => row.textContent)).toStrictEqual([
+        expect.stringMatching(/02: 積立 → 外部[\s\S]*-5,000円/u),
+        expect.stringMatching(/外部 → 03: 支払い箱[\s\S]*\+272,469円/u),
+        expect.stringMatching(/01: お財布 → 02: 積立[\s\S]*5,000円/u),
+        expect.stringMatching(/02: 積立 → 03: 支払い箱[\s\S]*30,000円/u),
+      ]);
     });
 
     it("残高記録を従属行として表示する", () => {
@@ -278,8 +297,8 @@ describe("renderDashboard", () => {
       const headings = [...root.querySelectorAll(".log .day-heading")];
       // 7/10(外部入出金+振替+記録)、7/9(記録)、7/8(振替) の3グループ
       expect(headings).toHaveLength(3);
-      const d = new Date(snapshots[1].takenAt);
-      expect(headings[0].textContent).toContain(`${d.getMonth() + 1}月${d.getDate()}日`);
+      const date = new Date(snapshots[1].takenAt);
+      expect(headings[0].textContent).toContain(`${date.getMonth() + 1}月${date.getDate()}日`);
       // 日計は外部入出金の合計のみ。振替だけ・記録だけの日には出さない
       expect(headings[0].querySelector(".day-total")!.textContent).toBe("+267,469円");
       expect(headings[1].querySelector(".day-total")).toBeNull();
@@ -355,9 +374,9 @@ describe("renderDashboard", () => {
         render(root);
 
         const labels = [...root.querySelectorAll("select.account-filter option")].map(
-          (o) => o.textContent,
+          (option) => option.textContent,
         );
-        expect(labels).toEqual(["口座 ▾", "01: お財布", "02: 積立", "03: 支払い箱"]);
+        expect(labels).toStrictEqual(["口座 ▾", "01: お財布", "02: 積立", "03: 支払い箱"]);
       });
 
       it("該当がなければ空状態を表示する", () => {
@@ -372,7 +391,7 @@ describe("renderDashboard", () => {
         render(root);
 
         const chip = [...root.querySelectorAll<HTMLButtonElement>(".log-filters button")].find(
-          (c) => c.textContent === "振替",
+          (candidate) => candidate.textContent === "振替",
         )!;
         chip.focus();
         chip.click();
@@ -415,7 +434,7 @@ describe("renderDashboard", () => {
         input.value = "給料";
         input.dispatchEvent(new Event("change", { bubbles: true }));
 
-        expect(onCommentChange).toHaveBeenCalledWith(expect.stringMatching(/^change:/), "給料");
+        expect(onCommentChange).toHaveBeenCalledWith(expect.stringMatching(/^change:/u), "給料");
       });
 
       it("行タップでモバイル用のコメント入力を開閉する", () => {
@@ -456,7 +475,10 @@ describe("renderDashboard", () => {
         const input = root.querySelector<HTMLInputElement>("input.comment")!;
         const listId = input.getAttribute("list")!;
         const options = [...root.querySelectorAll(`#${listId} option`)];
-        expect(options.map((o) => o.getAttribute("value"))).toEqual(["家賃", "給料"]);
+        expect(options.map((option) => option.getAttribute("value"))).toStrictEqual([
+          "家賃",
+          "給料",
+        ]);
       });
 
       it("コメントがなければ候補も空にする", () => {
@@ -481,27 +503,10 @@ describe("renderDashboard", () => {
     });
 
     describe("スワイプ削除 (モバイル)", () => {
-      function touch(
-        el: Element,
-        type: "touchstart" | "touchmove" | "touchend",
-        x: number,
-        y: number,
-      ) {
-        const ev = new Event(type, { bubbles: true });
-        Object.defineProperty(ev, "touches", { value: [{ clientX: x, clientY: y }] });
-        el.dispatchEvent(ev);
-      }
-
-      function swipe(el: Element, dx: number, dy = 0) {
-        touch(el, "touchstart", 200, 300);
-        touch(el, "touchmove", 200 + dx, 300 + dy);
-        touch(el, "touchend", 200 + dx, 300 + dy);
-      }
-
       function transferRow(): HTMLElement {
         // 振替行だけがスワイプ削除できる(先頭2行は外部入出金)
         return [...root.querySelectorAll<HTMLElement>(".log .log-row")].find(
-          (r) => r.querySelector(".swipe-delete") !== null,
+          (row) => row.querySelector(".swipe-delete") !== null,
         )!;
       }
 
@@ -539,7 +544,7 @@ describe("renderDashboard", () => {
       });
 
       it("削除パネルをタップし確認するとハンドラへ振替を渡す", () => {
-        vi.spyOn(window, "confirm").mockReturnValue(true);
+        vi.spyOn(globalThis, "confirm").mockReturnValue(true);
         const { onDeleteTransfer } = render(root);
         const row = transferRow();
 
@@ -571,7 +576,7 @@ describe("renderDashboard", () => {
 
     describe("振替の削除", () => {
       it("削除ボタンを押し確認するとハンドラへ振替を渡す", () => {
-        vi.spyOn(window, "confirm").mockReturnValue(true);
+        vi.spyOn(globalThis, "confirm").mockReturnValue(true);
         const { onDeleteTransfer } = render(root);
 
         root.querySelector<HTMLButtonElement>(".log button.delete-transfer")!.click();
@@ -581,7 +586,7 @@ describe("renderDashboard", () => {
       });
 
       it("確認ダイアログをキャンセルしたら削除しない", () => {
-        vi.spyOn(window, "confirm").mockReturnValue(false);
+        vi.spyOn(globalThis, "confirm").mockReturnValue(false);
         const { onDeleteTransfer } = render(root);
 
         root.querySelector<HTMLButtonElement>(".log button.delete-transfer")!.click();
@@ -599,8 +604,8 @@ describe("renderDashboard", () => {
 
   describe("口座別タブ", () => {
     function card(name: string): HTMLElement {
-      return [...root.querySelectorAll<HTMLElement>(".accounts .workspace-card")].find((c) =>
-        c.querySelector(".workspace-name")!.textContent!.includes(name),
+      return [...root.querySelectorAll<HTMLElement>(".accounts .workspace-card")].find(
+        (candidate) => candidate.querySelector(".workspace-name")!.textContent!.includes(name),
       )!;
     }
 
@@ -676,8 +681,10 @@ describe("renderDashboard", () => {
       expect(items[0].querySelector(".snapshot-total")!.textContent).toBe("484,381円");
       expect(items[0].querySelector(".snapshot-diff")!.textContent).toBe("+267,469円");
       // 最古の行は比べる相手がないので前回比を出さない
-      expect(items[1].querySelector(".snapshot-total")!.textContent).toBe("216,912円");
-      expect(items[1].querySelector(".snapshot-diff")).toBeNull();
+      expect([
+        items[1].querySelector(".snapshot-total")!.textContent,
+        items[1].querySelector(".snapshot-diff"),
+      ]).toStrictEqual(["216,912円", null]);
     });
 
     it("行を開くと口座ごとの内訳を表示する", () => {
@@ -704,13 +711,13 @@ describe("renderDashboard", () => {
   });
 
   describe("期間フィルタ", () => {
-    function setPeriod(name: "period-from" | "period-to", value: string) {
+    function setPeriod(name: "period-from" | "period-to", value: string): void {
       const input = root.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
       input.value = value;
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
-    function setMonth(value: string) {
+    function setMonth(value: string): void {
       const input = root.querySelector<HTMLInputElement>('input[name="period-month"]')!;
       input.value = value;
       input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -916,7 +923,7 @@ describe("renderDashboard", () => {
       secretAccessKey: "SECRET",
     };
 
-    function openSettings() {
+    function openSettings(): void {
       root.querySelector<HTMLButtonElement>("button.settings-button")!.click();
     }
 
@@ -983,7 +990,7 @@ describe("renderDashboard", () => {
         expect(root.querySelector(".sync .sync-status")!.textContent).toBe("同期しました");
       });
 
-      expect(onSyncNow).toHaveBeenCalled();
+      expect(onSyncNow).toHaveBeenCalledWith();
     });
 
     it("記録が空でも設定画面を開ける", () => {
@@ -1003,7 +1010,8 @@ describe("renderDashboard", () => {
       expect(link.download).toBe("aozora-history-sync-config.json");
       const prefix = "data:application/json;charset=utf-8,";
       expect(link.href.startsWith(prefix)).toBe(true);
-      expect(JSON.parse(decodeURIComponent(link.href.slice(prefix.length)))).toEqual(savedConfig);
+      const exported = JSON.parse(decodeURIComponent(link.href.slice(prefix.length)));
+      expect(exported).toStrictEqual(savedConfig);
     });
 
     it("同期設定が未保存ならエクスポートリンクを出さない", () => {
@@ -1049,7 +1057,7 @@ describe("renderDashboard", () => {
   });
 
   describe("インポート / エクスポート", () => {
-    function openSettings() {
+    function openSettings(): void {
       root.querySelector<HTMLButtonElement>("button.settings-button")!.click();
     }
 
@@ -1065,7 +1073,7 @@ describe("renderDashboard", () => {
       const prefix = "data:application/json;charset=utf-8,";
       expect(link.href.startsWith(prefix)).toBe(true);
       const json = JSON.parse(decodeURIComponent(link.href.slice(prefix.length)));
-      expect(json).toEqual({ snapshots, transfers, comments, deletions });
+      expect(json).toStrictEqual({ snapshots, transfers, comments, deletions });
     });
 
     it("CSVエクスポートリンクが振替履歴とコメントを含む", () => {
@@ -1140,12 +1148,12 @@ describe("renderDashboard", () => {
 
   describe("再描画関数", () => {
     it("選択中のフィルタを保ったまま最新のデータを表示する", () => {
-      const d = data();
-      const { redraw } = render(root, d);
+      const dashboardData = data();
+      const { redraw } = render(root, dashboardData);
       clickChip("振替");
 
       // 開いている間に別の場所(銀行サイトのタブや自動同期)で振替が増えた
-      d.transfers = [
+      dashboardData.transfers = [
         ...transfers,
         {
           transferredAt: Date.UTC(2026, 6, 10, 14, 0),
