@@ -1,8 +1,11 @@
 import { commentSuggestions, transferCommentKey } from "./domain/ledger.ts";
 import { parseAccountsPage, parseTransferForm } from "./domain/parser.ts";
+import type { TransferInput } from "./domain/parser.ts";
 import type { HistoryStore } from "./infrastructure/storage.ts";
 
 const CONFIRM_BUTTON_ID = "sp-account-account-to-account-confirm";
+// 実行ボタンには安定したidがないため、完了ダイアログの文言で振替の成立を検知する
+const COMPLETION_MESSAGE = "つかいわけ口座の振替が完了しました";
 const PANEL_ID = "aozora-history-comment";
 
 // ダッシュボードと同じ視覚言語(slate/skyのデザイントークン)。銀行サイトには
@@ -116,24 +119,36 @@ function showCommentPrompt(
   inputRow.append(input, save);
   panel.append(header, inputRow, list);
 
-  // datalistが使えないAndroid Firefox向けに、よく使う候補はチップでも見せる
+  // datalistが使えないAndroid Firefox向けに、よく使う候補はチップでも見せる。
+  // 入力中はその文字を含む候補に絞り込み、タイプ中でも候補が使えるようにする
   if (suggestions.length > 0) {
     const chips = doc.createElement("div");
     chips.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;";
-    for (const text of suggestions.slice(0, MAX_SUGGESTION_CHIPS)) {
-      const chip = doc.createElement("button");
-      chip.type = "button";
-      chip.className = "suggestion";
-      chip.textContent = text;
-      chip.style.cssText =
-        `font:inherit;font-size:13px;background:transparent;color:${theme.subtle};` +
-        `border:1px solid ${theme.border};border-radius:9999px;padding:6px 14px;min-height:36px;cursor:pointer;`;
-      chip.addEventListener("click", () => {
-        input.value = text;
-        input.focus();
-      });
-      chips.append(chip);
-    }
+
+    const renderChips = () => {
+      chips.textContent = "";
+      const query = input.value.trim();
+      const matches = suggestions.filter((text) => text.includes(query));
+      for (const text of matches.slice(0, MAX_SUGGESTION_CHIPS)) {
+        const chip = doc.createElement("button");
+        chip.type = "button";
+        chip.className = "suggestion";
+        chip.textContent = text;
+        chip.style.cssText =
+          `font:inherit;font-size:13px;background:transparent;color:${theme.subtle};` +
+          `border:1px solid ${theme.border};border-radius:9999px;padding:6px 14px;min-height:36px;cursor:pointer;`;
+        chip.addEventListener("click", () => {
+          input.value = text;
+          input.focus();
+          renderChips();
+        });
+        chips.append(chip);
+      }
+      chips.style.display = matches.length > 0 ? "flex" : "none";
+    };
+
+    input.addEventListener("input", renderChips);
+    renderChips();
     panel.append(chips);
   }
 
@@ -150,6 +165,41 @@ export function setupContentScript(
   now: () => number,
 ): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // 確認画面の「戻る」やエラーで振替が成立しないことがあるため、確認クリックでは
+  // フォーム内容を保留するだけにし、完了ダイアログの出現を待って記録する
+  let pendingTransfer: TransferInput | null = null;
+  let completionVisible = false;
+
+  // 実サイト(Vue)は確認/完了ブロックをv-showで切り替えるため、完了文言は確認
+  // 段階でも display:none のままDOMに存在する。文言の有無ではなく表示状態で判定する
+  const isDisplayed = (el: Element): boolean => {
+    for (let node: Element | null = el; node instanceof HTMLElement; node = node.parentElement) {
+      if (node.style.display === "none") return false;
+    }
+    return true;
+  };
+
+  const hasVisibleCompletionMessage = () =>
+    [...doc.querySelectorAll("p")].some(
+      (p) => p.textContent?.includes(COMPLETION_MESSAGE) === true && isDisplayed(p),
+    );
+
+  const commitOnCompletion = () => {
+    const visible = hasVisibleCompletionMessage();
+    const appeared = visible && !completionVisible;
+    completionVisible = visible;
+    if (!appeared) return;
+    const parsed = pendingTransfer;
+    pendingTransfer = null;
+    if (parsed === null) return;
+    const record = { transferredAt: now(), ...parsed };
+    void store
+      .recordTransfer(record)
+      .then(() => store.loadComments())
+      .then((comments) => {
+        showCommentPrompt(doc, store, transferCommentKey(record), commentSuggestions(comments));
+      });
+  };
 
   const captureSnapshot = () => {
     const parsed = parseAccountsPage(doc);
@@ -169,20 +219,22 @@ export function setupContentScript(
     const target = event.target;
     if (!(target instanceof Element)) return;
     if (target.closest(`#${CONFIRM_BUTTON_ID}`) === null) return;
-    const parsed = parseTransferForm(doc);
-    if (parsed === null) return;
-    const record = { transferredAt: now(), ...parsed };
-    void store
-      .recordTransfer(record)
-      .then(() => store.loadComments())
-      .then((comments) => {
-        showCommentPrompt(doc, store, transferCommentKey(record), commentSuggestions(comments));
-      });
+    pendingTransfer = parseTransferForm(doc);
   };
 
-  const observer = new MutationObserver(scheduleCapture);
-  observer.observe(doc, { childList: true, subtree: true });
+  const observer = new MutationObserver(() => {
+    scheduleCapture();
+    commitOnCompletion();
+  });
+  // v-showの表示切替はstyle属性の変更として現れるため、属性変更も監視する
+  observer.observe(doc, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["style"],
+  });
   doc.addEventListener("click", onClick, true);
+  completionVisible = hasVisibleCompletionMessage();
   scheduleCapture();
 
   return () => {

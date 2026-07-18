@@ -41,6 +41,41 @@ const transferHtml = `
 </div>
 <button id="sp-account-account-to-account-confirm" type="button">確認</button>`;
 
+// 実サイト(Vue)は確認クリックでモーダルを挿入し、確認/完了ブロックをv-showで
+// 切り替える。完了文言は確認段階でも display:none のままDOMに存在する
+const confirmModalHtml = `
+<div class="modal">
+  <div class="confirm-info panel inner-block">
+    <header class="header-accent"><h4>つかいわけ口座振替　確認</h4></header>
+    <div class="bottom-buttons">
+      <button id="sp-account-account-to-account-back" type="button">戻る</button>
+      <button id="sp-account-account-to-account-execute" type="button">実行</button>
+    </div>
+  </div>
+  <div class="confirm-info panel inner-block" style="display: none;">
+    <header class="header-accent"><h4>つかいわけ口座振替　完了</h4></header>
+    <p class="panel-body">つかいわけ口座の振替が完了しました。</p>
+    <div class="bottom-buttons">
+      <button id="sp-account-account-to-account-close" type="button">閉じる</button>
+    </div>
+  </div>
+</div>`;
+
+async function openConfirmModal() {
+  document.getElementById("sp-account-account-to-account-confirm")!.click();
+  document.body.insertAdjacentHTML("beforeend", confirmModalHtml);
+  await vi.runAllTimersAsync();
+}
+
+async function executeTransfer() {
+  const [confirmStep, completeStep] =
+    document.querySelectorAll<HTMLElement>(".modal .confirm-info");
+  document.getElementById("sp-account-account-to-account-execute")!.click();
+  confirmStep.style.display = "none";
+  completeStep.style.display = "";
+  await vi.runAllTimersAsync();
+}
+
 describe("setupContentScript", () => {
   let store: HistoryStore;
   let teardown: () => void;
@@ -84,12 +119,24 @@ describe("setupContentScript", () => {
     expect(await store.loadSnapshots()).toHaveLength(1);
   });
 
-  it("振替フォームで確認を押すと振替を記録する", async () => {
+  it("確認モーダルが開いただけ(完了文言は非表示でDOMに存在)では記録もパネル表示もしない", async () => {
     document.body.innerHTML = transferHtml;
     await vi.runAllTimersAsync();
 
-    document.getElementById("sp-account-account-to-account-confirm")!.click();
+    await openConfirmModal();
+
+    expect(await store.loadTransfers()).toEqual([]);
+    expect(document.getElementById("aozora-history-comment")).toBeNull();
+  });
+
+  it("実行後に完了ブロックが表示されたら振替を記録する", async () => {
+    document.body.innerHTML = transferHtml;
     await vi.runAllTimersAsync();
+
+    await openConfirmModal();
+    expect(await store.loadTransfers()).toEqual([]);
+
+    await executeTransfer();
 
     expect(await store.loadTransfers()).toEqual([
       {
@@ -101,11 +148,49 @@ describe("setupContentScript", () => {
     ]);
   });
 
+  it("戻るでモーダルを閉じた場合は記録しない", async () => {
+    document.body.innerHTML = transferHtml;
+    await vi.runAllTimersAsync();
+
+    await openConfirmModal();
+    document.getElementById("sp-account-account-to-account-back")!.click();
+    document.querySelector(".modal")!.remove();
+    await vi.runAllTimersAsync();
+
+    expect(await store.loadTransfers()).toEqual([]);
+  });
+
+  it("完了ブロックが表示されたままの間のDOM変化では再記録しない", async () => {
+    document.body.innerHTML = transferHtml;
+    await openConfirmModal();
+    await executeTransfer();
+
+    document.body.insertAdjacentHTML("beforeend", "<p>別の変化</p>");
+    await vi.runAllTimersAsync();
+
+    expect(await store.loadTransfers()).toHaveLength(1);
+  });
+
+  it("完了モーダルを閉じた後の2回目の振替も記録する", async () => {
+    document.body.innerHTML = transferHtml;
+    await openConfirmModal();
+    await executeTransfer();
+
+    document.getElementById("sp-account-account-to-account-close")!.click();
+    document.querySelector(".modal")!.remove();
+    await vi.runAllTimersAsync();
+
+    await openConfirmModal();
+    await executeTransfer();
+
+    expect(await store.loadTransfers()).toHaveLength(2);
+  });
+
   describe("振替直後のコメント入力", () => {
     async function confirmTransfer() {
       document.body.innerHTML = transferHtml;
-      document.getElementById("sp-account-account-to-account-confirm")!.click();
-      await vi.runAllTimersAsync();
+      await openConfirmModal();
+      await executeTransfer();
     }
 
     it("記録後にコメント入力パネルを表示する", async () => {
@@ -198,6 +283,67 @@ describe("setupContentScript", () => {
       expect(panel.querySelectorAll(`#${listId} option`)).toHaveLength(7);
     });
 
+    it("入力するとその文字を含む候補だけをチップに表示する", async () => {
+      await store.setComment("transfer:1", "家賃");
+      await store.setComment("transfer:2", "積立");
+      await store.setComment("transfer:3", "積立NISA");
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      const input = panel.querySelector("input")!;
+      input.value = "積";
+      input.dispatchEvent(new Event("input"));
+
+      const chips = [...panel.querySelectorAll<HTMLButtonElement>("button.suggestion")];
+      expect(chips.map((c) => c.textContent)).toEqual(["積立NISA", "積立"]);
+    });
+
+    it("入力を空に戻すと全候補のチップに戻る", async () => {
+      await store.setComment("transfer:1", "家賃");
+      await store.setComment("transfer:2", "積立");
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      const input = panel.querySelector("input")!;
+      input.value = "積";
+      input.dispatchEvent(new Event("input"));
+      input.value = "";
+      input.dispatchEvent(new Event("input"));
+
+      const chips = [...panel.querySelectorAll<HTMLButtonElement>("button.suggestion")];
+      expect(chips.map((c) => c.textContent)).toEqual(["積立", "家賃"]);
+    });
+
+    it("どの候補にも一致しない入力ではチップを出さない", async () => {
+      await store.setComment("transfer:1", "家賃");
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      const input = panel.querySelector("input")!;
+      input.value = "旅行";
+      input.dispatchEvent(new Event("input"));
+
+      expect(panel.querySelectorAll("button.suggestion")).toHaveLength(0);
+    });
+
+    it("絞り込み後もチップのタップで入力欄に反映できる", async () => {
+      await store.setComment("transfer:1", "家賃");
+      await store.setComment("transfer:2", "積立");
+
+      await confirmTransfer();
+
+      const panel = document.getElementById("aozora-history-comment")!;
+      const input = panel.querySelector("input")!;
+      input.value = "家";
+      input.dispatchEvent(new Event("input"));
+
+      panel.querySelector<HTMLButtonElement>("button.suggestion")!.click();
+      expect(input.value).toBe("家賃");
+    });
+
     it("コメントがなければチップの列は出さない", async () => {
       await confirmTransfer();
 
@@ -209,8 +355,8 @@ describe("setupContentScript", () => {
       document.body.innerHTML = transferHtml;
       document.querySelector<HTMLInputElement>("input.input-amount")!.value = "";
 
-      document.getElementById("sp-account-account-to-account-confirm")!.click();
-      await vi.runAllTimersAsync();
+      await openConfirmModal();
+      await executeTransfer();
 
       expect(document.getElementById("aozora-history-comment")).toBeNull();
     });
@@ -220,8 +366,8 @@ describe("setupContentScript", () => {
     document.body.innerHTML = transferHtml;
     document.querySelector<HTMLInputElement>("input.input-amount")!.value = "";
 
-    document.getElementById("sp-account-account-to-account-confirm")!.click();
-    await vi.runAllTimersAsync();
+    await openConfirmModal();
+    await executeTransfer();
 
     expect(await store.loadTransfers()).toEqual([]);
   });
