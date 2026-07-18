@@ -1,8 +1,11 @@
 import { commentSuggestions, transferCommentKey } from "./domain/ledger.ts";
 import { parseAccountsPage, parseTransferForm } from "./domain/parser.ts";
+import type { TransferInput } from "./domain/parser.ts";
 import type { HistoryStore } from "./infrastructure/storage.ts";
 
 const CONFIRM_BUTTON_ID = "sp-account-account-to-account-confirm";
+// 実行ボタンには安定したidがないため、完了ダイアログの文言で振替の成立を検知する
+const COMPLETION_MESSAGE = "つかいわけ口座の振替が完了しました";
 const PANEL_ID = "aozora-history-comment";
 
 // ダッシュボードと同じ視覚言語(slate/skyのデザイントークン)。銀行サイトには
@@ -150,6 +153,29 @@ export function setupContentScript(
   now: () => number,
 ): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // 確認画面の「戻る」やエラーで振替が成立しないことがあるため、確認クリックでは
+  // フォーム内容を保留するだけにし、完了ダイアログの出現を待って記録する
+  let pendingTransfer: TransferInput | null = null;
+  let completionVisible = false;
+
+  const hasCompletionMessage = () => doc.body?.textContent?.includes(COMPLETION_MESSAGE) === true;
+
+  const commitOnCompletion = () => {
+    const visible = hasCompletionMessage();
+    const appeared = visible && !completionVisible;
+    completionVisible = visible;
+    if (!appeared) return;
+    const parsed = pendingTransfer;
+    pendingTransfer = null;
+    if (parsed === null) return;
+    const record = { transferredAt: now(), ...parsed };
+    void store
+      .recordTransfer(record)
+      .then(() => store.loadComments())
+      .then((comments) => {
+        showCommentPrompt(doc, store, transferCommentKey(record), commentSuggestions(comments));
+      });
+  };
 
   const captureSnapshot = () => {
     const parsed = parseAccountsPage(doc);
@@ -169,20 +195,16 @@ export function setupContentScript(
     const target = event.target;
     if (!(target instanceof Element)) return;
     if (target.closest(`#${CONFIRM_BUTTON_ID}`) === null) return;
-    const parsed = parseTransferForm(doc);
-    if (parsed === null) return;
-    const record = { transferredAt: now(), ...parsed };
-    void store
-      .recordTransfer(record)
-      .then(() => store.loadComments())
-      .then((comments) => {
-        showCommentPrompt(doc, store, transferCommentKey(record), commentSuggestions(comments));
-      });
+    pendingTransfer = parseTransferForm(doc);
   };
 
-  const observer = new MutationObserver(scheduleCapture);
+  const observer = new MutationObserver(() => {
+    scheduleCapture();
+    commitOnCompletion();
+  });
   observer.observe(doc, { childList: true, subtree: true });
   doc.addEventListener("click", onClick, true);
+  completionVisible = hasCompletionMessage();
   scheduleCapture();
 
   return () => {
