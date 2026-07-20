@@ -63,6 +63,15 @@ const confirmModalHtml = `
   </div>
 </div>`;
 
+// セッション切れ時に銀行サイトが表示する案内。振替は成立していない。
+// エラーページのマークアップは確認できていないため、<p>以外でも検知できること
+const sessionExpiredHtml = `
+<div class="error-page">
+  <div>最後の操作から一定の時間が経過したため、セッションの有効期限が切れました。</div>
+  <div>お手数をおかけいたしますが、再度ログインのうえ、お試しくださいますようお願い申し上げます。</div>
+  <button type="button">ログインページへ進む</button>
+</div>`;
+
 async function openConfirmModal(): Promise<void> {
   document.querySelector<HTMLElement>("#sp-account-account-to-account-confirm")!.click();
   document.body.insertAdjacentHTML("beforeend", confirmModalHtml);
@@ -163,6 +172,37 @@ describe("setupContentScript", () => {
     await vi.runAllTimersAsync();
 
     await expect(store!.loadTransfers()).resolves.toStrictEqual([]);
+  });
+
+  it("完了表示の直後にセッション切れ画面へ差し替わった場合は記録しない", async () => {
+    document.body.innerHTML = transferHtml;
+    await openConfirmModal();
+
+    // 認証切れのまま実行できてしまい、完了表示が一瞬出た後にセッション切れ画面へ遷移する
+    const [confirmStep, completeStep] =
+      document.querySelectorAll<HTMLElement>(".modal .confirm-info");
+    document.querySelector<HTMLElement>("#sp-account-account-to-account-execute")!.click();
+    confirmStep.style.display = "none";
+    completeStep.style.display = "";
+    await vi.advanceTimersByTimeAsync(100);
+    document.body.innerHTML = sessionExpiredHtml;
+    await vi.runAllTimersAsync();
+
+    await expect(store!.loadTransfers()).resolves.toStrictEqual([]);
+    expect(document.querySelector("#aozora-history-comment")).toBeNull();
+  });
+
+  it("セッション切れの文言が表示されている間は完了ブロックが現れても記録しない", async () => {
+    document.body.innerHTML = transferHtml;
+    await openConfirmModal();
+
+    // 実サイトは振替APIが490(セッション切れ)でもエラー画面を出した後に
+    // 完了ステップへ進んでしまうため、「エラー画面 → 完了表示」の順になる
+    document.body.insertAdjacentHTML("beforeend", sessionExpiredHtml);
+    await executeTransfer();
+
+    await expect(store!.loadTransfers()).resolves.toStrictEqual([]);
+    expect(document.querySelector("#aozora-history-comment")).toBeNull();
   });
 
   it("完了ブロックが表示されたままの間のDOM変化では再記録しない", async () => {
