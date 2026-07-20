@@ -36,7 +36,7 @@ function logTitle(entry: TransactionEntry): HTMLElement {
 function deleteButton(ctx: RenderContext, transfer: TransferRecord): HTMLElement {
   const button = el(
     "button",
-    "delete-transfer cursor-pointer rounded px-1.5 text-slate-400 opacity-0 transition-opacity " +
+    "delete-transfer w-6 shrink-0 cursor-pointer rounded text-slate-400 opacity-0 transition-opacity " +
       "group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-700 " +
       "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 " +
       "max-sm:hidden dark:hover:bg-rose-950 dark:hover:text-rose-400",
@@ -58,16 +58,23 @@ function transactionAccent(entry: TransactionEntry): string {
   return entry.change.externalDelta > 0 ? ACCENT.in : ACCENT.out;
 }
 
+// 可変幅だと後続のコメント欄の位置が桁数分ずれるため、固定幅で右揃えにする
+const AMOUNT = "amount w-[120px] shrink-0 text-right text-base font-bold tabular-nums";
+
 function transactionAmount(entry: TransactionEntry): HTMLElement {
   if (entry.kind === "transfer") {
-    return el("span", "amount text-base font-bold tabular-nums", formatYen(entry.transfer.amount));
+    return el("span", AMOUNT, formatYen(entry.transfer.amount));
   }
   const polarity = entry.change.externalDelta > 0 ? POSITIVE : NEGATIVE;
-  return el(
-    "span",
-    `amount text-base font-bold tabular-nums ${polarity}`,
-    formatSigned(entry.change.externalDelta),
-  );
+  return el("span", `${AMOUNT} ${polarity}`, formatSigned(entry.change.externalDelta));
+}
+
+/** 行末の削除ボタン列。削除できない外部入出金行は同じ幅のスペーサーで右端を揃える */
+function trailingColumn(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
+  if (entry.kind === "transfer") {
+    return deleteButton(ctx, entry.transfer);
+  }
+  return el("span", "delete-spacer w-6 shrink-0 max-sm:hidden");
 }
 
 function sublineEl(ctx: RenderContext, key: string, at: number): HTMLElement {
@@ -97,10 +104,7 @@ function transactionMain(ctx: RenderContext, key: string, entry: TransactionEntr
   // デスクトップは常時インラインで編集できる
   const inline = commentInput(ctx, key);
   inline.classList.add("max-sm:hidden", "sm:w-[220px]", "shrink-0");
-  main.append(body, inline, transactionAmount(entry));
-  if (entry.kind === "transfer") {
-    main.append(deleteButton(ctx, entry.transfer));
-  }
+  main.append(body, inline, transactionAmount(entry), trailingColumn(ctx, entry));
   return main;
 }
 

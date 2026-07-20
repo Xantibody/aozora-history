@@ -305,6 +305,36 @@ describe("renderDashboard", () => {
       expect(headings[2].querySelector(".day-total")).toBeNull();
     });
 
+    it("金額の列を固定幅・右揃えにし、行の種類によらず右端を揃える", () => {
+      render(root);
+
+      // 金額セルが可変幅だと、後続のコメント欄の位置が桁数分ずれてガタガタに見える
+      const amounts = [...root.querySelectorAll<HTMLElement>(".log .log-row .amount")];
+      expect(amounts.length).toBeGreaterThan(0);
+      for (const amount of amounts) {
+        expect(amount.className).toContain("w-[120px]");
+        expect(amount.className).toContain("text-right");
+      }
+
+      // 削除ボタンは振替行にしかないため、外部入出金行には同じ幅のスペーサーを
+      // 置かないと金額の右端が振替行より右にはみ出す
+      const rows = [...root.querySelectorAll<HTMLElement>(".log .log-row")];
+      const trailing = [
+        ...root.querySelectorAll<HTMLElement>(
+          ".log .log-row .delete-transfer, .log .log-row .delete-spacer",
+        ),
+      ];
+      expect(trailing).toHaveLength(rows.length);
+      for (const element of trailing) {
+        expect(element.className).toContain("w-6");
+      }
+
+      // 日見出しの日計も金額列の右端に合わせる(モバイルはカードの余白と同じ)
+      const heading = root.querySelector<HTMLElement>(".log .day-heading")!;
+      expect(heading.className).toContain("pr-3");
+      expect(heading.className).toContain("sm:pr-12");
+    });
+
     it("種類ごとのアクセントバーを付ける", () => {
       render(root);
 
