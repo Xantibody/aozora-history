@@ -1,4 +1,5 @@
 import type { HistoryStore } from "./infrastructure/storage.ts";
+import type { TransferRecord } from "./domain/ledger.ts";
 
 const PANEL_ID = "aozora-history-comment";
 
@@ -14,6 +15,7 @@ const PROMPT_THEMES = {
     accent: "#0284c7", // sky-600
     accentText: "#fff",
     focusRing: "#0ea5e9", // sky-500
+    danger: "#be123c", // rose-700
   },
   dark: {
     surface: "#020617", // slate-950
@@ -24,6 +26,7 @@ const PROMPT_THEMES = {
     accent: "#38bdf8", // sky-400
     accentText: "#020617",
     focusRing: "#38bdf8",
+    danger: "#fb7185", // rose-400
   },
 };
 
@@ -36,11 +39,12 @@ interface PromptContext {
   store: HistoryStore;
   key: string;
   suggestions: string[];
+  record: TransferRecord;
   theme: PromptTheme;
   panel: HTMLDivElement;
   input: HTMLInputElement;
 }
-export type CommentPrompt = Pick<PromptContext, "key" | "suggestions">;
+export type CommentPrompt = Pick<PromptContext, "key" | "suggestions" | "record">;
 
 function resolveTheme(doc: Document): PromptTheme {
   const dark = doc.defaultView?.matchMedia?.("(prefers-color-scheme: dark)").matches === true;
@@ -186,6 +190,30 @@ function appendSuggestionChips(context: PromptContext): void {
   context.panel.append(chips);
 }
 
+async function undoRecord(context: PromptContext): Promise<void> {
+  // セッション切れなどで成立していない振替が記録されてしまった場合の取り消し。
+  // 誤タップで正しい記録を失わないよう、確認してから削除する
+  if (!globalThis.confirm("この振替の記録を取り消しますか?")) {
+    return;
+  }
+  await context.store.deleteTransfer(context.record);
+  context.panel.remove();
+}
+
+function buildUndoButton(context: PromptContext): HTMLButtonElement {
+  const undo = context.doc.createElement("button");
+  undo.type = "button";
+  undo.className = "undo";
+  undo.textContent = "誤記録なら取り消す";
+  undo.style.cssText =
+    `font:inherit;font-size:13px;background:transparent;color:${context.theme.danger};` +
+    "border:none;border-radius:8px;padding:6px 0;min-height:36px;cursor:pointer;align-self:flex-start;";
+  undo.addEventListener("click", () => {
+    void undoRecord(context);
+  });
+  return undo;
+}
+
 /** 銀行サイトのCSSに影響されないよう、スタイルはすべてインラインで当てる */
 export function showCommentPrompt(doc: Document, store: HistoryStore, prompt: CommentPrompt): void {
   doc.querySelector(`#${PANEL_ID}`)?.remove();
@@ -195,6 +223,7 @@ export function showCommentPrompt(doc: Document, store: HistoryStore, prompt: Co
   const context: PromptContext = { doc, store, theme, panel, input, ...prompt };
   panel.append(buildHeader(context), buildInputRow(context), buildSuggestionList(context));
   appendSuggestionChips(context);
+  panel.append(buildUndoButton(context));
   doc.body.append(panel);
   input.focus();
 }
