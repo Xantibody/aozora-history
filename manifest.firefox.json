@@ -1,9 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Aozora History",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "GMOあおぞらネット銀行のつかいわけ口座の残高と振替履歴を記録し、ダッシュボードで確認できる拡張機能",
+  "icons": {
+    "48": "icon.svg",
+    "96": "icon.svg"
+  },
   "action": {
+    "default_icon": "icon.svg",
     "default_title": "Aozora History ダッシュボード"
   },
   "permissions": ["storage"],
