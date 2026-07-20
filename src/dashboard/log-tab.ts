@@ -162,7 +162,12 @@ function groupByDay(entries: LogEntry[]): DayGroup[] {
 }
 
 function dayHeadingEl(group: DayGroup, total: number | undefined): HTMLElement {
-  const heading = el("div", "day-heading flex items-baseline justify-between px-0.5 pt-1.5 pb-1");
+  // 右余白はカード内の金額列の右端に合わせる(モバイル: pr-3、デスクトップ:
+  // pr-3 + 削除ボタン列 w-6 + gap-3 = pr-12)
+  const heading = el(
+    "div",
+    "day-heading flex items-baseline justify-between pt-1.5 pb-1 pr-3 pl-0.5 sm:pr-12",
+  );
   heading.append(
     el("span", "text-xs font-bold text-slate-500 dark:text-slate-400", formatDayHeading(group.at)),
   );
