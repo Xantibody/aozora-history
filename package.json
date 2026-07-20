@@ -14,7 +14,7 @@
     "build:content": "esbuild src/content.ts --bundle --outfile=dist/content.js --format=iife",
     "build:background": "esbuild src/background.ts --bundle --outfile=dist/background.js --format=iife",
     "build:dashboard": "esbuild src/dashboard/index.ts --bundle --outfile=dist/dashboard.js --format=iife && tailwindcss -i src/dashboard/styles.css -o dist/dashboard.css",
-    "build:assets": "cp manifest.firefox.json dist/manifest.json && cp src/dashboard/dashboard.html dist/",
+    "build:assets": "cp manifest.firefox.json dist/manifest.json && cp src/dashboard/dashboard.html src/icon.svg dist/",
     "build": "pnpm run build:content && pnpm run build:background && pnpm run build:dashboard && pnpm run build:assets",
     "package:local": "pnpm run build && cd dist && zip -r ../aozora-history-local.xpi .",
     "package:firefox": "pnpm run build && cd dist && zip -r ../aozora-history-v${VERSION:?}.xpi .",

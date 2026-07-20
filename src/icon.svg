@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- 青空を漂う雲が¥コインを振替している、なんだかよくわからないが憎めないやつ -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#0369a1"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#sky)"/>
+
+  <!-- ¥コイン(フォント非依存になるよう¥はパスで描く) -->
+  <circle cx="90" cy="44" r="21" fill="#fbbf24" stroke="#b45309" stroke-width="4"/>
+  <g stroke="#92400e" stroke-width="4.5" stroke-linecap="round" fill="none">
+    <path d="M82 34 l8 10 8 -10"/>
+    <path d="M90 44 v14"/>
+    <path d="M83 49 h14"/>
+    <path d="M83 56 h14"/>
+  </g>
+
+  <!-- 振替の矢印 -->
+  <g stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 36 h24"/>
+    <path d="M42 28 l8 8 -8 8"/>
+  </g>
+
+  <!-- 雲(とぼけた顔つき) -->
+  <g>
+    <circle cx="30" cy="84" r="15" fill="#fff"/>
+    <circle cx="52" cy="72" r="19" fill="#fff"/>
+    <circle cx="74" cy="84" r="15" fill="#fff"/>
+    <rect x="26" y="80" width="52" height="19" rx="9" fill="#fff"/>
+    <circle cx="45" cy="84" r="2.8" fill="#334155"/>
+    <circle cx="61" cy="84" r="2.8" fill="#334155"/>
+    <path d="M47 92 q6 4.5 12 0" stroke="#334155" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>
