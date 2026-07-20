@@ -54,6 +54,7 @@ async function recordTransferAndPrompt(
   showCommentPrompt(doc, store, {
     key: transferCommentKey(record),
     suggestions: commentSuggestions(comments),
+    record,
   });
 }
 

@@ -105,6 +105,7 @@ describe("setupContentScript", () => {
   afterEach(() => {
     teardown!();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("口座一覧が描画されたらスナップショットを保存する", async () => {
@@ -395,6 +396,38 @@ describe("setupContentScript", () => {
 
       const panel = document.querySelector("#aozora-history-comment")!;
       expect(panel.querySelectorAll("button.suggestion")).toHaveLength(0);
+    });
+
+    it("「記録を取り消す」で振替の記録を削除しパネルを閉じる", async () => {
+      vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+      await confirmTransfer();
+
+      document
+        .querySelector("#aozora-history-comment")!
+        .querySelector<HTMLButtonElement>("button.undo")!
+        .click();
+      await vi.runAllTimersAsync();
+
+      await expect(store!.loadTransfers()).resolves.toStrictEqual([]);
+      // 同期先の端末で復活しないよう、削除の記録も残す
+      await expect(store!.loadDeletions()).resolves.toStrictEqual({
+        "42:133331:133332:5000": expect.any(Number),
+      });
+      expect(document.querySelector("#aozora-history-comment")).toBeNull();
+    });
+
+    it("取り消しの確認でキャンセルした場合は記録もパネルも残す", async () => {
+      vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+      await confirmTransfer();
+
+      document
+        .querySelector("#aozora-history-comment")!
+        .querySelector<HTMLButtonElement>("button.undo")!
+        .click();
+      await vi.runAllTimersAsync();
+
+      await expect(store!.loadTransfers()).resolves.toHaveLength(1);
+      expect(document.querySelector("#aozora-history-comment")).not.toBeNull();
     });
 
     it("記録に失敗した場合はパネルを出さない", async () => {
