@@ -7,15 +7,15 @@ describe("parseSpAccountBalances", () => {
       queryDatetime: "2026-07-24T21:03:11+09:00",
       spAccountBalanceDetailsList: [
         { spAccountId: "133331", spAccountName: "01: お財布", totalBalance: "129392" },
-        { spAccountId: "133332", spAccountName: "02: 積立", totalBalance: 50000 },
+        { spAccountId: "133332", spAccountName: "02: 積立", totalBalance: 50_000 },
       ],
     };
 
-    expect(parseSpAccountBalances(json)).toEqual({
+    expect(parseSpAccountBalances(json)).toStrictEqual({
       updatedAt: "2026-07-24T21:03:11+09:00",
       accounts: [
-        { id: "133331", name: "01: お財布", balance: 129392 },
-        { id: "133332", name: "02: 積立", balance: 50000 },
+        { id: "133331", name: "01: お財布", balance: 129_392 },
+        { id: "133332", name: "02: 積立", balance: 50_000 },
       ],
     });
   });
@@ -68,19 +68,19 @@ describe("parseOrdinaryStatement", () => {
       ],
     };
 
-    expect(parseOrdinaryStatement(json)).toEqual([
+    expect(parseOrdinaryStatement(json)).toStrictEqual([
       {
         entryNumber: "0001",
         valueDate: "2026-07-24",
-        amount: -173000,
-        balance: 907425,
+        amount: -173_000,
+        balance: 907_425,
         remark: "振込 ラクテン アイザワ　リユウ",
       },
       {
         entryNumber: "0002",
         valueDate: "2026-07-24",
-        amount: 635144,
-        balance: 1080425,
+        amount: 635_144,
+        balance: 1_080_425,
         remark: "給与  カ）アツトマ－ク",
       },
     ]);
@@ -96,7 +96,7 @@ describe("parseOrdinaryStatement", () => {
   });
 
   it("明細が空なら空配列", () => {
-    expect(parseOrdinaryStatement({ statementList: [] })).toEqual([]);
+    expect(parseOrdinaryStatement({ statementList: [] })).toStrictEqual([]);
   });
 
   it("形が違えばnull", () => {

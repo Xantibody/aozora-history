@@ -1,6 +1,6 @@
 import { parseOrdinaryStatement, parseSpAccountBalances } from "../domain/api-parser.ts";
-import type { StatementEntry } from "../domain/ledger.ts";
 import type { AccountsSnapshot } from "../domain/parser.ts";
+import type { StatementEntry } from "../domain/statement.ts";
 
 export const BANK_ORIGIN = "https://bank.gmo-aozora.com";
 
@@ -27,19 +27,23 @@ export interface BankFetchResponse {
    * ページ側のfetchで取ると本文のオブジェクトがページのコンパートメントに
    * できてしまうため、文字列で受け取って拡張側でJSONに直す
    */
-  text(): Promise<string>;
+  text: () => Promise<string>;
 }
 
 export type BankFetchLike = (request: BankRequest) => Promise<BankFetchResponse>;
 
+const XSRF_COOKIE = /(?:^|;\s*)XSRF-TOKEN=(?<token>[^;]*)/u;
+
 /** 銀行サイト本体と同じく、cookieのXSRFトークンをヘッダーに載せ替える */
 function xsrfToken(cookie: string): string | null {
-  const match = /(?:^|;\s*)XSRF-TOKEN=([^;]*)/.exec(cookie);
-  if (match === null) return null;
+  const raw = XSRF_COOKIE.exec(cookie)?.groups?.token;
+  if (raw === undefined) {
+    return null;
+  }
   try {
-    return decodeURIComponent(match[1]);
+    return decodeURIComponent(raw);
   } catch {
-    return match[1];
+    return raw;
   }
 }
 
@@ -49,11 +53,17 @@ function xsrfToken(cookie: string): string | null {
  * 経由せずに振替へ移動しても記録を残せる
  */
 export class BankApiClient {
-  constructor(
-    private readonly fetchFn: BankFetchLike,
-    private readonly cookie: () => string,
-    private readonly origin: string = BANK_ORIGIN,
-  ) {}
+  private readonly fetchFn: BankFetchLike;
+
+  private readonly cookie: () => string;
+
+  private readonly origin: string;
+
+  public constructor(fetchFn: BankFetchLike, cookie: () => string, origin: string = BANK_ORIGIN) {
+    this.fetchFn = fetchFn;
+    this.cookie = cookie;
+    this.origin = origin;
+  }
 
   private async get(path: string, params?: Record<string, string>): Promise<unknown> {
     const query = params === undefined ? "" : `?${new URLSearchParams(params).toString()}`;
@@ -68,9 +78,12 @@ export class BankApiClient {
       // 拡張から出すリクエストでもタブのセッションcookieを載せる
       credentials: "include",
     });
-    if (!res.ok) throw new Error(`銀行APIの取得に失敗しました (HTTP ${res.status})`);
+    if (!res.ok) {
+      throw new Error(`銀行APIの取得に失敗しました (HTTP ${res.status})`);
+    }
+    const body = await res.text();
     try {
-      return JSON.parse(await res.text());
+      return JSON.parse(body);
     } catch {
       // ログイン切れでログイン画面のHTMLが返るなど。記録は増やさず次の機会に取り直す
       return null;
@@ -78,18 +91,18 @@ export class BankApiClient {
   }
 
   /** つかいわけ口座の現在残高。つかいわけ口座を使っていなければnull */
-  async spAccountBalances(): Promise<AccountsSnapshot | null> {
-    return parseSpAccountBalances(await this.get("balances/sp-accounts"));
+  public async spAccountBalances(): Promise<AccountsSnapshot | null> {
+    const json = await this.get("balances/sp-accounts");
+    return parseSpAccountBalances(json);
   }
 
   /** 代表口座(普通預金)の入出金明細を新しい順に取る */
-  async ordinaryStatement(limit: number): Promise<StatementEntry[] | null> {
-    return parseOrdinaryStatement(
-      await this.get("ordinary-deposits/statement", {
-        limit: String(Math.min(limit, MAX_STATEMENT_LIMIT)),
-        offset: "0",
-        depositOrderType: ORDER_DESC,
-      }),
-    );
+  public async ordinaryStatement(limit: number): Promise<StatementEntry[] | null> {
+    const json = await this.get("ordinary-deposits/statement", {
+      limit: String(Math.min(limit, MAX_STATEMENT_LIMIT)),
+      offset: "0",
+      depositOrderType: ORDER_DESC,
+    });
+    return parseOrdinaryStatement(json);
   }
 }

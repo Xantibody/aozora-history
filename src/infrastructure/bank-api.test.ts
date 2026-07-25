@@ -1,5 +1,6 @@
+import type { BankFetchLike, BankRequest } from "./bank-api.ts";
 import { describe, expect, it } from "vitest";
-import { BankApiClient, type BankFetchLike, type BankRequest } from "./bank-api.ts";
+import { BankApiClient } from "./bank-api.ts";
 
 function recorder(responses: { ok?: boolean; status?: number; body: unknown }[]): {
   calls: BankRequest[];
@@ -9,7 +10,8 @@ function recorder(responses: { ok?: boolean; status?: number; body: unknown }[])
   let index = 0;
   const fetchFn: BankFetchLike = (request) => {
     calls.push(request);
-    const res = responses[Math.min(index++, responses.length - 1)];
+    const res = responses[Math.min(index, responses.length - 1)];
+    index += 1;
     return Promise.resolve({
       ok: res.ok ?? true,
       status: res.status ?? 200,
@@ -49,9 +51,9 @@ describe("BankApiClient", () => {
 
     expect(calls[0].url).toBe("https://bank.gmo-aozora.com/v1/balances/sp-accounts");
     expect(calls[0].credentials).toBe("include");
-    expect(snapshot).toEqual({
+    expect(snapshot).toStrictEqual({
       updatedAt: "2026-07-24T21:03:11+09:00",
-      accounts: [{ id: "133331", name: "01: お財布", balance: 129392 }],
+      accounts: [{ id: "133331", name: "01: お財布", balance: 129_392 }],
     });
   });
 
@@ -64,12 +66,12 @@ describe("BankApiClient", () => {
     expect(calls[0].url).toBe(
       "https://bank.gmo-aozora.com/v1/ordinary-deposits/statement?limit=50&offset=0&depositOrderType=2",
     );
-    expect(statements).toEqual([
+    expect(statements).toStrictEqual([
       {
         entryNumber: "0001",
         valueDate: "2026-07-24",
-        amount: -173000,
-        balance: 907425,
+        amount: -173_000,
+        balance: 907_425,
         remark: "振込 ラクテン",
       },
     ]);
@@ -104,13 +106,13 @@ describe("BankApiClient", () => {
     const { fetchFn } = recorder([{ body: { unexpected: true } }]);
     const client = new BankApiClient(fetchFn, () => "");
 
-    expect(await client.spAccountBalances()).toBeNull();
+    await expect(client.spAccountBalances()).resolves.toBeNull();
   });
 
   it("ログイン画面のHTMLが返ってきてもnullを返す", async () => {
     const { fetchFn } = recorder([{ body: "<!DOCTYPE html><html>ログイン</html>" }]);
     const client = new BankApiClient(fetchFn, () => "");
 
-    expect(await client.ordinaryStatement(100)).toBeNull();
+    await expect(client.ordinaryStatement(100)).resolves.toBeNull();
   });
 });

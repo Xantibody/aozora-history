@@ -1,7 +1,8 @@
-import { setupContentScript } from "./content-script.ts";
-import { BankApiClient, type BankFetchLike } from "./infrastructure/bank-api.ts";
-import { collectFromBank } from "./infrastructure/collector.ts";
+import { BankApiClient } from "./infrastructure/bank-api.ts";
+import type { BankFetchLike } from "./infrastructure/bank-api.ts";
 import { HistoryStore } from "./infrastructure/storage.ts";
+import { collectFromBank } from "./infrastructure/collector.ts";
+import { setupContentScript } from "./content-script.ts";
 
 /**
  * content.fetch はページのプリンシパルでリクエストを出すため、ログイン中の
@@ -31,4 +32,7 @@ const store = new HistoryStore(browser.storage.local);
 // ログイン中のタブのcookieをそのまま使うので、拡張側に認証情報を持たなくてよい
 const client = new BankApiClient(fetchFn, () => document.cookie);
 
-setupContentScript(document, store, Date.now, () => collectFromBank(store, client));
+void setupContentScript(document, store, {
+  now: Date.now,
+  collect: () => collectFromBank(store, client),
+});

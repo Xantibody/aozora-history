@@ -1,148 +1,107 @@
 import { commentSuggestions, transferCommentKey } from "./domain/ledger.ts";
 import { parseAccountsPage, parseTransferForm } from "./domain/parser.ts";
 import type { HistoryStore } from "./infrastructure/storage.ts";
+import type { TransferInput } from "./domain/parser.ts";
+import type { TransferRecord } from "./domain/ledger.ts";
+import { showCommentPrompt } from "./comment-prompt.ts";
 
 const CONFIRM_BUTTON_ID = "sp-account-account-to-account-confirm";
-const PANEL_ID = "aozora-history-comment";
+// 実行ボタンには安定したidがないため、完了ダイアログの文言で振替の成立を検知する
+const COMPLETION_MESSAGE = "つかいわけ口座の振替が完了しました";
+// 実サイトはセッションを画面遷移時とAPI呼び出し時にしか確認せず、切れていても
+// 確認・実行ボタンが押せてしまう。さらに振替APIがセッション切れ(490)を返しても
+// エラー画面を出した後に完了ステップへ進んでしまうため、完了文言だけでは振替の
+// 成立を判定できない。この案内が見えている間は記録しない
+const SESSION_EXPIRED_MESSAGE = "セッションの有効期限が切れました";
 
-// ダッシュボードと同じ視覚言語(slate/skyのデザイントークン)。銀行サイトには
-// TailwindがないためHEX値をインラインで当てる
-const PROMPT_THEMES = {
-  light: {
-    surface: "#fff",
-    border: "#e2e8f0", // slate-200
-    text: "#0f172a", // slate-900
-    subtle: "#64748b", // slate-500
-    inputBorder: "#cbd5e1", // slate-300
-    accent: "#0284c7", // sky-600
-    accentText: "#fff",
-    focusRing: "#0ea5e9", // sky-500
-  },
-  dark: {
-    surface: "#020617", // slate-950
-    border: "#1e293b", // slate-800
-    text: "#f1f5f9", // slate-100
-    subtle: "#94a3b8", // slate-400
-    inputBorder: "#475569", // slate-600
-    accent: "#38bdf8", // sky-400
-    accentText: "#020617",
-    focusRing: "#38bdf8",
-  },
-};
+// 実サイト(Vue)は確認/完了ブロックをv-showで切り替えるため、完了文言は確認
+// 段階でも display:none のままDOMに存在する。文言の有無ではなく表示状態で判定する
+function isDisplayed(el: Element): boolean {
+  for (let node: Element | null = el; node instanceof HTMLElement; node = node.parentElement) {
+    if (node.style.display === "none") {
+      return false;
+    }
+  }
+  return true;
+}
 
-/** 候補チップとして見せる件数。残りはdatalist(対応環境のみ)で補う */
-const MAX_SUGGESTION_CHIPS = 5;
+// セッション切れ画面のマークアップは特定できていないため、タグに依存せず
+// テキストノード単位で探す。文言がなければbody全文の1回の走査で済む
+function hasVisibleMessage(doc: Document, message: string): boolean {
+  if (doc.body === null || doc.body.textContent?.includes(message) !== true) {
+    return false;
+  }
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (
+      node.textContent?.includes(message) === true &&
+      node.parentElement !== null &&
+      isDisplayed(node.parentElement)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
-/** 銀行サイトのCSSに影響されないよう、スタイルはすべてインラインで当てる */
-function showCommentPrompt(
+async function recordTransferAndPrompt(
   doc: Document,
   store: HistoryStore,
-  key: string,
-  suggestions: string[],
-): void {
-  doc.getElementById(PANEL_ID)?.remove();
-  const theme =
-    doc.defaultView?.matchMedia?.("(prefers-color-scheme: dark)").matches === true
-      ? PROMPT_THEMES.dark
-      : PROMPT_THEMES.light;
-
-  const panel = doc.createElement("div");
-  panel.id = PANEL_ID;
-  panel.style.cssText =
-    "position:fixed;right:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:10px;" +
-    `width:min(360px,calc(100vw - 32px));box-sizing:border-box;background:${theme.surface};color:${theme.text};` +
-    `border:1px solid ${theme.border};border-radius:14px;padding:12px 14px;` +
-    "box-shadow:0 4px 24px rgba(15,23,42,.18);font:14px -apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans','Noto Sans JP',system-ui,sans-serif;";
-
-  const header = doc.createElement("div");
-  header.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;";
-  const title = doc.createElement("span");
-  title.textContent = "振替を記録しました";
-  title.style.cssText = "font-weight:600;";
-
-  const close = doc.createElement("button");
-  close.type = "button";
-  close.className = "close";
-  close.textContent = "×";
-  close.setAttribute("aria-label", "閉じる");
-  close.style.cssText =
-    `font:inherit;font-size:16px;background:none;color:${theme.subtle};border:none;cursor:pointer;` +
-    "width:36px;height:36px;margin:-8px -10px -8px 0;border-radius:9999px;";
-  close.addEventListener("click", () => panel.remove());
-  header.append(title, close);
-
-  const inputRow = doc.createElement("div");
-  inputRow.style.cssText = "display:flex;gap:8px;";
-
-  const input = doc.createElement("input");
-  input.type = "text";
-  input.placeholder = "コメント";
-  input.style.cssText =
-    `flex:1;min-width:0;box-sizing:border-box;font:inherit;color:inherit;background:transparent;` +
-    `border:1px solid ${theme.inputBorder};border-radius:8px;padding:8px 12px;min-height:40px;outline:none;`;
-  // 銀行サイトに:focusのCSSを足せないため、リングはイベントで当てる
-  input.addEventListener("focus", () => {
-    input.style.borderColor = theme.focusRing;
-    input.style.boxShadow = `0 0 0 1px ${theme.focusRing}`;
+  record: TransferRecord,
+): Promise<void> {
+  await store.recordTransfer(record);
+  const comments = await store.loadComments();
+  showCommentPrompt(doc, store, {
+    key: transferCommentKey(record),
+    suggestions: commentSuggestions(comments),
+    record,
   });
-  input.addEventListener("blur", () => {
-    input.style.borderColor = theme.inputBorder;
-    input.style.boxShadow = "none";
-  });
-  input.addEventListener("keydown", (event) => {
-    if ((event as KeyboardEvent).key === "Enter") save.click();
-  });
-
-  const list = doc.createElement("datalist");
-  list.id = `${PANEL_ID}-suggestions`;
-  for (const text of suggestions) {
-    const option = doc.createElement("option");
-    option.value = text;
-    list.append(option);
-  }
-  input.setAttribute("list", list.id);
-
-  const save = doc.createElement("button");
-  save.type = "button";
-  save.className = "save";
-  save.textContent = "保存";
-  save.style.cssText =
-    `font:inherit;font-weight:600;background:${theme.accent};color:${theme.accentText};` +
-    "border:none;border-radius:8px;padding:8px 16px;min-height:40px;cursor:pointer;";
-  save.addEventListener("click", () => {
-    void store.setComment(key, input.value).then(() => panel.remove());
-  });
-
-  inputRow.append(input, save);
-  panel.append(header, inputRow, list);
-
-  // datalistが使えないAndroid Firefox向けに、よく使う候補はチップでも見せる
-  if (suggestions.length > 0) {
-    const chips = doc.createElement("div");
-    chips.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;";
-    for (const text of suggestions.slice(0, MAX_SUGGESTION_CHIPS)) {
-      const chip = doc.createElement("button");
-      chip.type = "button";
-      chip.className = "suggestion";
-      chip.textContent = text;
-      chip.style.cssText =
-        `font:inherit;font-size:13px;background:transparent;color:${theme.subtle};` +
-        `border:1px solid ${theme.border};border-radius:9999px;padding:6px 14px;min-height:36px;cursor:pointer;`;
-      chip.addEventListener("click", () => {
-        input.value = text;
-        input.focus();
-      });
-      chips.append(chip);
-    }
-    panel.append(chips);
-  }
-
-  doc.body.append(panel);
-  input.focus();
 }
+
+function observeDom(doc: Document, onMutation: () => void): MutationObserver {
+  const observer = new MutationObserver(onMutation);
+  // v-showの表示切替はstyle属性の変更として現れるため、属性変更も監視する
+  observer.observe(doc, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["style"],
+  });
+  return observer;
+}
+
 // DOM変化からパースまでの待ち時間。変化のたびに延長するとチャットボット等で
 // 変化し続けるページで永遠に実行されないため、保留中は再スケジュールしない
 const CAPTURE_DELAY_MS = 300;
+
+interface SnapshotScheduler {
+  schedule: () => void;
+  cancel: () => void;
+}
+
+function createSnapshotScheduler(
+  doc: Document,
+  store: HistoryStore,
+  now: () => number,
+): SnapshotScheduler {
+  let timer: ReturnType<typeof setTimeout> | undefined = undefined;
+  const schedule = (): void => {
+    if (timer !== undefined) {
+      return;
+    }
+    timer = setTimeout(() => {
+      timer = undefined;
+      const parsed = parseAccountsPage(doc);
+      if (parsed !== null) {
+        void store.recordSnapshot({ takenAt: now(), ...parsed });
+      }
+    }, CAPTURE_DELAY_MS);
+  };
+  return {
+    schedule,
+    cancel: (): void => clearTimeout(timer),
+  };
+}
 
 /**
  * ログイン後のSPAのパスの接頭辞。ログイン画面やお知らせページで
@@ -150,68 +109,166 @@ const CAPTURE_DELAY_MS = 300;
  */
 const SIGNED_IN_PATH = "/bank";
 
-/** 銀行APIからの取り込み。実際の間隔の制御は呼ばれた側(collectFromBank)が持つ */
+/** 銀行APIからの取り込み。取得間隔の制御は呼ばれた側(collectFromBank)が持つ */
 export type Collect = () => Promise<unknown>;
+
+interface ApiCollector {
+  collectOnNavigation: () => void;
+}
+
+/**
+ * つかいわけ口座の一覧を開かなくても記録が残るよう、ログイン中は裏で取りに行く。
+ * SPAは画面遷移してもcontent scriptが読み込み直されないため、パスが
+ * 変わるたびに取り込みの機会を作る
+ */
+function createApiCollector(doc: Document, collect: Collect): ApiCollector {
+  let collectedPath: string | null = null;
+  const run = async (): Promise<void> => {
+    try {
+      await collect();
+    } catch {
+      // noop: 未ログインなどの失敗は次の機会に取り直せる
+    }
+  };
+  return {
+    collectOnNavigation: (): void => {
+      const path = doc.location?.pathname ?? "";
+      if (!path.startsWith(SIGNED_IN_PATH) || path === collectedPath) {
+        return;
+      }
+      collectedPath = path;
+      // 画面の描画を止めないよう待たない
+      void run();
+    },
+  };
+}
+
+// セッション切れへの差し替えで完了表示が一瞬だけ現れることがあるため、
+// この時間待ってもまだ表示が残っていることを確かめてから記録する
+const COMPLETION_VERIFY_DELAY_MS = 1000;
+
+interface TransferTracker {
+  noteConfirmClick: () => void;
+  commitOnCompletion: () => void;
+  cancel: () => void;
+}
+
+interface TrackerState {
+  doc: Document;
+  store: HistoryStore;
+  now: () => number;
+  pendingTransfer: TransferInput | null;
+  completionVisible: boolean;
+  verifyTimer: ReturnType<typeof setTimeout> | undefined;
+}
+
+function cancelVerify(state: TrackerState): void {
+  clearTimeout(state.verifyTimer);
+  state.verifyTimer = undefined;
+}
+
+function commitIfStillCompleted(state: TrackerState): void {
+  state.verifyTimer = undefined;
+  const parsed = state.pendingTransfer;
+  // 検証に通らなければその実行は失敗しているので、保留も捨てる
+  state.pendingTransfer = null;
+  if (
+    parsed === null ||
+    !hasVisibleMessage(state.doc, COMPLETION_MESSAGE) ||
+    hasVisibleMessage(state.doc, SESSION_EXPIRED_MESSAGE)
+  ) {
+    return;
+  }
+  void recordTransferAndPrompt(state.doc, state.store, {
+    transferredAt: state.now(),
+    ...parsed,
+  });
+}
+
+function scheduleVerifyOnAppearance(state: TrackerState): void {
+  const visible = hasVisibleMessage(state.doc, COMPLETION_MESSAGE);
+  const appeared = visible && !state.completionVisible;
+  state.completionVisible = visible;
+  if (!appeared || state.verifyTimer !== undefined) {
+    return;
+  }
+  state.verifyTimer = setTimeout(() => commitIfStillCompleted(state), COMPLETION_VERIFY_DELAY_MS);
+}
+
+function commitOnCompletion(state: TrackerState): void {
+  if (hasVisibleMessage(state.doc, SESSION_EXPIRED_MESSAGE)) {
+    state.pendingTransfer = null;
+    cancelVerify(state);
+    state.completionVisible = hasVisibleMessage(state.doc, COMPLETION_MESSAGE);
+    return;
+  }
+  scheduleVerifyOnAppearance(state);
+}
+
+function createTransferTracker(
+  doc: Document,
+  store: HistoryStore,
+  now: () => number,
+): TransferTracker {
+  // 確認画面の「戻る」やエラーで振替が成立しないことがあるため、確認クリックでは
+  // フォーム内容を保留するだけにし、完了ダイアログの出現を待って記録する
+  const state: TrackerState = {
+    doc,
+    store,
+    now,
+    pendingTransfer: null,
+    completionVisible: hasVisibleMessage(doc, COMPLETION_MESSAGE),
+    verifyTimer: undefined,
+  };
+  return {
+    noteConfirmClick: (): void => {
+      state.pendingTransfer = parseTransferForm(doc);
+    },
+    commitOnCompletion: (): void => {
+      commitOnCompletion(state);
+    },
+    cancel: (): void => {
+      cancelVerify(state);
+    },
+  };
+}
+
+export interface ContentScriptOptions {
+  now: () => number;
+  /** 銀行APIからの取り込み。省略すると取りに行かない(テスト用) */
+  collect?: Collect;
+}
 
 export function setupContentScript(
   doc: Document,
   store: HistoryStore,
-  now: () => number,
-  collect: Collect = () => Promise.resolve(),
+  options: ContentScriptOptions,
 ): () => void {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  // SPAは画面遷移してもcontent scriptが読み込み直されないため、
-  // パスが変わるたびに取り込みの機会を作る
-  let collectedPath: string | null = null;
-
-  const captureSnapshot = () => {
-    const parsed = parseAccountsPage(doc);
-    if (parsed === null) return;
-    void store.recordSnapshot({ takenAt: now(), ...parsed });
+  const { now, collect = (): Promise<void> => Promise.resolve() } = options;
+  const snapshots = createSnapshotScheduler(doc, store, now);
+  const transfers = createTransferTracker(doc, store, now);
+  const collector = createApiCollector(doc, collect);
+  const onClick = (event: Event): void => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    if (event.target.closest(`#${CONFIRM_BUTTON_ID}`) === null) {
+      return;
+    }
+    transfers.noteConfirmClick();
   };
-
-  /** つかいわけ口座の一覧を開かなくても記録が残るよう、ログイン中は裏で取りに行く */
-  const collectFromApi = () => {
-    const path = doc.location?.pathname ?? "";
-    if (!path.startsWith(SIGNED_IN_PATH)) return;
-    if (path === collectedPath) return;
-    collectedPath = path;
-    // 画面の描画を止めないよう待たない。失敗は次の機会に取り直せるため握りつぶす
-    void collect().catch(() => {});
-  };
-
-  const scheduleCapture = () => {
-    if (timer !== undefined) return;
-    timer = setTimeout(() => {
-      timer = undefined;
-      captureSnapshot();
-      collectFromApi();
-    }, CAPTURE_DELAY_MS);
-  };
-
-  const onClick = (event: Event) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    if (target.closest(`#${CONFIRM_BUTTON_ID}`) === null) return;
-    const parsed = parseTransferForm(doc);
-    if (parsed === null) return;
-    const record = { transferredAt: now(), ...parsed };
-    void store
-      .recordTransfer(record)
-      .then(() => store.loadComments())
-      .then((comments) => {
-        showCommentPrompt(doc, store, transferCommentKey(record), commentSuggestions(comments));
-      });
-  };
-
-  const observer = new MutationObserver(scheduleCapture);
-  observer.observe(doc, { childList: true, subtree: true });
+  const observer = observeDom(doc, () => {
+    snapshots.schedule();
+    transfers.commitOnCompletion();
+    collector.collectOnNavigation();
+  });
   doc.addEventListener("click", onClick, true);
-  scheduleCapture();
-
-  return () => {
+  snapshots.schedule();
+  collector.collectOnNavigation();
+  return (): void => {
     observer.disconnect();
     doc.removeEventListener("click", onClick, true);
-    clearTimeout(timer);
+    snapshots.cancel();
+    transfers.cancel();
   };
 }

@@ -1,7 +1,8 @@
-import { type LedgerData, mergeLedgers } from "../domain/merge.ts";
-import { parseLedgerJson } from "../domain/serialization.ts";
 import { sha256Hex, signRequest } from "./sigv4.ts";
 import type { HistoryStore } from "./storage.ts";
+import type { LedgerData } from "../domain/merge.ts";
+import { mergeLedgers } from "../domain/merge.ts";
+import { parseLedgerJson } from "../domain/serialization.ts";
 
 export interface SyncConfig {
   accountId: string;
@@ -21,15 +22,20 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value !== "";
 }
 
-/** エクスポートした同期設定JSONを検証しつつ読み込む */
-export function parseSyncConfigJson(text: string): SyncConfig {
-  let parsed: unknown;
+function parseJsonOrThrow(text: string): unknown {
   try {
-    parsed = JSON.parse(text);
+    return JSON.parse(text);
   } catch {
     throw new Error("JSONとして読み込めませんでした");
   }
-  if (!isRecord(parsed)) throw new Error("同期設定の形式が正しくありません");
+}
+
+/** エクスポートした同期設定JSONを検証しつつ読み込む */
+export function parseSyncConfigJson(text: string): SyncConfig {
+  const parsed = parseJsonOrThrow(text);
+  if (!isRecord(parsed)) {
+    throw new Error("同期設定の形式が正しくありません");
+  }
   const { accountId, bucket, objectKey, accessKeyId, secretAccessKey } = parsed;
   if (
     !isNonEmptyString(accountId) ||
@@ -51,8 +57,10 @@ export function parseSyncConfigJson(text: string): SyncConfig {
 export interface FetchResponse {
   status: number;
   ok: boolean;
-  text(): Promise<string>;
+  text: () => Promise<string>;
 }
+
+const HTTP_NOT_FOUND = 404;
 
 export type FetchLike = (
   url: string,
@@ -60,11 +68,17 @@ export type FetchLike = (
 ) => Promise<FetchResponse>;
 
 export class R2Client {
-  constructor(
-    private readonly config: SyncConfig,
-    private readonly fetchFn: FetchLike,
-    private readonly now: () => Date,
-  ) {}
+  private readonly config: SyncConfig;
+
+  private readonly fetchFn: FetchLike;
+
+  private readonly now: () => Date;
+
+  public constructor(config: SyncConfig, fetchFn: FetchLike, now: () => Date) {
+    this.config = config;
+    this.fetchFn = fetchFn;
+    this.now = now;
+  }
 
   private async request(method: string, body?: string): Promise<FetchResponse> {
     const { accountId, bucket, objectKey } = this.config;
@@ -88,18 +102,24 @@ export class R2Client {
   }
 
   /** 同期データが未作成(404)ならnullを返す */
-  async download(): Promise<LedgerData | null> {
+  public async download(): Promise<LedgerData | null> {
     const res = await this.request("GET");
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`R2からの取得に失敗しました (HTTP ${res.status})`);
+    if (res.status === HTTP_NOT_FOUND) {
+      return null;
+    }
+    if (!res.ok) {
+      throw new Error(`R2からの取得に失敗しました (HTTP ${res.status})`);
+    }
     // オブジェクトキーの指定ミスなどで別のデータが置かれていても、
     // マージ経由でローカルの記録を壊さないよう検証してから取り込む
     return parseLedgerJson(await res.text());
   }
 
-  async upload(data: LedgerData): Promise<void> {
+  public async upload(data: LedgerData): Promise<void> {
     const res = await this.request("PUT", JSON.stringify(data));
-    if (!res.ok) throw new Error(`R2への保存に失敗しました (HTTP ${res.status})`);
+    if (!res.ok) {
+      throw new Error(`R2への保存に失敗しました (HTTP ${res.status})`);
+    }
   }
 }
 

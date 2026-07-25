@@ -5,7 +5,9 @@ import type { HistoryStore } from "./storage.ts";
  * 銀行APIを叩き直す間隔。ページを開くたびに問い合わせても銀行側の記録は
  * ほとんど変わらないため、SPAの画面遷移で何度も走らないように間隔を空ける
  */
-export const COLLECT_INTERVAL_MS = 10 * 60 * 1000;
+const COLLECT_INTERVAL_MINUTES = 10;
+const MS_PER_MINUTE = 60_000;
+export const COLLECT_INTERVAL_MS = COLLECT_INTERVAL_MINUTES * MS_PER_MINUTE;
 
 /** 1回に取りに行く明細の件数。取りこぼしを防ぐためAPIの上限いっぱいまで取る */
 export const STATEMENT_LIMIT = 100;
@@ -15,7 +17,9 @@ export function shouldCollect(
   now: number,
   intervalMs: number = COLLECT_INTERVAL_MS,
 ): boolean {
-  if (lastCollectedAt === null) return true;
+  if (lastCollectedAt === null) {
+    return true;
+  }
   // 端末の時計が巻き戻った場合も取り直せるようにする
   return now < lastCollectedAt || now - lastCollectedAt >= intervalMs;
 }
@@ -27,6 +31,26 @@ export interface CollectResult {
   statementsSaved: boolean;
   /** 片方だけ失敗することがあるため、起きたエラーはまとめて返す */
   errors: unknown[];
+}
+
+async function collectBalances(
+  store: HistoryStore,
+  client: BankApiClient,
+  now: () => number,
+): Promise<boolean> {
+  const parsed = await client.spAccountBalances();
+  if (parsed === null) {
+    return false;
+  }
+  return store.recordSnapshot({ takenAt: now(), ...parsed });
+}
+
+async function collectStatements(store: HistoryStore, client: BankApiClient): Promise<boolean> {
+  const parsed = await client.ordinaryStatement(STATEMENT_LIMIT);
+  if (parsed === null) {
+    return false;
+  }
+  return store.recordStatements(parsed);
 }
 
 /**
@@ -46,14 +70,8 @@ export async function collectFromBank(
   await store.markCollected();
 
   const [balances, statements] = await Promise.allSettled([
-    client
-      .spAccountBalances()
-      .then((parsed) =>
-        parsed === null ? false : store.recordSnapshot({ takenAt: now(), ...parsed }),
-      ),
-    client
-      .ordinaryStatement(STATEMENT_LIMIT)
-      .then((parsed) => (parsed === null ? false : store.recordStatements(parsed))),
+    collectBalances(store, client, now),
+    collectStatements(store, client),
   ]);
 
   return {
@@ -61,7 +79,7 @@ export async function collectFromBank(
     snapshotSaved: balances.status === "fulfilled" && balances.value,
     statementsSaved: statements.status === "fulfilled" && statements.value,
     errors: [balances, statements]
-      .filter((r) => r.status === "rejected")
-      .map((r) => (r as PromiseRejectedResult).reason),
+      .filter((result) => result.status === "rejected")
+      .map((result) => (result as PromiseRejectedResult).reason),
   };
 }

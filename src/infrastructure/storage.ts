@@ -1,20 +1,15 @@
-import {
-  appendSnapshot,
-  type BalanceSnapshot,
-  type CommentEntry,
-  type Comments,
-  mergeStatements,
-  type StatementEntry,
-  transferCommentKey,
-  transferKey,
-  type TransferRecord,
-} from "../domain/ledger.ts";
+import type { BalanceSnapshot, CommentEntry, Comments, TransferRecord } from "../domain/ledger.ts";
+import { appendSnapshot, transferCommentKey, transferKey } from "../domain/ledger.ts";
 import type { LedgerData } from "../domain/merge.ts";
+import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "./r2sync.ts";
+import { mergeStatements } from "../domain/statement.ts";
+
+export type { Comments } from "../domain/ledger.ts";
 
 export interface StorageArea {
-  get(key: string): Promise<Record<string, unknown>>;
-  set(items: Record<string, unknown>): Promise<void>;
+  get: (key: string) => Promise<Record<string, unknown>>;
+  set: (items: Record<string, unknown>) => Promise<void>;
 }
 
 const SNAPSHOTS_KEY = "balanceSnapshots";
@@ -37,11 +32,11 @@ export const LEDGER_KEYS = [
   DELETIONS_KEY,
 ] as const;
 
-export type { Comments };
-
 /** tombstone化(fix/comment-deletion-sync)以前に保存された旧形式のコメントを移行する */
 function migrateComment(value: unknown): CommentEntry {
-  if (typeof value === "string") return { text: value, updatedAt: 0 };
+  if (typeof value === "string") {
+    return { text: value, updatedAt: 0 };
+  }
   return value as CommentEntry;
 }
 
@@ -53,36 +48,42 @@ export function addTransfer(
 }
 
 export class HistoryStore {
-  constructor(
-    private readonly storage: StorageArea,
-    private readonly now: () => number = Date.now,
-  ) {}
+  private readonly storage: StorageArea;
 
-  async loadSnapshots(): Promise<BalanceSnapshot[]> {
+  private readonly now: () => number;
+
+  public constructor(storage: StorageArea, now: () => number = Date.now) {
+    this.storage = storage;
+    this.now = now;
+  }
+
+  public async loadSnapshots(): Promise<BalanceSnapshot[]> {
     const items = await this.storage.get(SNAPSHOTS_KEY);
     return (items[SNAPSHOTS_KEY] as BalanceSnapshot[] | undefined) ?? [];
   }
 
-  async loadTransfers(): Promise<TransferRecord[]> {
+  public async loadTransfers(): Promise<TransferRecord[]> {
     const items = await this.storage.get(TRANSFERS_KEY);
     return (items[TRANSFERS_KEY] as TransferRecord[] | undefined) ?? [];
   }
 
   /** 直前と残高が変わっていた場合のみ保存し、保存したかどうかを返す */
-  async recordSnapshot(snapshot: BalanceSnapshot): Promise<boolean> {
+  public async recordSnapshot(snapshot: BalanceSnapshot): Promise<boolean> {
     const history = await this.loadSnapshots();
     const appended = appendSnapshot(history, snapshot);
-    if (appended.length === history.length) return false;
+    if (appended.length === history.length) {
+      return false;
+    }
     await this.storage.set({ [SNAPSHOTS_KEY]: appended });
     return true;
   }
 
-  async recordTransfer(transfer: TransferRecord): Promise<void> {
+  public async recordTransfer(transfer: TransferRecord): Promise<void> {
     const transfers = await this.loadTransfers();
     await this.storage.set({ [TRANSFERS_KEY]: addTransfer(transfers, transfer) });
   }
 
-  async loadStatements(): Promise<StatementEntry[]> {
+  public async loadStatements(): Promise<StatementEntry[]> {
     const items = await this.storage.get(STATEMENTS_KEY);
     return (items[STATEMENTS_KEY] as StatementEntry[] | undefined) ?? [];
   }
@@ -91,15 +92,17 @@ export class HistoryStore {
    * 取得した明細を取り込む。銀行APIは毎回同じ明細を返すため、内容が
    * 変わらなければ書き込まない(自動同期の空振りを防ぐ)。保存したかどうかを返す
    */
-  async recordStatements(incoming: StatementEntry[]): Promise<boolean> {
+  public async recordStatements(incoming: StatementEntry[]): Promise<boolean> {
     const existing = await this.loadStatements();
     const merged = mergeStatements(existing, incoming);
-    if (JSON.stringify(merged) === JSON.stringify(existing)) return false;
+    if (JSON.stringify(merged) === JSON.stringify(existing)) {
+      return false;
+    }
     await this.storage.set({ [STATEMENTS_KEY]: merged });
     return true;
   }
 
-  async loadComments(): Promise<Comments> {
+  public async loadComments(): Promise<Comments> {
     const items = await this.storage.get(COMMENTS_KEY);
     const stored = (items[COMMENTS_KEY] as Record<string, unknown> | undefined) ?? {};
     return Object.fromEntries(
@@ -107,13 +110,13 @@ export class HistoryStore {
     );
   }
 
-  async loadDeletions(): Promise<Record<string, number>> {
+  public async loadDeletions(): Promise<Record<string, number>> {
     const items = await this.storage.get(DELETIONS_KEY);
     return (items[DELETIONS_KEY] as Record<string, number> | undefined) ?? {};
   }
 
   /** 振替を削除する。同期で復活しないよう削除の記録を残し、コメントも削除する */
-  async deleteTransfer(transfer: TransferRecord): Promise<void> {
+  public async deleteTransfer(transfer: TransferRecord): Promise<void> {
     const [transfers, deletions, comments] = await Promise.all([
       this.loadTransfers(),
       this.loadDeletions(),
@@ -121,7 +124,7 @@ export class HistoryStore {
     ]);
     const key = transferKey(transfer);
     const items: Record<string, unknown> = {
-      [TRANSFERS_KEY]: transfers.filter((t) => transferKey(t) !== key),
+      [TRANSFERS_KEY]: transfers.filter((record) => transferKey(record) !== key),
       [DELETIONS_KEY]: { ...deletions, [key]: this.now() },
     };
     const commentKey = transferCommentKey(transfer);
@@ -132,7 +135,7 @@ export class HistoryStore {
     await this.storage.set(items);
   }
 
-  async loadLedger(): Promise<LedgerData> {
+  public async loadLedger(): Promise<LedgerData> {
     const [snapshots, transfers, statements, comments, deletions] = await Promise.all([
       this.loadSnapshots(),
       this.loadTransfers(),
@@ -143,7 +146,7 @@ export class HistoryStore {
     return { snapshots, transfers, statements, comments, deletions };
   }
 
-  async replaceLedger(data: LedgerData): Promise<void> {
+  public async replaceLedger(data: LedgerData): Promise<void> {
     await this.storage.set({
       [SNAPSHOTS_KEY]: data.snapshots,
       [TRANSFERS_KEY]: data.transfers,
@@ -153,35 +156,35 @@ export class HistoryStore {
     });
   }
 
-  async loadLastCollectedAt(): Promise<number | null> {
-    const items = await this.storage.get(LAST_COLLECTED_KEY);
-    return (items[LAST_COLLECTED_KEY] as number | undefined) ?? null;
-  }
-
-  async markCollected(): Promise<void> {
-    await this.storage.set({ [LAST_COLLECTED_KEY]: this.now() });
-  }
-
-  async loadLastSyncedAt(): Promise<number | null> {
+  public async loadLastSyncedAt(): Promise<number | null> {
     const items = await this.storage.get(LAST_SYNCED_KEY);
     return (items[LAST_SYNCED_KEY] as number | undefined) ?? null;
   }
 
-  async markSynced(): Promise<void> {
+  public async markSynced(): Promise<void> {
     await this.storage.set({ [LAST_SYNCED_KEY]: this.now() });
   }
 
-  async loadSyncConfig(): Promise<SyncConfig | null> {
+  public async loadLastCollectedAt(): Promise<number | null> {
+    const items = await this.storage.get(LAST_COLLECTED_KEY);
+    return (items[LAST_COLLECTED_KEY] as number | undefined) ?? null;
+  }
+
+  public async markCollected(): Promise<void> {
+    await this.storage.set({ [LAST_COLLECTED_KEY]: this.now() });
+  }
+
+  public async loadSyncConfig(): Promise<SyncConfig | null> {
     const items = await this.storage.get(SYNC_CONFIG_KEY);
     return (items[SYNC_CONFIG_KEY] as SyncConfig | undefined) ?? null;
   }
 
-  async saveSyncConfig(config: SyncConfig): Promise<void> {
+  public async saveSyncConfig(config: SyncConfig): Promise<void> {
     await this.storage.set({ [SYNC_CONFIG_KEY]: config });
   }
 
   /** 空のコメントは削除。キーごと消さず削除の記録(tombstone)を残し、同期で復活しないようにする */
-  async setComment(key: string, text: string): Promise<void> {
+  public async setComment(key: string, text: string): Promise<void> {
     const comments = await this.loadComments();
     comments[key] = { text: text.trim(), updatedAt: this.now() };
     await this.storage.set({ [COMMENTS_KEY]: comments });

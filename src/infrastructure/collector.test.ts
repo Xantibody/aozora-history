@@ -1,14 +1,18 @@
+import { COLLECT_INTERVAL_MS, collectFromBank, shouldCollect } from "./collector.ts";
 import { describe, expect, it } from "vitest";
 import type { BankApiClient } from "./bank-api.ts";
-import { COLLECT_INTERVAL_MS, collectFromBank, shouldCollect } from "./collector.ts";
-import { HistoryStore, type StorageArea } from "./storage.ts";
+import { HistoryStore } from "./storage.ts";
+import type { StatementEntry } from "../domain/statement.ts";
+import type { StorageArea } from "./storage.ts";
 
 function fakeStorage(): StorageArea {
   const data = new Map<string, unknown>();
   return {
     get: (key) => Promise.resolve(data.has(key) ? { [key]: data.get(key) } : {}),
     set: (items) => {
-      for (const [k, v] of Object.entries(items)) data.set(k, v);
+      for (const [key, value] of Object.entries(items)) {
+        data.set(key, value);
+      }
       return Promise.resolve();
     },
   };
@@ -16,15 +20,15 @@ function fakeStorage(): StorageArea {
 
 const snapshot = {
   updatedAt: "2026-07-24T21:03:11+09:00",
-  accounts: [{ id: "133331", name: "01: お財布", balance: 129392 }],
+  accounts: [{ id: "133331", name: "01: お財布", balance: 129_392 }],
 };
 
-const statements = [
+const statements: StatementEntry[] = [
   {
     entryNumber: "0001",
     valueDate: "2026-07-24",
-    amount: -173000,
-    balance: 907425,
+    amount: -173_000,
+    balance: 907_425,
     remark: "振込",
   },
 ];
@@ -62,14 +66,14 @@ describe("collectFromBank", () => {
 
     const result = await collectFromBank(store, fakeClient(), () => 42);
 
-    expect(result).toEqual({
+    expect(result).toStrictEqual({
       skipped: false,
       snapshotSaved: true,
       statementsSaved: true,
       errors: [],
     });
-    expect(await store.loadSnapshots()).toEqual([{ takenAt: 42, ...snapshot }]);
-    expect(await store.loadStatements()).toEqual(statements);
+    await expect(store.loadSnapshots()).resolves.toStrictEqual([{ takenAt: 42, ...snapshot }]);
+    await expect(store.loadStatements()).resolves.toStrictEqual(statements);
   });
 
   it("間隔が空くまでは問い合わせない", async () => {
@@ -77,7 +81,7 @@ describe("collectFromBank", () => {
     let calls = 0;
     const client = fakeClient({
       spAccountBalances: () => {
-        calls++;
+        calls += 1;
         return Promise.resolve(snapshot);
       },
     });
@@ -100,7 +104,7 @@ describe("collectFromBank", () => {
     expect(result.snapshotSaved).toBe(false);
     expect(result.statementsSaved).toBe(true);
     expect(result.errors).toHaveLength(1);
-    expect(await store.loadStatements()).toEqual(statements);
+    await expect(store.loadStatements()).resolves.toStrictEqual(statements);
   });
 
   it("失敗しても取得時刻は記録する(未ログインのページで叩き続けない)", async () => {
@@ -113,7 +117,7 @@ describe("collectFromBank", () => {
     const result = await collectFromBank(store, client, () => 42);
 
     expect(result.errors).toHaveLength(2);
-    expect(await store.loadLastCollectedAt()).toBe(42);
+    await expect(store.loadLastCollectedAt()).resolves.toBe(42);
   });
 
   it("つかいわけ口座を使っていなければスナップショットを残さない", async () => {
@@ -123,6 +127,6 @@ describe("collectFromBank", () => {
     const result = await collectFromBank(store, client, () => 42);
 
     expect(result.snapshotSaved).toBe(false);
-    expect(await store.loadSnapshots()).toEqual([]);
+    await expect(store.loadSnapshots()).resolves.toStrictEqual([]);
   });
 });
