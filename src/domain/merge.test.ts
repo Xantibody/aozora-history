@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { type BalanceSnapshot, transferKey, type TransferRecord } from "./ledger.ts";
+import {
+  type BalanceSnapshot,
+  type StatementEntry,
+  statementKey,
+  transferKey,
+  type TransferRecord,
+} from "./ledger.ts";
 import { type LedgerData, mergeLedgers } from "./merge.ts";
 
 function snapshot(takenAt: number, balance: number): BalanceSnapshot {
@@ -16,7 +22,18 @@ function transfer(at: number, amount: number): TransferRecord {
 }
 
 function ledger(overrides: Partial<LedgerData> = {}): LedgerData {
-  return { snapshots: [], transfers: [], comments: {}, deletions: {}, ...overrides };
+  return {
+    snapshots: [],
+    transfers: [],
+    statements: [],
+    comments: {},
+    deletions: {},
+    ...overrides,
+  };
+}
+
+function statement(valueDate: string, entryNumber: string, remark = ""): StatementEntry {
+  return { valueDate, entryNumber, amount: -100, balance: 0, remark };
 }
 
 function entry(text: string, updatedAt: number): { text: string; updatedAt: number } {
@@ -115,5 +132,23 @@ describe("mergeLedgers", () => {
     const remote = ledger({ comments: { "transfer:1": entry("家賃", 5) } });
 
     expect(mergeLedgers(local, remote).comments).toEqual({ "transfer:1": entry("", 9) });
+  });
+});
+
+describe("mergeLedgers (入出金明細)", () => {
+  it("両端末の明細を和集合にする", () => {
+    const local = ledger({ statements: [statement("2026-07-24", "0002")] });
+    const remote = ledger({ statements: [statement("2026-07-23", "0001")] });
+
+    const merged = mergeLedgers(local, remote);
+
+    expect(merged.statements.map(statementKey)).toEqual(["2026-07-23:0001", "2026-07-24:0002"]);
+  });
+
+  it("同じ明細はローカルの内容を優先する(取得が新しい方)", () => {
+    const local = ledger({ statements: [statement("2026-07-24", "0001", "新")] });
+    const remote = ledger({ statements: [statement("2026-07-24", "0001", "旧")] });
+
+    expect(mergeLedgers(local, remote).statements).toEqual([statement("2026-07-24", "0001", "新")]);
   });
 });

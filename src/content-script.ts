@@ -144,12 +144,25 @@ function showCommentPrompt(
 // 変化し続けるページで永遠に実行されないため、保留中は再スケジュールしない
 const CAPTURE_DELAY_MS = 300;
 
+/**
+ * ログイン後のSPAのパスの接頭辞。ログイン画面やお知らせページで
+ * 認証の要るAPIを叩かないための目印
+ */
+const SIGNED_IN_PATH = "/bank";
+
+/** 銀行APIからの取り込み。実際の間隔の制御は呼ばれた側(collectFromBank)が持つ */
+export type Collect = () => Promise<unknown>;
+
 export function setupContentScript(
   doc: Document,
   store: HistoryStore,
   now: () => number,
+  collect: Collect = () => Promise.resolve(),
 ): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // SPAは画面遷移してもcontent scriptが読み込み直されないため、
+  // パスが変わるたびに取り込みの機会を作る
+  let collectedPath: string | null = null;
 
   const captureSnapshot = () => {
     const parsed = parseAccountsPage(doc);
@@ -157,11 +170,22 @@ export function setupContentScript(
     void store.recordSnapshot({ takenAt: now(), ...parsed });
   };
 
+  /** つかいわけ口座の一覧を開かなくても記録が残るよう、ログイン中は裏で取りに行く */
+  const collectFromApi = () => {
+    const path = doc.location?.pathname ?? "";
+    if (!path.startsWith(SIGNED_IN_PATH)) return;
+    if (path === collectedPath) return;
+    collectedPath = path;
+    // 画面の描画を止めないよう待たない。失敗は次の機会に取り直せるため握りつぶす
+    void collect().catch(() => {});
+  };
+
   const scheduleCapture = () => {
     if (timer !== undefined) return;
     timer = setTimeout(() => {
       timer = undefined;
       captureSnapshot();
+      collectFromApi();
     }, CAPTURE_DELAY_MS);
   };
 

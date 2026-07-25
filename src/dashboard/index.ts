@@ -12,20 +12,23 @@ async function main(): Promise<void> {
   if (root === null) return;
 
   const store = new HistoryStore(browser.storage.local);
-  const [snapshots, transfers, comments, deletions, syncConfig, lastSyncedAt] = await Promise.all([
-    store.loadSnapshots(),
-    store.loadTransfers(),
-    store.loadComments(),
-    store.loadDeletions(),
-    store.loadSyncConfig(),
-    store.loadLastSyncedAt(),
-  ]);
+  const [snapshots, transfers, statements, comments, deletions, syncConfig, lastSyncedAt] =
+    await Promise.all([
+      store.loadSnapshots(),
+      store.loadTransfers(),
+      store.loadStatements(),
+      store.loadComments(),
+      store.loadDeletions(),
+      store.loadSyncConfig(),
+      store.loadLastSyncedAt(),
+    ]);
 
-  const data = { snapshots, transfers, comments, deletions, syncConfig, lastSyncedAt };
+  const data = { snapshots, transfers, statements, comments, deletions, syncConfig, lastSyncedAt };
 
   const currentLedger = (): LedgerData => ({
     snapshots: data.snapshots,
     transfers: data.transfers,
+    statements: data.statements,
     comments: data.comments,
     deletions: data.deletions,
   });
@@ -33,6 +36,7 @@ async function main(): Promise<void> {
   const applyLedger = (ledger: LedgerData): void => {
     data.snapshots = ledger.snapshots;
     data.transfers = ledger.transfers;
+    data.statements = ledger.statements;
     data.comments = ledger.comments;
     data.deletions = ledger.deletions;
   };
@@ -68,13 +72,7 @@ async function main(): Promise<void> {
     onImportFile: async (text) => {
       try {
         const imported = parseLedgerJson(text);
-        const local = {
-          snapshots: data.snapshots,
-          transfers: data.transfers,
-          comments: data.comments,
-          deletions: data.deletions,
-        };
-        const merged = mergeLedgers(local, imported);
+        const merged = mergeLedgers(currentLedger(), imported);
         await store.replaceLedger(merged);
         applyLedger(merged);
         return `読み込みました（スナップショット${merged.snapshots.length}件・振替${merged.transfers.length}件）`;

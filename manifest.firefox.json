@@ -7,7 +7,7 @@
     "default_title": "Aozora History ダッシュボード"
   },
   "permissions": ["storage"],
-  "host_permissions": ["https://*.r2.cloudflarestorage.com/*"],
+  "host_permissions": ["https://bank.gmo-aozora.com/*", "https://*.r2.cloudflarestorage.com/*"],
   "background": {
     "scripts": ["background.js"]
   },

@@ -9,7 +9,10 @@ import {
   latestSnapshot,
   type LogEntry,
   logEntries,
+  sortStatementsDesc,
   sortTransfersDesc,
+  type StatementEntry,
+  statementCommentKey,
   totalBalancePoints,
   transferCommentKey,
   type TransferRecord,
@@ -26,6 +29,8 @@ import type { Comments } from "../domain/ledger.ts";
 export interface DashboardData {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
+  /** 代表口座(普通預金)の入出金明細。銀行APIから取得したもの */
+  statements: StatementEntry[];
   comments: Comments;
   deletions: Record<string, number>;
   syncConfig: SyncConfig | null;
@@ -98,6 +103,22 @@ export function transfersCsv(transfers: TransferRecord[], comments: Comments): s
   );
   // ExcelがUTF-8として認識できるようBOMを付ける
   return `﻿${["日時,出金口座,入金口座,金額,コメント", ...rows].join("\r\n")}\r\n`;
+}
+
+/** 代表口座の入出金明細のCSV。金額は入金が正、出金が負の数値のまま出す */
+export function statementsCsv(statements: StatementEntry[], comments: Comments): string {
+  const rows = sortStatementsDesc(statements).map((s) =>
+    [
+      s.valueDate,
+      s.remark,
+      String(s.amount),
+      String(s.balance),
+      commentText(comments, statementCommentKey(s)),
+    ]
+      .map(csvField)
+      .join(","),
+  );
+  return `﻿${["日付,摘要,金額,残高,コメント", ...rows].join("\r\n")}\r\n`;
 }
 
 function el(tag: string, className?: string, text?: string): HTMLElement {
@@ -390,8 +411,9 @@ function currentMonth(): string {
 /** 記録がこれだけ止まっていたら、銀行サイトの変更に追従できていない可能性を警告する */
 const STALE_AFTER_MS = 7 * DAY_MS;
 
-type ViewTab = "log" | "accounts" | "history";
+type ViewTab = "log" | "accounts" | "history" | "statements";
 type LogFilter = "all" | "transfer" | "in" | "out";
+type StatementFilter = "all" | "in" | "out";
 
 /**
  * ダッシュボードを描画する。戻り値の再描画関数は選択中のタブや期間などの
@@ -406,6 +428,7 @@ export function renderDashboard(
   let view: "dashboard" | "settings" = "dashboard";
   let activeTab: ViewTab = "log";
   let logFilter: LogFilter = "all";
+  let statementFilter: StatementFilter = "all";
   let filterAccountId: string | null = null;
   let detailOpen = false;
   let periodFrom: number | null = null;
@@ -608,6 +631,7 @@ export function renderDashboard(
     { key: "log", label: "ログ" },
     { key: "accounts", label: "口座別" },
     { key: "history", label: "推移" },
+    { key: "statements", label: "普通口座" },
   ];
 
   const viewTabs = (): HTMLElement => {
@@ -656,7 +680,9 @@ export function renderDashboard(
     inner.append(row);
 
     if (latest === null) {
+      // つかいわけ口座の記録がまだなくても、明細だけあるならタブは出す
       inner.append(el("div", "pb-3"));
+      if (data.statements.length > 0) inner.append(viewTabs());
       return node;
     }
 
@@ -1055,6 +1081,160 @@ export function renderDashboard(
     return node;
   };
 
+  // ---- 普通口座タブ ----
+
+  /** 明細の起算日(日付のみ)を期間フィルタと同じエポックミリ秒に直す */
+  const statementAt = (s: StatementEntry): number => dayStart(s.valueDate) ?? 0;
+
+  const STATEMENT_FILTERS: { key: StatementFilter; label: string }[] = [
+    { key: "all", label: "すべて" },
+    { key: "in", label: "入金" },
+    { key: "out", label: "出金" },
+  ];
+
+  const statementFilterChips = (): HTMLElement => {
+    const row = el("div", "statement-filters flex gap-1.5 overflow-x-auto pb-2");
+    for (const def of STATEMENT_FILTERS) {
+      const active = statementFilter === def.key;
+      const chip = el(
+        "button",
+        `statement-filter-${def.key} ${chipBase} ${active ? `active ${chipOn}` : chipOff}`,
+        def.label,
+      );
+      chip.setAttribute("aria-pressed", String(active));
+      chip.addEventListener("click", () => {
+        statementFilter = def.key;
+        draw();
+      });
+      row.append(chip);
+    }
+    return row;
+  };
+
+  const matchesStatement = (s: StatementEntry): boolean => {
+    if (!inPeriod(statementAt(s))) return false;
+    if (statementFilter === "in") return s.amount > 0;
+    if (statementFilter === "out") return s.amount < 0;
+    return true;
+  };
+
+  /** 明細1行。振替と違い銀行側の記録なので削除はできない */
+  const statementRow = (s: StatementEntry): HTMLElement => {
+    const key = statementCommentKey(s);
+    const row = el("div", "statement-row group relative flex items-stretch");
+    row.append(el("span", `accent w-1 shrink-0 ${s.amount > 0 ? ACCENT.in : ACCENT.out}`));
+
+    const col = el("div", "min-w-0 flex-1");
+    const main = el(
+      "div",
+      "flex min-h-14 items-center gap-3 py-2 pr-3 pl-3.5 sm:min-h-[52px] sm:pl-3",
+    );
+
+    const body = el("div", "min-w-0 flex-1");
+    // 摘要は振込元名や「給与」など、銀行がそのまま返す文言
+    body.append(
+      el(
+        "div",
+        "statement-remark truncate text-[15px] leading-snug font-semibold",
+        s.remark === "" ? "(摘要なし)" : s.remark,
+      ),
+    );
+    const comment = commentText(data.comments, key);
+    const balanceText = `残高 ${formatYen(s.balance)}`;
+    body.append(
+      el(
+        "div",
+        "subline truncate text-xs text-slate-500 dark:text-slate-400",
+        comment === "" ? balanceText : `${balanceText} · ${comment}`,
+      ),
+    );
+    main.append(body);
+
+    const inline = commentInput(key);
+    inline.classList.add("max-sm:hidden", "sm:w-[220px]", "shrink-0");
+    main.append(inline);
+
+    const amount = signedCell(s.amount);
+    amount.classList.add("amount", "text-base", "font-bold", "tabular-nums");
+    main.append(amount);
+    col.append(main);
+
+    const editor = el("div", "comment-editor hidden pr-3 pb-2.5 pl-3.5 sm:hidden");
+    const mobileInput = commentInput(key);
+    mobileInput.classList.add(
+      "min-h-10",
+      "bg-white",
+      "ring-slate-300",
+      "dark:bg-slate-800",
+      "dark:ring-slate-600",
+    );
+    editor.append(mobileInput);
+    col.append(editor);
+    row.append(col);
+
+    row.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("input,button,a,select") !== null) return;
+      editor.classList.toggle("hidden");
+      if (!editor.classList.contains("hidden")) mobileInput.focus();
+    });
+
+    return row;
+  };
+
+  const statementsSection = (): HTMLElement => {
+    const node = el("section", "statements");
+    node.append(statementFilterChips());
+
+    const entries = sortStatementsDesc(data.statements).filter(matchesStatement);
+    if (entries.length === 0) {
+      node.append(
+        el(
+          "p",
+          `empty mt-2 ${MUTED}`,
+          data.statements.length === 0
+            ? "まだ明細がありません。銀行サイトにログインすると自動で取得します"
+            : "この期間の明細はありません",
+        ),
+      );
+      return node;
+    }
+
+    const dayTotals = new Map<string, number>();
+    for (const s of entries) {
+      dayTotals.set(s.valueDate, (dayTotals.get(s.valueDate) ?? 0) + s.amount);
+    }
+
+    let currentDay = "";
+    let card: HTMLElement | null = null;
+    for (const s of entries) {
+      if (s.valueDate !== currentDay) {
+        currentDay = s.valueDate;
+        const heading = el(
+          "div",
+          "day-heading flex items-baseline justify-between px-0.5 pt-1.5 pb-1",
+        );
+        heading.append(
+          el(
+            "span",
+            "text-xs font-bold text-slate-500 dark:text-slate-400",
+            formatDayHeading(statementAt(s)),
+          ),
+        );
+        const cell = signedCell(dayTotals.get(s.valueDate) ?? 0);
+        cell.classList.add("day-total", "text-xs", "font-semibold", "tabular-nums");
+        heading.append(cell);
+        card = el(
+          "div",
+          `day-card mb-2 divide-y divide-slate-100 overflow-hidden ${CARD} dark:divide-slate-800`,
+        );
+        node.append(heading, card);
+      }
+      card!.append(statementRow(s));
+    }
+    return node;
+  };
+
   // ---- 口座別タブ ----
 
   const workspaceKpi = (cls: string, label: string, amount: number): HTMLElement => {
@@ -1330,6 +1510,7 @@ export function renderDashboard(
     const ledger = {
       snapshots: data.snapshots,
       transfers: data.transfers,
+      statements: data.statements,
       comments: data.comments,
       deletions: data.deletions,
     };
@@ -1341,8 +1522,14 @@ export function renderDashboard(
     csvLink.textContent = "振替履歴をCSVでエクスポート";
     csvLink.href = `data:text/csv;charset=utf-8,${encodeURIComponent(transfersCsv(data.transfers, data.comments))}`;
 
+    const statementCsvLink = document.createElement("a");
+    statementCsvLink.className = `export-statement-csv mb-3 inline-block text-sm ${LINK}`;
+    statementCsvLink.download = "aozora-statements.csv";
+    statementCsvLink.textContent = "普通口座の明細をCSVでエクスポート";
+    statementCsvLink.href = `data:text/csv;charset=utf-8,${encodeURIComponent(statementsCsv(data.statements, data.comments))}`;
+
     const exportRow = el("div", "export-row flex flex-wrap gap-x-6");
-    exportRow.append(exportLink, csvLink);
+    exportRow.append(exportLink, csvLink, statementCsvLink);
     node.append(exportRow);
 
     const importRow = el("label", "import-row flex flex-wrap items-center gap-2.5 text-sm");
@@ -1432,7 +1619,7 @@ export function renderDashboard(
     const main = el("main", "mx-auto max-w-[760px] px-4 pb-8 sm:px-6");
     root.append(main);
 
-    if (latestRecordAt(data.snapshots, data.transfers) === null) {
+    if (latestRecordAt(data.snapshots, data.transfers) === null && data.statements.length === 0) {
       main.append(el("p", `empty pt-4 ${MUTED}`, "まだ記録がありません"));
       return;
     }
@@ -1440,6 +1627,7 @@ export function renderDashboard(
     main.append(monthNav());
     if (activeTab === "log") main.append(logSection());
     else if (activeTab === "accounts") main.append(accountsSection());
+    else if (activeTab === "statements") main.append(statementsSection());
     else main.append(historySection());
   };
 

@@ -248,3 +248,79 @@ describe("setupContentScript", () => {
     expect(await store.loadSnapshots()).toEqual([]);
   });
 });
+
+describe("setupContentScriptの銀行APIからの取り込み", () => {
+  let store: HistoryStore;
+  let teardown: (() => void) | null = null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    document.body.innerHTML = "";
+    store = new HistoryStore(fakeStorage());
+  });
+
+  afterEach(() => {
+    teardown?.();
+    teardown = null;
+    vi.useRealTimers();
+  });
+
+  function start(pathname: string) {
+    // jsdomのlocationは書き換えられないため、パスだけ差し替えた文書を渡す
+    const doc = new Proxy(document, {
+      get: (target, prop) =>
+        prop === "location" ? { pathname } : Reflect.get(target, prop, target),
+    });
+    const collect = vi.fn(() => Promise.resolve());
+    teardown = setupContentScript(doc, store, () => 42, collect);
+    return collect;
+  }
+
+  it("ログイン後のページでは取り込みを試みる", async () => {
+    const collect = start("/bank/sp-account/account-to-account");
+
+    await vi.runAllTimersAsync();
+
+    expect(collect).toHaveBeenCalledTimes(1);
+  });
+
+  it("ログイン画面など対象外のパスでは問い合わせない", async () => {
+    const collect = start("/login");
+
+    await vi.runAllTimersAsync();
+
+    expect(collect).not.toHaveBeenCalled();
+  });
+
+  it("同じ画面でDOMが変化し続けても1回しか呼ばない", async () => {
+    const collect = start("/bank/sp-account");
+    await vi.runAllTimersAsync();
+
+    const ticker = document.createElement("div");
+    document.body.append(ticker);
+    for (let i = 0; i < 10; i++) {
+      ticker.textContent = String(i);
+      await vi.advanceTimersByTimeAsync(400);
+    }
+
+    expect(collect).toHaveBeenCalledTimes(1);
+  });
+
+  it("取り込みが失敗しても他の記録を止めない", async () => {
+    const doc = new Proxy(document, {
+      get: (target, prop) =>
+        prop === "location" ? { pathname: "/bank/sp-account" } : Reflect.get(target, prop, target),
+    });
+    teardown = setupContentScript(
+      doc,
+      store,
+      () => 42,
+      () => Promise.reject(new Error("HTTP 401")),
+    );
+
+    document.body.innerHTML = accountsHtml;
+    await vi.runAllTimersAsync();
+
+    expect(await store.loadSnapshots()).toHaveLength(1);
+  });
+});

@@ -19,6 +19,52 @@ export function transferKey(t: TransferRecord): string {
 }
 
 /**
+ * 代表口座(普通預金)の入出金明細1件。振込・給与など、つかいわけ口座の
+ * 内訳では見えない外部との入出金を銀行のAPIからそのまま持ってくる
+ */
+export interface StatementEntry {
+  /** 銀行が採番する明細番号 */
+  entryNumber: string;
+  /** 起算日 (yyyy-MM-dd) */
+  valueDate: string;
+  /** 入金は正、出金は負 */
+  amount: number;
+  /** 取引後の残高 */
+  balance: number;
+  /** 摘要(振込元名・給与など) */
+  remark: string;
+}
+
+/** 明細の同一性を表すキー。明細番号は日付ごとの採番のため日付と組にする */
+export function statementKey(s: StatementEntry): string {
+  return `${s.valueDate}:${s.entryNumber}`;
+}
+
+/** コメント紐付け用の安定キー */
+export function statementCommentKey(s: StatementEntry): string {
+  return `statement:${statementKey(s)}`;
+}
+
+/** 新しい順(同日は明細番号の大きい順)に並べる */
+export function sortStatementsDesc(statements: StatementEntry[]): StatementEntry[] {
+  return statements.toSorted(
+    (a, b) => b.valueDate.localeCompare(a.valueDate) || b.entryNumber.localeCompare(a.entryNumber),
+  );
+}
+
+/** 同じ明細は1件にまとめる。後から渡した方(取得が新しい方)を採用する */
+export function mergeStatements(
+  existing: StatementEntry[],
+  incoming: StatementEntry[],
+): StatementEntry[] {
+  const byKey = new Map(existing.map((s) => [statementKey(s), s]));
+  for (const s of incoming) byKey.set(statementKey(s), s);
+  return [...byKey.values()].toSorted(
+    (a, b) => a.valueDate.localeCompare(b.valueDate) || a.entryNumber.localeCompare(b.entryNumber),
+  );
+}
+
+/**
  * 記録に紐付くコメント。textが空文字の要素は削除の記録(tombstone)で、
  * 端末間同期の際に「削除した」ことを他端末の古いコメントより優先させるために残す
  */

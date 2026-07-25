@@ -2,6 +2,8 @@ import {
   appendSnapshot,
   type BalanceSnapshot,
   type Comments,
+  mergeStatements,
+  type StatementEntry,
   transferKey,
   type TransferRecord,
 } from "./ledger.ts";
@@ -9,6 +11,8 @@ import {
 export interface LedgerData {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
+  /** 代表口座の入出金明細。銀行が採番した明細番号で一意なので削除の記録は要らない */
+  statements: StatementEntry[];
   comments: Comments;
   /** 削除した振替の記録。transferKey → 削除時刻。同期で削除を伝播させるために残す */
   deletions: Record<string, number>;
@@ -45,5 +49,7 @@ export function mergeLedgers(local: LedgerData, remote: LedgerData): LedgerData 
     if (other === undefined || other.updatedAt <= entry.updatedAt) comments[key] = entry;
   }
 
-  return { snapshots, transfers, comments, deletions };
+  const statements = mergeStatements(remote.statements, local.statements);
+
+  return { snapshots, transfers, statements, comments, deletions };
 }

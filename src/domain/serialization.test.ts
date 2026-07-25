@@ -17,6 +17,15 @@ const validLedger = {
       amount: 5000,
     },
   ],
+  statements: [
+    {
+      entryNumber: "0001",
+      valueDate: "2026-07-24",
+      amount: -173000,
+      balance: 907425,
+      remark: "振込 ラクテン",
+    },
+  ],
   comments: { "transfer:200": { text: "家賃", updatedAt: 300 } },
   deletions: { "100:133331:133332:5000": 400 },
 };
@@ -37,12 +46,21 @@ describe("parseLedgerJson", () => {
   });
 
   it("欠けているセクションは空として読み込む", () => {
+    // 入出金明細を持たない頃のエクスポート・R2オブジェクトも読める
     expect(parseLedgerJson("{}")).toEqual({
       snapshots: [],
       transfers: [],
+      statements: [],
       comments: {},
       deletions: {},
     });
+  });
+
+  it("形式の違う入出金明細はエラーにする", () => {
+    expect(() =>
+      parseLedgerJson(JSON.stringify({ statements: [{ valueDate: "2026-07-24" }] })),
+    ).toThrow("入出金明細");
+    expect(() => parseLedgerJson(JSON.stringify({ statements: {} }))).toThrow("入出金明細");
   });
 
   it("JSONとして不正な文字列はエラーにする", () => {

@@ -1,4 +1,10 @@
-import type { BalanceSnapshot, CommentEntry, Comments, TransferRecord } from "./ledger.ts";
+import type {
+  BalanceSnapshot,
+  CommentEntry,
+  Comments,
+  StatementEntry,
+  TransferRecord,
+} from "./ledger.ts";
 import type { LedgerData } from "./merge.ts";
 import type { AccountRef, SubAccount } from "./parser.ts";
 
@@ -58,6 +64,25 @@ function parseTransfer(value: unknown): TransferRecord {
   };
 }
 
+function parseStatement(value: unknown): StatementEntry {
+  if (
+    !isRecord(value) ||
+    typeof value.entryNumber !== "string" ||
+    typeof value.valueDate !== "string" ||
+    typeof value.amount !== "number" ||
+    typeof value.balance !== "number"
+  ) {
+    throw new FormatError("入出金明細");
+  }
+  return {
+    entryNumber: value.entryNumber,
+    valueDate: value.valueDate,
+    amount: value.amount,
+    balance: value.balance,
+    remark: typeof value.remark === "string" ? value.remark : "",
+  };
+}
+
 function parseCommentEntry(value: unknown): CommentEntry {
   // tombstone化以前のエクスポート・R2オブジェクトはコメントが文字列
   if (typeof value === "string") return { text: value, updatedAt: 0 };
@@ -96,12 +121,16 @@ export function parseLedgerJson(text: string): LedgerData {
 
   const snapshots = parsed.snapshots === undefined ? [] : parsed.snapshots;
   const transfers = parsed.transfers === undefined ? [] : parsed.transfers;
+  // 入出金明細を持たない頃のエクスポート・R2オブジェクトも読めるようにする
+  const statements = parsed.statements === undefined ? [] : parsed.statements;
   if (!Array.isArray(snapshots)) throw new FormatError("スナップショット");
   if (!Array.isArray(transfers)) throw new FormatError("振替");
+  if (!Array.isArray(statements)) throw new FormatError("入出金明細");
 
   return {
     snapshots: snapshots.map(parseSnapshot),
     transfers: transfers.map(parseTransfer),
+    statements: statements.map(parseStatement),
     comments: parseComments(parsed.comments),
     deletions: parseDeletions(parsed.deletions),
   };

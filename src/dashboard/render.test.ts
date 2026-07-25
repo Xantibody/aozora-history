@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
+import type { BalanceSnapshot, StatementEntry, TransferRecord } from "../domain/ledger.ts";
 import {
   type DashboardData,
   formatDateTime,
   formatSigned,
   formatYen,
   renderDashboard,
+  statementsCsv,
   transfersCsv,
 } from "./render.ts";
 
@@ -63,6 +64,7 @@ function data(overrides: Partial<DashboardData> = {}): DashboardData {
   return {
     snapshots,
     transfers,
+    statements: [],
     comments: {},
     deletions: {},
     syncConfig: null,
@@ -1065,7 +1067,7 @@ describe("renderDashboard", () => {
       const prefix = "data:application/json;charset=utf-8,";
       expect(link.href.startsWith(prefix)).toBe(true);
       const json = JSON.parse(decodeURIComponent(link.href.slice(prefix.length)));
-      expect(json).toEqual({ snapshots, transfers, comments, deletions });
+      expect(json).toEqual({ snapshots, transfers, statements: [], comments, deletions });
     });
 
     it("CSVエクスポートリンクが振替履歴とコメントを含む", () => {
@@ -1159,5 +1161,140 @@ describe("renderDashboard", () => {
       expect(root.querySelector(".log-filters .active")!.textContent).toBe("振替");
       expect(root.querySelector(".log")!.textContent).toContain("700円");
     });
+  });
+});
+
+describe("普通口座タブ", () => {
+  let root: HTMLElement;
+
+  const statements: StatementEntry[] = [
+    {
+      entryNumber: "0001",
+      valueDate: "2026-07-23",
+      amount: -4100,
+      balance: 445281,
+      remark: "振込 ミツビシユーエフジエイ",
+    },
+    {
+      entryNumber: "0001",
+      valueDate: "2026-07-24",
+      amount: 635144,
+      balance: 1080425,
+      remark: "給与  カ）アツトマーク",
+    },
+    {
+      entryNumber: "0002",
+      valueDate: "2026-07-24",
+      amount: -173000,
+      balance: 907425,
+      remark: "振込 ラクテン",
+    },
+  ];
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.getElementById("app")!;
+  });
+
+  function open(d = data({ statements })) {
+    const rendered = render(root, d);
+    [...root.querySelectorAll<HTMLButtonElement>(".view-tab")]
+      .find((t) => t.textContent === "普通口座")!
+      .click();
+    return rendered;
+  }
+
+  function rows(): string[] {
+    return [...root.querySelectorAll(".statement-row .statement-remark")].map(
+      (e) => e.textContent ?? "",
+    );
+  }
+
+  it("明細を新しい順に並べ、入金は正・出金は負で表示する", () => {
+    open();
+
+    expect(rows()).toEqual([
+      "振込 ラクテン",
+      "給与  カ）アツトマーク",
+      "振込 ミツビシユーエフジエイ",
+    ]);
+    expect([...root.querySelectorAll(".statement-row .amount")].map((e) => e.textContent)).toEqual([
+      "-173,000円",
+      "+635,144円",
+      "-4,100円",
+    ]);
+  });
+
+  it("日付ごとにカードを分け、その日の合計を出す", () => {
+    open();
+
+    const headings = [...root.querySelectorAll(".statements .day-total")].map((e) => e.textContent);
+    expect(headings).toEqual(["+462,144円", "-4,100円"]);
+  });
+
+  it("入金・出金で絞り込める", () => {
+    open();
+
+    root.querySelector<HTMLButtonElement>(".statement-filter-in")!.click();
+    expect(rows()).toEqual(["給与  カ）アツトマーク"]);
+
+    root.querySelector<HTMLButtonElement>(".statement-filter-out")!.click();
+    expect(rows()).toEqual(["振込 ラクテン", "振込 ミツビシユーエフジエイ"]);
+  });
+
+  it("明細ごとにコメントを保存できる", () => {
+    const { onCommentChange } = open();
+
+    const input = root.querySelector<HTMLInputElement>(".statement-row .comment")!;
+    input.value = "楽天カード";
+    input.dispatchEvent(new Event("change"));
+
+    expect(onCommentChange).toHaveBeenCalledWith("statement:2026-07-24:0002", "楽天カード");
+  });
+
+  it("摘要が空なら代替の見出しを出す", () => {
+    open(data({ statements: [{ ...statements[0], remark: "" }] }));
+
+    expect(rows()).toEqual(["(摘要なし)"]);
+  });
+
+  it("明細がなければ取得を待っている旨を出す", () => {
+    render(root, data({ statements: [] }));
+    [...root.querySelectorAll<HTMLButtonElement>(".view-tab")]
+      .find((t) => t.textContent === "普通口座")!
+      .click();
+
+    expect(root.querySelector(".statements .empty")!.textContent).toContain("まだ明細がありません");
+  });
+});
+
+describe("statementsCsv", () => {
+  it("ヘッダー付きで明細を新しい順にCSV化する(Excel向けBOM付き)", () => {
+    const entries: StatementEntry[] = [
+      {
+        entryNumber: "0001",
+        valueDate: "2026-07-23",
+        amount: -4100,
+        balance: 445281,
+        remark: "振込",
+      },
+      {
+        entryNumber: "0002",
+        valueDate: "2026-07-24",
+        amount: 635144,
+        balance: 1080425,
+        remark: "給与",
+      },
+    ];
+
+    const csv = statementsCsv(entries, {
+      "statement:2026-07-24:0002": { text: "月給", updatedAt: 1 },
+    });
+
+    expect(csv).toBe(
+      "﻿日付,摘要,金額,残高,コメント\r\n" +
+        "2026-07-24,給与,635144,1080425,月給\r\n" +
+        "2026-07-23,振込,-4100,445281,\r\n",
+    );
   });
 });
