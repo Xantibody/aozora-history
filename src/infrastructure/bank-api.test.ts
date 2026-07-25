@@ -13,7 +13,8 @@ function recorder(responses: { ok?: boolean; status?: number; body: unknown }[])
     return Promise.resolve({
       ok: res.ok ?? true,
       status: res.status ?? 200,
-      json: () => Promise.resolve(res.body),
+      text: () =>
+        Promise.resolve(typeof res.body === "string" ? res.body : JSON.stringify(res.body)),
     });
   };
   return { calls, fetchFn };
@@ -104,5 +105,12 @@ describe("BankApiClient", () => {
     const client = new BankApiClient(fetchFn, () => "");
 
     expect(await client.spAccountBalances()).toBeNull();
+  });
+
+  it("ログイン画面のHTMLが返ってきてもnullを返す", async () => {
+    const { fetchFn } = recorder([{ body: "<!DOCTYPE html><html>ログイン</html>" }]);
+    const client = new BankApiClient(fetchFn, () => "");
+
+    expect(await client.ordinaryStatement(100)).toBeNull();
   });
 });

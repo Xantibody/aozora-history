@@ -23,7 +23,11 @@ export interface BankRequest {
 export interface BankFetchResponse {
   ok: boolean;
   status: number;
-  json(): Promise<unknown>;
+  /**
+   * ページ側のfetchで取ると本文のオブジェクトがページのコンパートメントに
+   * できてしまうため、文字列で受け取って拡張側でJSONに直す
+   */
+  text(): Promise<string>;
 }
 
 export type BankFetchLike = (request: BankRequest) => Promise<BankFetchResponse>;
@@ -65,7 +69,12 @@ export class BankApiClient {
       credentials: "include",
     });
     if (!res.ok) throw new Error(`銀行APIの取得に失敗しました (HTTP ${res.status})`);
-    return res.json();
+    try {
+      return JSON.parse(await res.text());
+    } catch {
+      // ログイン切れでログイン画面のHTMLが返るなど。記録は増やさず次の機会に取り直す
+      return null;
+    }
   }
 
   /** つかいわけ口座の現在残高。つかいわけ口座を使っていなければnull */
