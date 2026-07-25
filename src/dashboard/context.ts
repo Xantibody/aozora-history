@@ -1,9 +1,12 @@
 import type { BalanceSnapshot, Comments, TransferRecord } from "../domain/ledger.ts";
+import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
 
 export interface DashboardData {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
+  /** 代表口座(普通預金)の入出金明細。銀行APIから取得したもの */
+  statements: StatementEntry[];
   comments: Comments;
   deletions: Record<string, number>;
   syncConfig: SyncConfig | null;
@@ -23,14 +26,16 @@ export interface DashboardOptions {
   now?: () => number;
 }
 
-export type ViewTab = "log" | "accounts" | "history";
+export type ViewTab = "log" | "accounts" | "history" | "statements";
 export type LogFilter = "all" | "transfer" | "in" | "out";
+export type StatementFilter = "all" | "in" | "out";
 
 /** 再描画をまたいで保持するUI状態(選択中のタブ・期間・フィルタなど) */
 export interface UiState {
   view: "dashboard" | "settings";
   activeTab: ViewTab;
   logFilter: LogFilter;
+  statementFilter: StatementFilter;
   filterAccountId: string | null;
   detailOpen: boolean;
   periodFrom: number | null;
@@ -47,6 +52,7 @@ export function initialUiState(): UiState {
     view: "dashboard",
     activeTab: "log",
     logFilter: "all",
+    statementFilter: "all",
     filterAccountId: null,
     detailOpen: false,
     periodFrom: null,

@@ -12,21 +12,24 @@ import { renderDashboard } from "./render.ts";
 const fetchFn: FetchLike = (url, init) => fetch(url, init);
 
 async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
-  const [snapshots, transfers, comments, deletions, syncConfig, lastSyncedAt] = await Promise.all([
-    store.loadSnapshots(),
-    store.loadTransfers(),
-    store.loadComments(),
-    store.loadDeletions(),
-    store.loadSyncConfig(),
-    store.loadLastSyncedAt(),
-  ]);
-  return { snapshots, transfers, comments, deletions, syncConfig, lastSyncedAt };
+  const [snapshots, transfers, statements, comments, deletions, syncConfig, lastSyncedAt] =
+    await Promise.all([
+      store.loadSnapshots(),
+      store.loadTransfers(),
+      store.loadStatements(),
+      store.loadComments(),
+      store.loadDeletions(),
+      store.loadSyncConfig(),
+      store.loadLastSyncedAt(),
+    ]);
+  return { snapshots, transfers, statements, comments, deletions, syncConfig, lastSyncedAt };
 }
 
 function currentLedger(data: DashboardData): LedgerData {
   return {
     snapshots: data.snapshots,
     transfers: data.transfers,
+    statements: data.statements,
     comments: data.comments,
     deletions: data.deletions,
   };
@@ -35,6 +38,7 @@ function currentLedger(data: DashboardData): LedgerData {
 function applyLedger(data: DashboardData, ledger: LedgerData): void {
   data.snapshots = ledger.snapshots;
   data.transfers = ledger.transfers;
+  data.statements = ledger.statements;
   data.comments = ledger.comments;
   data.deletions = ledger.deletions;
 }

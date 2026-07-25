@@ -1,16 +1,14 @@
 import type { DashboardData, DashboardOptions, RenderContext } from "./context.ts";
 import { MUTED, el } from "./dom.ts";
-import { accountsSection } from "./accounts-tab.ts";
+import { activeSection } from "./tabs.ts";
 import { header } from "./header.ts";
-import { historySection } from "./history-tab.ts";
 import { initialUiState } from "./context.ts";
 import { latestRecordAt } from "../domain/ledger.ts";
-import { logSection } from "./log-tab.ts";
 import { monthNav } from "./month-nav.ts";
 import { settingsView } from "./settings.ts";
 import { suggestionList } from "./comment-input.ts";
 
-export { transfersCsv } from "./csv.ts";
+export { statementsCsv, transfersCsv } from "./csv.ts";
 export { formatDateTime, formatSigned, formatYen } from "./format.ts";
 export type { DashboardData, DashboardHandlers, DashboardOptions } from "./context.ts";
 
@@ -44,16 +42,6 @@ function captureFocus(root: HTMLElement): (() => void) | null {
   };
 }
 
-function activeSection(ctx: RenderContext): HTMLElement {
-  if (ctx.state.activeTab === "log") {
-    return logSection(ctx);
-  }
-  if (ctx.state.activeTab === "accounts") {
-    return accountsSection(ctx);
-  }
-  return historySection(ctx);
-}
-
 function drawView(ctx: RenderContext): void {
   ctx.root.replaceChildren();
   if (ctx.state.view === "settings") {
@@ -62,7 +50,10 @@ function drawView(ctx: RenderContext): void {
   }
   const main = el("main", "mx-auto max-w-[760px] px-4 pb-8 sm:px-6");
   ctx.root.append(suggestionList(ctx.data.comments), header(ctx), main);
-  if (latestRecordAt(ctx.data.snapshots, ctx.data.transfers) === null) {
+  if (
+    latestRecordAt(ctx.data.snapshots, ctx.data.transfers) === null &&
+    ctx.data.statements.length === 0
+  ) {
     main.append(el("p", `empty pt-4 ${MUTED}`, "まだ記録がありません"));
     return;
   }

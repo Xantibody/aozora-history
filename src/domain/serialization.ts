@@ -1,6 +1,7 @@
 import type { AccountRef, SubAccount } from "./parser.ts";
 import type { BalanceSnapshot, CommentEntry, Comments, TransferRecord } from "./ledger.ts";
 import type { LedgerData } from "./merge.ts";
+import type { StatementEntry } from "./statement.ts";
 
 class FormatError extends Error {
   public constructor(section: string) {
@@ -59,6 +60,25 @@ function parseTransfer(value: unknown): TransferRecord {
   };
 }
 
+function parseStatement(value: unknown): StatementEntry {
+  if (
+    !isRecord(value) ||
+    typeof value.entryNumber !== "string" ||
+    typeof value.valueDate !== "string" ||
+    typeof value.amount !== "number" ||
+    typeof value.balance !== "number"
+  ) {
+    throw new FormatError("入出金明細");
+  }
+  return {
+    entryNumber: value.entryNumber,
+    valueDate: value.valueDate,
+    amount: value.amount,
+    balance: value.balance,
+    remark: typeof value.remark === "string" ? value.remark : "",
+  };
+}
+
 function parseCommentEntry(value: unknown): CommentEntry {
   // tombstone化以前のエクスポート・R2オブジェクトはコメントが文字列
   if (typeof value === "string") {
@@ -105,25 +125,30 @@ function parseJson(text: string): unknown {
   }
 }
 
+/** 未定義のセクションは空配列として扱う。古い形式のファイルも読めるようにするため */
+function parseSection(value: unknown, section: string): unknown[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new FormatError(section);
+  }
+  return value;
+}
+
 /** R2オブジェクト・エクスポートファイルと同じ形式のJSONを検証しつつ読み込む */
 export function parseLedgerJson(text: string): LedgerData {
   const parsed = parseJson(text);
   if (!isRecord(parsed)) {
     throw new FormatError("データ全体");
   }
-
-  const snapshots = parsed.snapshots === undefined ? [] : parsed.snapshots;
-  const transfers = parsed.transfers === undefined ? [] : parsed.transfers;
-  if (!Array.isArray(snapshots)) {
-    throw new FormatError("スナップショット");
-  }
-  if (!Array.isArray(transfers)) {
-    throw new FormatError("振替");
-  }
-
+  const snapshots = parseSection(parsed.snapshots, "スナップショット");
+  const transfers = parseSection(parsed.transfers, "振替");
+  const statements = parseSection(parsed.statements, "入出金明細");
   return {
     snapshots: snapshots.map((snapshot) => parseSnapshot(snapshot)),
     transfers: transfers.map((transfer) => parseTransfer(transfer)),
+    statements: statements.map((statement) => parseStatement(statement)),
     comments: parseComments(parsed.comments),
     deletions: parseDeletions(parsed.deletions),
   };

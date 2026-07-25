@@ -11,8 +11,8 @@ import {
 } from "./dom.ts";
 import { DEFAULT_OBJECT_KEY, parseSyncConfigJson } from "../infrastructure/r2sync.ts";
 import type { DashboardData, RenderContext } from "./context.ts";
+import { statementsCsv, transfersCsv } from "./csv.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
-import { transfersCsv } from "./csv.ts";
 
 interface SyncFieldDef {
   label: string;
@@ -194,6 +194,7 @@ function jsonExportLink(data: DashboardData): HTMLAnchorElement {
   const ledger = {
     snapshots: data.snapshots,
     transfers: data.transfers,
+    statements: data.statements,
     comments: data.comments,
     deletions: data.deletions,
   };
@@ -207,6 +208,15 @@ function csvExportLink(data: DashboardData): HTMLAnchorElement {
   csvLink.download = "aozora-history.csv";
   csvLink.textContent = "振替履歴をCSVでエクスポート";
   csvLink.href = `data:text/csv;charset=utf-8,${encodeURIComponent(transfersCsv(data.transfers, data.comments))}`;
+  return csvLink;
+}
+
+function statementCsvExportLink(data: DashboardData): HTMLAnchorElement {
+  const csvLink = document.createElement("a");
+  csvLink.className = `export-statement-csv mb-3 inline-block text-sm ${LINK}`;
+  csvLink.download = "aozora-statements.csv";
+  csvLink.textContent = "普通口座の明細をCSVでエクスポート";
+  csvLink.href = `data:text/csv;charset=utf-8,${encodeURIComponent(statementsCsv(data.statements, data.comments))}`;
   return csvLink;
 }
 
@@ -239,7 +249,11 @@ function importRow(ctx: RenderContext): HTMLElement {
 function importExportSection(ctx: RenderContext): HTMLElement {
   const node = section("import-export", "インポート / エクスポート");
   const exportRow = el("div", "export-row flex flex-wrap gap-x-6");
-  exportRow.append(jsonExportLink(ctx.data), csvExportLink(ctx.data));
+  exportRow.append(
+    jsonExportLink(ctx.data),
+    csvExportLink(ctx.data),
+    statementCsvExportLink(ctx.data),
+  );
   node.append(exportRow, importRow(ctx));
   node.append(
     el(

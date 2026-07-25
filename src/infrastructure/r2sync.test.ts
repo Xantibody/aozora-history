@@ -13,13 +13,20 @@ const config: SyncConfig = {
   secretAccessKey: "secret",
 };
 
-const emptyLedger: LedgerData = { snapshots: [], transfers: [], comments: {}, deletions: {} };
+const emptyLedger: LedgerData = {
+  snapshots: [],
+  transfers: [],
+  statements: [],
+  comments: {},
+  deletions: {},
+};
 
 const remoteLedger: LedgerData = {
   snapshots: [
     { takenAt: 10, updatedAt: null, accounts: [{ id: "100", name: "お財布", balance: 100 }] },
   ],
   transfers: [],
+  statements: [],
   comments: { "transfer:1": { text: "リモート", updatedAt: 0 } },
   deletions: {},
 };
@@ -167,6 +174,7 @@ describe("syncWithR2", () => {
     expect(merged).toStrictEqual({
       snapshots: remoteLedger.snapshots,
       transfers: [localTransfer],
+      statements: [],
       comments: remoteLedger.comments,
       deletions: {},
     });

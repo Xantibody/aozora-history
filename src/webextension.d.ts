@@ -21,3 +21,10 @@ declare const browser: {
     create: (props: { url: string }) => Promise<unknown>;
   };
 };
+
+/**
+ * content script から見えるページ側のグローバル (Firefox 限定)。
+ * content.fetch はページのプリンシパルでリクエストを出すため、
+ * ページと同じセッション cookie がそのまま載る
+ */
+declare const content: { fetch?: typeof fetch } | undefined;

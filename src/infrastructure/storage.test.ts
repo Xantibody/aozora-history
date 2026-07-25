@@ -1,6 +1,7 @@
 import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
 import { HistoryStore, addTransfer } from "./storage.ts";
 import { describe, expect, it } from "vitest";
+import type { StatementEntry } from "../domain/statement.ts";
 import type { StorageArea } from "./storage.ts";
 
 function fakeStorage(): StorageArea {
@@ -85,6 +86,7 @@ describe("HistoryStoreの一括読込・置換", () => {
     await expect(store.loadLedger()).resolves.toStrictEqual({
       snapshots: [snapshot],
       transfers: [transfer],
+      statements: [],
       comments: { "transfer:2": { text: "メモ", updatedAt: 9 } },
       deletions: {},
     });
@@ -96,11 +98,18 @@ describe("HistoryStoreの一括読込・置換", () => {
     const comments = { "transfer:9": { text: "v", updatedAt: 1 } };
     const deletions = { "9:1:2:100": 5 };
 
-    await store.replaceLedger({ snapshots: [snapshot], transfers: [], comments, deletions });
+    await store.replaceLedger({
+      snapshots: [snapshot],
+      transfers: [],
+      statements: [],
+      comments,
+      deletions,
+    });
 
     await expect(store.loadLedger()).resolves.toStrictEqual({
       snapshots: [snapshot],
       transfers: [],
+      statements: [],
       comments,
       deletions,
     });
@@ -248,5 +257,46 @@ describe("HistoryStoreのコメント", () => {
     await expect(store.loadComments()).resolves.toStrictEqual({
       "transfer:2": { text: "積立へ", updatedAt: 0 },
     });
+  });
+});
+
+function statement(entryNumber: string, remark = ""): StatementEntry {
+  return { valueDate: "2026-07-24", entryNumber, amount: -100, balance: 0, remark };
+}
+
+describe("HistoryStoreの入出金明細", () => {
+  it("初めての取得は保存する", async () => {
+    const store = new HistoryStore(fakeStorage());
+
+    await expect(store.recordStatements([statement("0001")])).resolves.toBe(true);
+    await expect(store.loadStatements()).resolves.toStrictEqual([statement("0001")]);
+  });
+
+  it("同じ明細を取り直しても書き込まない(自動同期の空振りを防ぐ)", async () => {
+    const store = new HistoryStore(fakeStorage());
+    await store.recordStatements([statement("0001")]);
+
+    await expect(store.recordStatements([statement("0001")])).resolves.toBe(false);
+  });
+
+  it("前回になかった明細だけが増える", async () => {
+    const store = new HistoryStore(fakeStorage());
+    await store.recordStatements([statement("0001")]);
+
+    await expect(store.recordStatements([statement("0002"), statement("0001")])).resolves.toBe(
+      true,
+    );
+    await expect(store.loadStatements()).resolves.toStrictEqual([
+      statement("0001"),
+      statement("0002"),
+    ]);
+  });
+
+  it("取得時刻を記録できる", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 42);
+
+    await expect(store.loadLastCollectedAt()).resolves.toBeNull();
+    await store.markCollected();
+    await expect(store.loadLastCollectedAt()).resolves.toBe(42);
   });
 });

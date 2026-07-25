@@ -25,6 +25,9 @@
     "eslint/no-undefined": "off",
     // require-hook(セットアップはフックへ)と矛盾。beforeEach/afterEachは使う
     "vitest/no-hooks": "off",
+    // 「ちょうど1回」の検証で prefer-called-times / prefer-to-have-been-called-times と
+    // 三つ巴になる。多数派の toHaveBeenCalledTimes(1) に寄せる
+    "vitest/prefer-called-once": "off",
     // vitestのglobals設定は無効にしており、明示importが正
     "vitest/no-importing-vitest-globals": "off",
 

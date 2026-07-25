@@ -177,7 +177,13 @@ describe("AutoSync", () => {
     await store.saveSyncConfig(config);
     await store.recordTransfer(transfer);
     const { promise: gate, release } = deferred();
-    const emptyLedger: LedgerData = { snapshots: [], transfers: [], comments: {}, deletions: {} };
+    const emptyLedger: LedgerData = {
+      snapshots: [],
+      transfers: [],
+      statements: [],
+      comments: {},
+      deletions: {},
+    };
     const results: LedgerData[] = [];
     // 同期中の変更を取りこぼした(=ローカルより古い)結果を返す遅い同期
     const runSync: SyncRunner = async () => {

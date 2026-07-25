@@ -77,6 +77,7 @@ const TABS: { key: ViewTab; label: string }[] = [
   { key: "log", label: "ログ" },
   { key: "accounts", label: "口座別" },
   { key: "history", label: "推移" },
+  { key: "statements", label: "普通口座" },
 ];
 
 const TAB_BASE =
@@ -161,6 +162,12 @@ function headerTopRow(ctx: RenderContext, latest: number | null): HTMLElement {
   return row;
 }
 
+/** つかいわけ口座の記録がまだない場合。明細だけあるならタブは出す */
+function noRecordsBody(ctx: RenderContext): HTMLElement[] {
+  const spacer = el("div", "pb-3");
+  return ctx.data.statements.length > 0 ? [spacer, viewTabs(ctx)] : [spacer];
+}
+
 /** ヘッダー: タイトル・鮮度・合計残高とスパークライン・タブ */
 export function header(ctx: RenderContext): HTMLElement {
   const node = el(
@@ -172,7 +179,7 @@ export function header(ctx: RenderContext): HTMLElement {
   const latest = latestRecordAt(ctx.data.snapshots, ctx.data.transfers);
   inner.append(headerTopRow(ctx, latest));
   if (latest === null) {
-    inner.append(el("div", "pb-3"));
+    inner.append(...noRecordsBody(ctx));
     return node;
   }
   inner.append(totalSummary(ctx), viewTabs(ctx));

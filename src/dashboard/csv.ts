@@ -1,5 +1,7 @@
 import type { Comments, TransferRecord } from "../domain/ledger.ts";
 import { commentText, sortTransfersDesc, transferCommentKey } from "../domain/ledger.ts";
+import { sortStatementsDesc, statementCommentKey } from "../domain/statement.ts";
+import type { StatementEntry } from "../domain/statement.ts";
 import { formatDateTime } from "./format.ts";
 
 function csvField(value: string): string {
@@ -23,4 +25,24 @@ export function transfersCsv(transfers: TransferRecord[], comments: Comments): s
   const rows = sortTransfersDesc(transfers).map((transfer) => csvRow(transfer, comments));
   // ExcelがUTF-8として認識できるようBOMを付ける
   return `﻿${["日時,出金口座,入金口座,金額,コメント", ...rows].join("\r\n")}\r\n`;
+}
+
+function statementCsvRow(statement: StatementEntry, comments: Comments): string {
+  return [
+    statement.valueDate,
+    statement.remark,
+    String(statement.amount),
+    String(statement.balance),
+    commentText(comments, statementCommentKey(statement)),
+  ]
+    .map((field) => csvField(field))
+    .join(",");
+}
+
+/** 代表口座の入出金明細のCSV。金額は入金が正、出金が負の数値のまま出す */
+export function statementsCsv(statements: StatementEntry[], comments: Comments): string {
+  const rows = sortStatementsDesc(statements).map((statement) =>
+    statementCsvRow(statement, comments),
+  );
+  return `﻿${["日付,摘要,金額,残高,コメント", ...rows].join("\r\n")}\r\n`;
 }
