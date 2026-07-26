@@ -2,7 +2,7 @@ import { CARD, MUTED, NEGATIVE, POSITIVE, el, signedCell } from "./dom.ts";
 import type { RenderContext, StatementFilter, UiState } from "./context.ts";
 import { dayStart, inPeriod } from "./period.ts";
 import { formatDayHeading, formatYen } from "./format.ts";
-import { sortStatementsDesc, statementCommentKey } from "../domain/statement.ts";
+import { primaryStatements, sortStatementsDesc, statementCommentKey } from "../domain/statement.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import { commentInput } from "./comment-input.ts";
 import { commentText } from "../domain/ledger.ts";
@@ -203,17 +203,20 @@ function dayCard(ctx: RenderContext, entries: StatementEntry[]): HTMLElement {
 }
 
 function emptyMessage(ctx: RenderContext): string {
-  if (ctx.data.statements.length === 0) {
+  if (primaryStatements(ctx.data.statements).length === 0) {
     return "まだ明細がありません。銀行サイトにログインすると自動で取得します";
   }
   return "この期間の明細はありません";
 }
 
-/** 代表口座(普通預金)の入出金明細。振込・給与など外部との入出金を日ごとに並べる */
+/**
+ * 代表口座(普通預金)の入出金明細。振込・給与など外部との入出金を日ごとに並べる。
+ * つかいわけ口座の明細は口座ごとのログに出るため、ここでは代表口座の分だけを扱う
+ */
 export function statementsSection(ctx: RenderContext): HTMLElement {
   const node = el("section", "statements");
   node.append(filterChips(ctx));
-  const entries = sortStatementsDesc(ctx.data.statements).filter((statement) =>
+  const entries = sortStatementsDesc(primaryStatements(ctx.data.statements)).filter((statement) =>
     matchesStatement(ctx.state, statement),
   );
   if (entries.length === 0) {

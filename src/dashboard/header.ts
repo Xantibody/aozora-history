@@ -5,6 +5,7 @@ import type { RenderContext, UiState, ViewTab } from "./context.ts";
 import { latestRecordAt, totalBalancePoints } from "../domain/ledger.ts";
 import type { BalancePoint } from "../domain/ledger.ts";
 import { formatShortDateTime } from "./format.ts";
+import { primaryStatements } from "../domain/statement.ts";
 
 /** 記録がこれだけ止まっていたら、銀行サイトの変更に追従できていない可能性を警告する */
 const STALE_DAYS = 7;
@@ -165,7 +166,7 @@ function headerTopRow(ctx: RenderContext, latest: number | null): HTMLElement {
 /** つかいわけ口座の記録がまだない場合。明細だけあるならタブは出す */
 function noRecordsBody(ctx: RenderContext): HTMLElement[] {
   const spacer = el("div", "pb-3");
-  return ctx.data.statements.length > 0 ? [spacer, viewTabs(ctx)] : [spacer];
+  return primaryStatements(ctx.data.statements).length > 0 ? [spacer, viewTabs(ctx)] : [spacer];
 }
 
 /** ヘッダー: タイトル・鮮度・合計残高とスパークライン・タブ */

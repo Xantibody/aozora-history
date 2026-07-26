@@ -1,9 +1,19 @@
+import {
+  accountStatements,
+  mergeStatements,
+  primaryStatements,
+  sortStatementsDesc,
+  statementKey,
+} from "./statement.ts";
 import { describe, expect, it } from "vitest";
-import { mergeStatements, sortStatementsDesc, statementKey } from "./statement.ts";
 import type { StatementEntry } from "./statement.ts";
 
 function statement(valueDate: string, entryNumber: string, amount: number): StatementEntry {
   return { valueDate, entryNumber, amount, balance: 0, remark: "" };
+}
+
+function inAccount(accountId: string, entry: StatementEntry): StatementEntry {
+  return { ...entry, accountId };
 }
 
 describe("statementKey", () => {
@@ -12,6 +22,36 @@ describe("statementKey", () => {
     expect(statementKey(statement("2026-07-25", "0001", -100))).not.toBe(
       statementKey(statement("2026-07-24", "0001", -100)),
     );
+  });
+
+  it("つかいわけ口座の明細は口座ごとに採番されるため、口座IDでも区別する", () => {
+    const entry = statement("2026-07-24", "0001", -100);
+
+    expect(statementKey(inAccount("133331", entry))).not.toBe(
+      statementKey(inAccount("133332", entry)),
+    );
+  });
+
+  it("代表口座の明細のキーは変えない(既存のコメントの紐付けを保つ)", () => {
+    expect(statementKey(statement("2026-07-24", "0001", -100))).toBe("2026-07-24:0001");
+  });
+});
+
+describe("primaryStatements / accountStatements", () => {
+  const all = [
+    statement("2026-07-24", "0001", -100),
+    inAccount("133331", statement("2026-07-24", "0001", -200)),
+    inAccount("133332", statement("2026-07-24", "0001", -300)),
+  ];
+
+  it("代表口座の明細だけを取り出す", () => {
+    expect(primaryStatements(all)).toStrictEqual([statement("2026-07-24", "0001", -100)]);
+  });
+
+  it("指定したつかいわけ口座の明細だけを取り出す", () => {
+    expect(accountStatements(all, "133331")).toStrictEqual([
+      inAccount("133331", statement("2026-07-24", "0001", -200)),
+    ]);
   });
 });
 
@@ -23,6 +63,15 @@ describe("mergeStatements", () => {
     );
 
     expect(merged).toStrictEqual([{ ...statement("2026-07-24", "0001", -100), remark: "新" }]);
+  });
+
+  it("口座が違えば同じ日付・明細番号でも別の明細として残す", () => {
+    const merged = mergeStatements(
+      [statement("2026-07-24", "0001", -100)],
+      [inAccount("133331", statement("2026-07-24", "0001", -200))],
+    );
+
+    expect(merged).toHaveLength(2);
   });
 
   it("別の明細は両方残し、日付と明細番号の昇順に並べる", () => {
