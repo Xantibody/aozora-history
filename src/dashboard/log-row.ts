@@ -1,16 +1,18 @@
-import type { BalanceChange, LogEntry, TransferRecord } from "../domain/ledger.ts";
-import { FINE_PRINT, NEGATIVE, POSITIVE, el } from "./dom.ts";
+import { FINE_PRINT, NEGATIVE, POSITIVE, accountDot, el } from "./dom.ts";
 import { attachSwipeDelete, confirmDeleteTransfer, transferDetail } from "./swipe-delete.ts";
 import { changeCommentKey, commentText, transferCommentKey } from "../domain/ledger.ts";
-import { formatSigned, formatTime, formatYen, localDayKey } from "./format.ts";
+import { formatSigned, formatTime, formatYen } from "./format.ts";
+import type { LogEntry } from "../domain/log.ts";
 import type { RenderContext } from "./context.ts";
-import type { StatementEntry } from "../domain/statement.ts";
 import type { SwipeHandle } from "./swipe-delete.ts";
-import { accountStatements } from "../domain/statement.ts";
+import type { TransferRecord } from "../domain/ledger.ts";
 import { commentInput } from "./comment-input.ts";
-import { dayStart } from "./period.ts";
+import { counterparty } from "./counterparty.ts";
 import { isDetected } from "../domain/reconcile.ts";
 import { matchesAutoTransfer } from "../domain/auto-transfer.ts";
+
+/** 振替の出金側・入金側と同じ形。口座の参照だけのためにモジュールを増やさない */
+type AccountRef = TransferRecord["from"];
 
 export type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" }>;
 
@@ -23,6 +25,16 @@ const ACCENT = {
 
 function strongName(name: string): HTMLElement {
   return el("strong", "font-semibold", name);
+}
+
+/**
+ * 口座名。色は口座を見分ける手掛かりを増やすためのもので、それだけに
+ * 意味を持たせない(名前は必ず文字で出す)。控えめな点にとどめる
+ */
+function accountName(ctx: RenderContext, ref: AccountRef): HTMLElement {
+  const label = el("span", "account-name inline-flex items-baseline gap-1");
+  label.append(accountDot(ctx.colorOf(ref.id), "h-1.5 w-1.5 self-center"), strongName(ref.name));
+  return label;
 }
 
 /**
@@ -39,41 +51,27 @@ function detectedBadge(ctx: RenderContext, transfer: TransferRecord): HTMLElemen
   );
 }
 
-/**
- * 明細がその増減の区間に入るか。明細は起算日(日単位)しか持たないため、
- * 区間の始まりはその日の0時まで広げて見る。スナップショットを取った時刻と
- * 銀行が起算する日は必ずしも同じ日にならない(深夜の入金など)
- */
-function withinChange(statement: StatementEntry, change: BalanceChange): boolean {
-  const at = dayStart(statement.valueDate);
-  const from = dayStart(localDayKey(change.fromTakenAt));
-  return at !== null && from !== null && at >= from && at <= change.toTakenAt;
+function transferTitle(ctx: RenderContext, transfer: TransferRecord): (HTMLElement | string)[] {
+  const parts = [accountName(ctx, transfer.from), " → ", accountName(ctx, transfer.to)];
+  return isDetected(ctx.ledger, transfer) ? [...parts, detectedBadge(ctx, transfer)] : parts;
 }
 
-/**
- * 口座の外との入出金の相手。つかいわけ口座ごとの明細を取り込めていれば、
- * 自動引落の引落先などが摘要で分かる。金額と期間で1件に絞れたときだけ言い切り、
- * 絞れなければ「外部」のままにする
- */
-function counterparty(ctx: RenderContext, change: BalanceChange): string {
-  const matched = accountStatements(ctx.data.statements, change.accountId).filter(
-    (statement) => statement.amount === change.externalDelta && withinChange(statement, change),
-  );
-  return matched.length === 1 && matched[0].remark !== "" ? matched[0].remark : "外部";
+function externalTitle(
+  ctx: RenderContext,
+  change: Extract<LogEntry, { kind: "external" }>["change"],
+): (HTMLElement | string)[] {
+  const account = accountName(ctx, { id: change.accountId, name: change.accountName });
+  const other = counterparty(ctx, change);
+  return change.externalDelta > 0 ? [`${other} → `, account] : [account, ` → ${other}`];
 }
 
 function logTitle(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
   const title = el("div", "log-title text-[15px] leading-snug");
-  if (entry.kind === "transfer") {
-    title.append(strongName(entry.transfer.from.name), " → ", strongName(entry.transfer.to.name));
-    if (isDetected(ctx.ledger, entry.transfer)) {
-      title.append(detectedBadge(ctx, entry.transfer));
-    }
-  } else if (entry.change.externalDelta > 0) {
-    title.append(`${counterparty(ctx, entry.change)} → `, strongName(entry.change.accountName));
-  } else {
-    title.append(strongName(entry.change.accountName), ` → ${counterparty(ctx, entry.change)}`);
-  }
+  title.append(
+    ...(entry.kind === "transfer"
+      ? transferTitle(ctx, entry.transfer)
+      : externalTitle(ctx, entry.change)),
+  );
   return title;
 }
 

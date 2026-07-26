@@ -78,6 +78,11 @@ function swipe(target: Element, dx: number, dy = 0): void {
   dispatchTouch(target, "touchend", { clientX: 200 + dx, clientY: 300 + dy });
 }
 
+/** 大きさの指定を除いた、色を表すクラスだけ */
+function dotColor(dot: Element): string {
+  return [...dot.classList].filter((name) => name.includes("#")).join(" ");
+}
+
 function data(overrides: Partial<DashboardData> = {}): DashboardData {
   return {
     snapshots,
@@ -198,22 +203,30 @@ describe("renderDashboard", () => {
       expect(root.querySelector(".total-balance")!.textContent).toBe("484,381円");
     });
 
+    it("開いたときは当月を表示する", () => {
+      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+
+      expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe(
+        "2026-07",
+      );
+      expect(root.querySelector(".total-summary")!.textContent).toContain("合計残高 · 7月");
+    });
+
     it("期間内の合計残高の増減を表示する", () => {
-      render(root);
+      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
 
       const summary = root.querySelector(".total-summary")!;
-      expect(summary.textContent).toContain("合計残高 · 全期間");
       expect(summary.querySelector(".total-delta")!.textContent).toBe("+267,469円");
     });
 
-    it("月を選ぶとラベルが月名になる", () => {
-      render(root);
+    it("月を空にすると全期間に戻る", () => {
+      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
 
       const input = root.querySelector<HTMLInputElement>('input[name="period-month"]')!;
-      input.value = "2026-07";
+      input.value = "";
       input.dispatchEvent(new Event("change", { bubbles: true }));
 
-      expect(root.querySelector(".total-summary")!.textContent).toContain("7月");
+      expect(root.querySelector(".total-summary")!.textContent).toContain("全期間");
     });
 
     it("スナップショットが2件以上あればスパークラインを表示する", () => {
@@ -226,6 +239,40 @@ describe("renderDashboard", () => {
       render(root, data({ snapshots: [snapshots[0]], transfers: [] }));
 
       expect(root.querySelector(".total-sparkline")).toBeNull();
+    });
+  });
+
+  describe("口座の色", () => {
+    /** ログの「A → B」の行から、口座名とドットの色の組を集める */
+    function coloredNames(): Map<string, string> {
+      const pairs = new Map<string, string>();
+      for (const label of root.querySelectorAll(".log-title .account-name")) {
+        const dot = label.querySelector(".dot");
+        if (dot !== null) {
+          pairs.set(label.textContent ?? "", dotColor(dot));
+        }
+      }
+      return pairs;
+    }
+
+    it("口座ごとに違う色を割り当てる(並び順で決めるのでぶつからない)", () => {
+      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+
+      const byName = coloredNames();
+      expect(byName.size).toBeGreaterThan(1);
+      expect(new Set(byName.values()).size).toBe(byName.size);
+    });
+
+    it("同じ口座には口座別タブでも同じ色を使う", () => {
+      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      const wallet = coloredNames().get("01: お財布");
+      clickTab("口座別");
+
+      const card = [...root.querySelectorAll(".workspace-card")].find((node) =>
+        node.textContent?.includes("01: お財布"),
+      )!;
+
+      expect(dotColor(card.querySelector(".dot")!)).toBe(wallet);
     });
   });
 

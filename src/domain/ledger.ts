@@ -94,6 +94,29 @@ export function sortTransfersDesc(transfers: TransferRecord[]): TransferRecord[]
   return transfers.toSorted((left, right) => right.transferredAt - left.transferredAt);
 }
 
+/**
+ * 表示に出す口座の並び。最新スナップショットの順を基本に、振替にしか
+ * 現れない口座(解約済みなど)を後ろに補う。フィルタの選択肢と色の割り当てが
+ * 同じ順になるよう、1か所で決める
+ */
+export function accountRefs(
+  snapshots: BalanceSnapshot[],
+  transfers: TransferRecord[],
+): AccountRef[] {
+  const byId = new Map<string, AccountRef>();
+  for (const account of latestSnapshot(snapshots)?.accounts ?? []) {
+    byId.set(account.id, { id: account.id, name: account.name });
+  }
+  for (const transfer of transfers) {
+    for (const ref of [transfer.from, transfer.to]) {
+      if (!byId.has(ref.id)) {
+        byId.set(ref.id, { id: ref.id, name: ref.name });
+      }
+    }
+  }
+  return [...byId.values()];
+}
+
 /** 指定口座が出金側・入金側どちらかで関わる振替。nullなら全件 */
 export function transfersInvolving(
   transfers: TransferRecord[],
@@ -267,32 +290,4 @@ export function transferCommentKey(transfer: TransferRecord): string {
 
 export function changeCommentKey(change: BalanceChange): string {
   return `change:${change.accountId}:${change.toTakenAt}`;
-}
-
-/** カードログの1行。振替・振替で説明できない外部入出金・残高記録のいずれか */
-export type LogEntry =
-  | { kind: "transfer"; at: number; transfer: TransferRecord }
-  | { kind: "external"; at: number; change: BalanceChange }
-  | { kind: "snapshot"; at: number; snapshot: BalanceSnapshot; total: number };
-
-function snapshotEntry(snapshot: BalanceSnapshot): LogEntry {
-  const total = snapshot.accounts.reduce((sum, account) => sum + account.balance, 0);
-  return { kind: "snapshot", at: snapshot.takenAt, snapshot, total };
-}
-
-/**
- * 振替・外部入出金・残高記録を新しい順の1本の時系列ログに統合する。
- * 残高記録は日カードの従属行なので、同時刻では取引の後ろに置く
- */
-const logRank = (entry: LogEntry): number => (entry.kind === "snapshot" ? 1 : 0);
-
-export function logEntries(snapshots: BalanceSnapshot[], transfers: TransferRecord[]): LogEntry[] {
-  const entries: LogEntry[] = [
-    ...transfers.map((tr): LogEntry => ({ kind: "transfer", at: tr.transferredAt, transfer: tr })),
-    ...detectBalanceChanges(snapshots, transfers)
-      .filter((ch) => ch.externalDelta !== 0)
-      .map((ch): LogEntry => ({ kind: "external", at: ch.toTakenAt, change: ch })),
-    ...snapshots.map((sn) => snapshotEntry(sn)),
-  ];
-  return entries.toSorted((left, right) => right.at - left.at || logRank(left) - logRank(right));
 }

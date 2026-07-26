@@ -1,11 +1,12 @@
-import type { BalanceChange, LogEntry, TransferRecord } from "../domain/ledger.ts";
+import type { BalanceChange, TransferRecord } from "../domain/ledger.ts";
 import { CARD, MUTED, el, signedCell } from "./dom.ts";
 import type { LogFilter, RenderContext, UiState } from "./context.ts";
 import { formatDayHeading, localDayKey } from "./format.ts";
-import { latestSnapshot, logEntries } from "../domain/ledger.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
-import type { AccountRef } from "../domain/parser.ts";
+import type { LogEntry } from "../domain/log.ts";
+import { accountRefs } from "../domain/ledger.ts";
 import { inPeriod } from "./period.ts";
+import { logEntries } from "../domain/log.ts";
 
 const FILTERS: { key: LogFilter; label: string }[] = [
   { key: "all", label: "すべて" },
@@ -19,32 +20,6 @@ const CHIP_BASE =
 const CHIP_ON = "bg-slate-900 font-semibold text-white dark:bg-sky-400 dark:text-slate-950";
 const CHIP_OFF =
   "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-800 dark:hover:bg-slate-800";
-
-interface AccountCollector {
-  accounts: AccountRef[];
-  seen: Set<string>;
-}
-
-function pushUniqueAccount(collector: AccountCollector, ref: AccountRef): void {
-  if (collector.seen.has(ref.id)) {
-    return;
-  }
-  collector.accounts.push({ id: ref.id, name: ref.name });
-  collector.seen.add(ref.id);
-}
-
-/** フィルタに出す口座一覧。最新スナップショットの並びを基本に、振替にしか現れない口座を補う */
-function accountsOf(ctx: RenderContext): AccountRef[] {
-  const collector: AccountCollector = { accounts: [], seen: new Set() };
-  for (const account of latestSnapshot(ctx.data.snapshots)?.accounts ?? []) {
-    pushUniqueAccount(collector, account);
-  }
-  for (const transfer of ctx.ledger.transfers) {
-    pushUniqueAccount(collector, transfer.from);
-    pushUniqueAccount(collector, transfer.to);
-  }
-  return collector.accounts;
-}
 
 function filterChip(ctx: RenderContext, def: { key: LogFilter; label: string }): HTMLElement {
   const active = ctx.state.logFilter === def.key;
@@ -70,7 +45,7 @@ function accountFilterSelect(ctx: RenderContext): HTMLSelectElement {
   select.name = "account-filter";
   select.setAttribute("aria-label", "口座で絞り込み");
   select.append(new Option("口座 ▾", ""));
-  for (const account of accountsOf(ctx)) {
+  for (const account of accountRefs(ctx.data.snapshots, ctx.ledger.transfers)) {
     select.append(new Option(account.name, account.id));
   }
   select.value = ctx.state.filterAccountId ?? "";

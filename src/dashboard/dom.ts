@@ -72,24 +72,32 @@ export function svgEl(
   return node;
 }
 
-// 口座色(ドット・スパークライン用)。口座IDのハッシュで安定して割り当てる
+/**
+ * 口座色(ドット・スパークライン用)。
+ *
+ * 色覚特性があっても隣り合う色を取り違えないよう、Okabe-Ito の配色から
+ * 互いに離れた6色を使う。赤と緑、緑と橙のような紛らわしい組は入れていない。
+ * 色だけに意味を持たせず、口座名は必ず文字でも出す
+ */
 const ACCOUNT_COLORS = [
-  { dot: "bg-sky-600 dark:bg-sky-400", line: "text-sky-600 dark:text-sky-400" },
-  { dot: "bg-amber-600 dark:bg-amber-400", line: "text-amber-600 dark:text-amber-400" },
-  { dot: "bg-emerald-600 dark:bg-emerald-400", line: "text-emerald-600 dark:text-emerald-400" },
-  { dot: "bg-indigo-600 dark:bg-indigo-400", line: "text-indigo-600 dark:text-indigo-400" },
+  { dot: "bg-[#0072B2] dark:bg-[#56B4E9]", line: "text-[#0072B2] dark:text-[#56B4E9]" },
+  { dot: "bg-[#D55E00] dark:bg-[#E69F00]", line: "text-[#D55E00] dark:text-[#E69F00]" },
+  { dot: "bg-[#009E73] dark:bg-[#3FC7A1]", line: "text-[#009E73] dark:text-[#3FC7A1]" },
+  { dot: "bg-[#AA5A87] dark:bg-[#CC79A7]", line: "text-[#AA5A87] dark:text-[#CC79A7]" },
+  { dot: "bg-[#5B5EA6] dark:bg-[#9A9CE0]", line: "text-[#5B5EA6] dark:text-[#9A9CE0]" },
+  { dot: "bg-[#8C6D1F] dark:bg-[#D9C55A]", line: "text-[#8C6D1F] dark:text-[#D9C55A]" },
 ];
 
-const HASH_BASE = 31;
+export type AccountColor = (typeof ACCOUNT_COLORS)[number];
 
-export function accountColor(id: string): (typeof ACCOUNT_COLORS)[number] {
-  let hash = 0;
-  for (const char of id) {
-    hash = Math.trunc(hash * HASH_BASE + (char.codePointAt(0) ?? 0));
-  }
-  return ACCOUNT_COLORS[hash % ACCOUNT_COLORS.length];
+/**
+ * 並び順で色を割り当てる。IDのハッシュだと口座数が少なくても色がぶつかり、
+ * 別の口座が同じ色になって見分けられないことがある
+ */
+export function accountColorAt(index: number): AccountColor {
+  return ACCOUNT_COLORS[index % ACCOUNT_COLORS.length];
 }
 
-export function accountDot(id: string, sizing = "h-2 w-2"): HTMLElement {
-  return el("span", `dot ${sizing} shrink-0 rounded-full ${accountColor(id).dot}`);
+export function accountDot(color: AccountColor, sizing = "h-2 w-2"): HTMLElement {
+  return el("span", `dot ${sizing} shrink-0 rounded-full ${color.dot}`);
 }

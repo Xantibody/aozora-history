@@ -35,7 +35,7 @@ function snapshotSummary(
   return summary;
 }
 
-function snapshotBreakdown(snapshot: BalanceSnapshot): HTMLElement {
+function snapshotBreakdown(ctx: RenderContext, snapshot: BalanceSnapshot): HTMLElement {
   const breakdown = el(
     "div",
     "snapshot-detail border-t border-slate-100 px-3.5 py-2 dark:border-slate-800",
@@ -43,22 +43,30 @@ function snapshotBreakdown(snapshot: BalanceSnapshot): HTMLElement {
   for (const account of snapshot.accounts) {
     const line = el("div", "flex items-center justify-between gap-3 py-1 text-sm");
     const name = el("span", "flex items-center gap-2");
-    name.append(accountDot(account.id, "h-1.5 w-1.5"), account.name);
+    name.append(accountDot(ctx.colorOf(account.id), "h-1.5 w-1.5"), account.name);
     line.append(name, el("span", "tabular-nums", formatYen(account.balance)));
     breakdown.append(line);
   }
   return breakdown;
 }
 
+interface SnapshotTotals {
+  total: number;
+  prevTotal: number | null;
+}
+
 function snapshotItem(
+  ctx: RenderContext,
   snapshot: BalanceSnapshot,
-  total: number,
-  prevTotal: number | null,
+  totals: SnapshotTotals,
 ): HTMLElement {
   const item = document.createElement("details");
   item.className = "snapshot-item";
   // 行タップで口座ごとの内訳を開く
-  item.append(snapshotSummary(snapshot, total, prevTotal), snapshotBreakdown(snapshot));
+  item.append(
+    snapshotSummary(snapshot, totals.total, totals.prevTotal),
+    snapshotBreakdown(ctx, snapshot),
+  );
   return item;
 }
 
@@ -75,15 +83,22 @@ function chartCard(totals: BalancePoint[]): HTMLElement {
   return chartBox;
 }
 
-function snapshotList(visible: BalanceSnapshot[], totals: BalancePoint[]): HTMLElement {
+function snapshotList(
+  ctx: RenderContext,
+  visible: BalanceSnapshot[],
+  totals: BalancePoint[],
+): HTMLElement {
   const list = el(
     "div",
     `snapshot-list divide-y divide-slate-100 overflow-hidden ${CARD} dark:divide-slate-800`,
   );
   for (const [index, snapshot] of visible.entries()) {
-    const total = totals[index].balance;
-    const prevTotal = index > 0 ? totals[index - 1].balance : null;
-    list.prepend(snapshotItem(snapshot, total, prevTotal));
+    list.prepend(
+      snapshotItem(ctx, snapshot, {
+        total: totals[index].balance,
+        prevTotal: index > 0 ? totals[index - 1].balance : null,
+      }),
+    );
   }
   return list;
 }
@@ -99,6 +114,6 @@ export function historySection(ctx: RenderContext): HTMLElement {
   if (totals.length >= MIN_CHART_POINTS) {
     node.append(chartCard(totals));
   }
-  node.append(snapshotList(visible, totals));
+  node.append(snapshotList(ctx, visible, totals));
   return node;
 }

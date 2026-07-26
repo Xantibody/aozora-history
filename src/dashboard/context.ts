@@ -1,4 +1,6 @@
 import type { BalanceSnapshot, Comments, TransferRecord } from "../domain/ledger.ts";
+import { applyBounds, monthOf } from "./period.ts";
+import type { AccountColor } from "./dom.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
 import type { Reconciled } from "../domain/reconcile.ts";
@@ -59,8 +61,12 @@ export interface UiState {
   importStatus: string;
 }
 
-export function initialUiState(): UiState {
-  return {
+/**
+ * 開いたときは当月を表示する。記録が増えるほど全期間は見るものが多くなり、
+ * 直近の出入りを確かめたいという普段の使い方から遠ざかるため
+ */
+export function initialUiState(now: () => number = Date.now): UiState {
+  const state: UiState = {
     view: "dashboard",
     activeTab: "log",
     logFilter: "all",
@@ -71,10 +77,12 @@ export function initialUiState(): UiState {
     periodToExclusive: null,
     periodFromValue: "",
     periodToValue: "",
-    monthValue: "",
+    monthValue: monthOf(now()),
     syncStatus: "",
     importStatus: "",
   };
+  applyBounds(state);
+  return state;
 }
 
 /** 各セクションの描画関数に渡す描画コンテキスト */
@@ -87,6 +95,8 @@ export interface RenderContext {
    * 口座間の移動が入っていないため、そのまま集計すると収支が合わない
    */
   ledger: Reconciled;
+  /** 口座の色。並び順で決めるため、口座一覧を持っている描画側で解決する */
+  colorOf: (accountId: string) => AccountColor;
   handlers: DashboardHandlers;
   state: UiState;
   now: () => number;

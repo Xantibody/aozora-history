@@ -1,4 +1,4 @@
-import { CARD, FINE_PRINT, MUTED, accountColor, accountDot, el, signedCell } from "./dom.ts";
+import { CARD, FINE_PRINT, MUTED, accountDot, el, signedCell } from "./dom.ts";
 import { MIN_CHART_POINTS, sparkline } from "./charts.ts";
 import type { RenderContext } from "./context.ts";
 import type { WorkspaceSummary } from "../domain/ledger.ts";
@@ -15,14 +15,14 @@ function workspaceKpi(cls: string, label: string, amount: number): HTMLElement {
   return box;
 }
 
-function cardHead(summary: WorkspaceSummary): HTMLElement {
+function cardHead(ctx: RenderContext, summary: WorkspaceSummary): HTMLElement {
   const head = el("div", "mb-1 flex items-center gap-2");
-  head.append(accountDot(summary.id));
+  head.append(accountDot(ctx.colorOf(summary.id)));
   head.append(el("h3", "workspace-name text-sm font-semibold", summary.name));
   return head;
 }
 
-function cardBalanceRow(summary: WorkspaceSummary): HTMLElement {
+function cardBalanceRow(ctx: RenderContext, summary: WorkspaceSummary): HTMLElement {
   const mid = el("div", "flex items-end justify-between gap-3");
   const balance = el("div", "kpi kpi-balance");
   balance.append(el("div", "text-[22px] font-bold tabular-nums", formatYen(summary.balance)));
@@ -31,7 +31,7 @@ function cardBalanceRow(summary: WorkspaceSummary): HTMLElement {
   balance.append(delta);
   mid.append(balance);
   if (summary.points.length >= MIN_CHART_POINTS) {
-    mid.append(sparkline(summary.points, `workspace-sparkline ${accountColor(summary.id).line}`));
+    mid.append(sparkline(summary.points, `workspace-sparkline ${ctx.colorOf(summary.id).line}`));
   }
   return mid;
 }
@@ -48,9 +48,9 @@ function cardKpis(summary: WorkspaceSummary): HTMLElement {
   return kpis;
 }
 
-function workspaceCard(summary: WorkspaceSummary): HTMLElement {
+function workspaceCard(ctx: RenderContext, summary: WorkspaceSummary): HTMLElement {
   const card = el("div", `workspace-card p-3.5 ${CARD}`);
-  card.append(cardHead(summary), cardBalanceRow(summary), cardKpis(summary));
+  card.append(cardHead(ctx, summary), cardBalanceRow(ctx, summary), cardKpis(summary));
   return card;
 }
 
@@ -65,7 +65,7 @@ export function accountsSection(ctx: RenderContext): HTMLElement {
   }
   const grid = el("div", "workspace-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2");
   for (const summary of summaries) {
-    grid.append(workspaceCard(summary));
+    grid.append(workspaceCard(ctx, summary));
   }
   node.append(grid);
   return node;
