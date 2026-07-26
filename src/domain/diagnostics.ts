@@ -44,18 +44,40 @@ export function errorMessages(errors: unknown[]): string[] {
   });
 }
 
-/** 応答の中身は出さず、形だけを説明する。想定と違う原因の切り分けに使う */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** キーだけを並べる。金額や口座名といった中身は出さない */
+function keyList(record: Record<string, unknown>): string {
+  const keys = Object.entries(record).map(([key, item]) =>
+    Array.isArray(item) ? `${key}[${item.length}]` : key,
+  );
+  return `{ ${keys.join(", ")} }`;
+}
+
+function describeArray(key: string, items: unknown[]): string {
+  const [head] = items;
+  return isRecord(head) ? `${key}[${items.length}] ${keyList(head)}` : `${key}[${items.length}]`;
+}
+
+/**
+ * 応答の形。値そのものは出さず、キーと件数だけを並べる。
+ *
+ * 配列は先頭の要素のキーまで見る。銀行側の応答が想定と違うときは、
+ * 項目名が違うだけということが多く、上の階層のキーだけでは分からないため
+ */
 export function describeJson(value: unknown): string {
   if (Array.isArray(value)) {
-    return `配列 ${value.length}件`;
+    return describeArray("配列", value);
   }
-  if (typeof value === "object" && value !== null) {
-    const keys = Object.entries(value).map(([key, item]) =>
-      Array.isArray(item) ? `${key}[${item.length}]` : key,
-    );
-    return `{ ${keys.join(", ")} }`;
+  if (!isRecord(value)) {
+    return value === null ? "null" : typeof value;
   }
-  return String(value);
+  const parts = Object.entries(value).map(([key, item]) =>
+    Array.isArray(item) ? describeArray(key, item) : key,
+  );
+  return `{ ${parts.join(", ")} }`;
 }
 
 /** 設定画面に出す1行の説明。件数が取れたか、保存まで進んだかが分かる形にする */

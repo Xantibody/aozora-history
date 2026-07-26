@@ -11,7 +11,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** APIは金額を文字列で返すことがある。桁区切りが混ざっていても読めるようにする */
+/**
+ * APIは金額を文字列で返すことがある。桁区切りが混ざっていても読めるようにする。
+ * 円でも "304000.0" のように小数部が付いて返ることがあるため受け付ける
+ */
 function toAmount(value: unknown): number | null {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : null;
@@ -20,7 +23,7 @@ function toAmount(value: unknown): number | null {
     return null;
   }
   const normalized = value.replaceAll(",", "").trim();
-  if (!/^-?\d+$/u.test(normalized)) {
+  if (!/^-?\d+(?:\.\d+)?$/u.test(normalized)) {
     return null;
   }
   return Number(normalized);
@@ -57,7 +60,8 @@ function toAccount(value: unknown): SubAccount | null {
   }
   const id = toText(value.spAccountId);
   const name = toText(value.spAccountName);
-  const balance = toAmount(value.totalBalance);
+  // 残高の項目名はエンドポイントによって違う
+  const balance = toAmount(value.totalBalance ?? value.balance);
   if (id === null || name === null || balance === null) {
     return null;
   }
@@ -76,12 +80,20 @@ function toAccounts(list: unknown[]): SubAccount[] | null {
   return accounts;
 }
 
-/** GET /v1/balances/sp-accounts のレスポンス。取れなければnull */
+/**
+ * GET /v1/balances/sp-accounts のレスポンス。取れなければnull。
+ * 口座一覧のキーは `account`。つかいわけ口座トップ(sp-accounts/top)は
+ * 同じ内容を `spAccountBalanceDetailsList` で返すため、どちらも読めるようにする
+ */
 export function parseSpAccountBalances(json: unknown): AccountsSnapshot | null {
-  if (!isRecord(json) || !Array.isArray(json.spAccountBalanceDetailsList)) {
+  if (!isRecord(json)) {
     return null;
   }
-  const accounts = toAccounts(json.spAccountBalanceDetailsList);
+  const list = json.account ?? json.spAccountBalanceDetailsList;
+  if (!Array.isArray(list)) {
+    return null;
+  }
+  const accounts = toAccounts(list);
   // 空配列は「つかいわけ口座を使っていない」か取得に失敗した状態。
   // 残高0件のスナップショットを残すと変動の計算が壊れるため記録しない
   if (accounts === null || accounts.length === 0) {

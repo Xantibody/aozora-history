@@ -25,6 +25,18 @@ describe("parseSpAccountBalances", () => {
     });
   });
 
+  it("残高照会は口座一覧を account で、残高を balance で返す", () => {
+    const json = {
+      queryDatetime: "2026-07-27T00:27:00+09:00",
+      account: [{ spAccountId: "133331", spAccountName: "01: お財布", balance: "129392.0" }],
+    };
+
+    expect(parseSpAccountBalances(json)).toStrictEqual({
+      updatedAt: "2026-07-27T00:27:00+09:00",
+      accounts: [{ id: "133331", name: "01: お財布", balance: 129_392 }],
+    });
+  });
+
   it("最終更新日時がなければnullにする", () => {
     const json = {
       spAccountBalanceDetailsList: [
