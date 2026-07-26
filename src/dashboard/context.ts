@@ -40,7 +40,11 @@ export interface DashboardOptions {
   now?: () => number;
 }
 
-export type ViewTab = "log" | "accounts" | "history" | "statements";
+/**
+ * 「ログ」は毎日開いて取引を読むページ、「残高」は週に数回、口座の配分と
+ * 推移を見るページ。1画面に全部載せると情報量が多すぎるため役割で分けている
+ */
+export type ViewTab = "log" | "balance";
 export type LogFilter = "all" | "transfer" | "in" | "out";
 export type StatementFilter = "all" | "in" | "out";
 
