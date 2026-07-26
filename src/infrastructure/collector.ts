@@ -1,4 +1,5 @@
 import type { BankApiClient } from "./bank-api.ts";
+import type { CollectStat } from "../domain/diagnostics.ts";
 import type { HistoryStore } from "./storage.ts";
 import type { SubAccount } from "../domain/parser.ts";
 import { statementsExplainBalance } from "../domain/statement.ts";
@@ -33,12 +34,7 @@ export const AUTO_TRANSFER_LIMIT = 100;
  * 1つのAPIの結果。savedだけでは「取れたが記録に変化がなかった」と
  * 「そもそも取れなかった」を区別できないため、取れた件数も持つ
  */
-export interface Collected {
-  /** 銀行が返した件数。nullは取得できなかった(形が違う・ログイン切れなど) */
-  count: number | null;
-  /** 記録に変化があって保存したか */
-  saved: boolean;
-}
+type Collected = CollectStat;
 
 const NOT_FETCHED: Collected = { count: null, saved: false };
 

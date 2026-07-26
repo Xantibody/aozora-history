@@ -1,7 +1,9 @@
+import { HistoryStore, LAST_COLLECTED_KEY } from "./infrastructure/storage.ts";
 import { BankApiClient } from "./infrastructure/bank-api.ts";
 import type { BankFetchLike } from "./infrastructure/bank-api.ts";
-import { HistoryStore } from "./infrastructure/storage.ts";
+import type { CollectReport } from "./domain/diagnostics.ts";
 import { collectFromBank } from "./infrastructure/collector.ts";
+import { errorMessages } from "./domain/diagnostics.ts";
 import { setupContentScript } from "./content-script.ts";
 
 /**
@@ -34,17 +36,48 @@ const client = new BankApiClient(fetchFn, () => document.cookie);
 
 /**
  * 取り込みは裏で走るため、失敗しても画面には何も出ない。銀行側の仕様変更で
- * 静かに取れなくなったときに原因を追えるよう、結果をコンソールに残す。
+ * 静かに取れなくなったときに原因を追えるよう、結果を残す。
  *
- * 見送った回も出す。出さないと「間隔が空いていないだけ」なのか
- * 「content script が動いていない」のかが、コンソールから区別できない
+ * 見送った回も残す。残さないと「間隔が空いていないだけ」なのか
+ * 「content script が動いていない」のかを、後から区別できない
  */
 async function collect(): Promise<unknown> {
   const result = await collectFromBank(store, client);
-  // eslint-disable-next-line no-console -- 裏で走る処理の唯一の手掛かり
-  const log = result.errors.length === 0 ? console.info : console.warn;
-  log("[aozora-history] 銀行APIの取り込み", result);
-  return result;
+  const report: CollectReport = {
+    at: Date.now(),
+    ...result,
+    errors: errorMessages(result.errors),
+  };
+  await store.recordLastCollect(report);
+  if (await store.loadDebugMode()) {
+    // eslint-disable-next-line no-console -- デバッグモードを入れている間だけ
+    const log = report.errors.length === 0 ? console.info : console.warn;
+    log("[aozora-history] 銀行APIの取り込み", report);
+  }
+  return report;
 }
 
 void setupContentScript(document, store, { now: Date.now, collect });
+
+/** 取得時刻がnullに戻された = 設定画面の「今すぐ取り込む」が押された合図 */
+function isCollectRequest(change: unknown): boolean {
+  return (
+    typeof change === "object" &&
+    change !== null &&
+    (change as { newValue?: unknown }).newValue === null
+  );
+}
+
+/**
+ * 「今すぐ取り込む」は、取得時刻の記録を消すことで合図にしている。
+ * 銀行サイトのタブが開いていれば、間隔を待たずにその場で取りに行く
+ */
+function watchCollectRequests(): void {
+  browser.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local" && isCollectRequest(changes[LAST_COLLECTED_KEY])) {
+      void collect();
+    }
+  });
+}
+
+void watchCollectRequests();

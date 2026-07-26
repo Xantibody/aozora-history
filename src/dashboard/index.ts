@@ -1,6 +1,7 @@
 import {
   AUTO_TRANSFERS_KEY,
   HistoryStore,
+  LAST_COLLECT_KEY,
   LAST_SYNCED_KEY,
   LEDGER_KEYS,
 } from "../infrastructure/storage.ts";
@@ -8,6 +9,7 @@ import type { DashboardData, DashboardHandlers } from "./render.ts";
 import { R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
 import { transferCommentKey, transferKey } from "../domain/ledger.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
+import type { CollectReport } from "../domain/diagnostics.ts";
 import type { FetchLike } from "../infrastructure/r2sync.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { TransferRecord } from "../domain/ledger.ts";
@@ -27,6 +29,8 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     deletions,
     syncConfig,
     lastSyncedAt,
+    debugMode,
+    lastCollect,
   ] = await Promise.all([
     store.loadSnapshots(),
     store.loadTransfers(),
@@ -36,6 +40,8 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     store.loadDeletions(),
     store.loadSyncConfig(),
     store.loadLastSyncedAt(),
+    store.loadDebugMode(),
+    store.loadLastCollect(),
   ]);
   return {
     snapshots,
@@ -46,6 +52,8 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     deletions,
     syncConfig,
     lastSyncedAt,
+    debugMode,
+    lastCollect,
   };
 }
 
@@ -131,6 +139,15 @@ function createHandlers(store: HistoryStore, data: DashboardData): DashboardHand
     onImportFile: (text) => importFile(store, data, text),
 
     onSyncNow: () => syncNow(store, data),
+
+    onToggleDebug: (enabled) => {
+      data.debugMode = enabled;
+      void store.saveDebugMode(enabled);
+    },
+
+    onRequestCollect: () => {
+      void store.requestCollect();
+    },
   };
 }
 
@@ -145,34 +162,51 @@ interface StoredState {
   ledger: LedgerData;
   autoTransfers: AutoTransferSetting[];
   syncedAt: number | null;
+  lastCollect: CollectReport | null;
 }
 
 function sameAsShown(app: AppContext, stored: StoredState): boolean {
   return (
     stored.syncedAt === app.data.lastSyncedAt &&
     JSON.stringify(stored.ledger) === JSON.stringify(currentLedger(app.data)) &&
-    JSON.stringify(stored.autoTransfers) === JSON.stringify(app.data.autoTransfers)
+    JSON.stringify(stored.autoTransfers) === JSON.stringify(app.data.autoTransfers) &&
+    JSON.stringify(stored.lastCollect) === JSON.stringify(app.data.lastCollect)
   );
 }
 
-async function refreshFromStorage(app: AppContext): Promise<void> {
-  const [ledger, autoTransfers, syncedAt] = await Promise.all([
-    app.store.loadLedger(),
-    app.store.loadAutoTransfers(),
-    app.store.loadLastSyncedAt(),
+async function loadStoredState(store: HistoryStore): Promise<StoredState> {
+  const [ledger, autoTransfers, syncedAt, lastCollect] = await Promise.all([
+    store.loadLedger(),
+    store.loadAutoTransfers(),
+    store.loadLastSyncedAt(),
+    store.loadLastCollect(),
   ]);
-  if (sameAsShown(app, { ledger, autoTransfers, syncedAt })) {
-    return;
-  }
-  applyLedger(app.data, ledger);
-  app.data.autoTransfers = autoTransfers;
-  app.data.lastSyncedAt = syncedAt;
-  // コメント入力中に再描画するとフォーカスを奪うため見送る(dataには反映済み)
+  return { ledger, autoTransfers, syncedAt, lastCollect };
+}
+
+function applyStored(app: AppContext, stored: StoredState): void {
+  applyLedger(app.data, stored.ledger);
+  app.data.autoTransfers = stored.autoTransfers;
+  app.data.lastSyncedAt = stored.syncedAt;
+  app.data.lastCollect = stored.lastCollect;
+}
+
+/** コメント入力中か。再描画するとフォーカスを奪ってしまう */
+function isEditing(app: AppContext): boolean {
   const active = document.activeElement;
-  if (active instanceof HTMLInputElement && app.root.contains(active)) {
+  return active instanceof HTMLInputElement && app.root.contains(active);
+}
+
+async function refreshFromStorage(app: AppContext): Promise<void> {
+  const stored = await loadStoredState(app.store);
+  if (sameAsShown(app, stored)) {
     return;
   }
-  app.redraw();
+  applyStored(app, stored);
+  // 入力中は見送る。dataには反映済みなので、次の描画で追いつく
+  if (!isEditing(app)) {
+    app.redraw();
+  }
 }
 
 // 開いている間の変更(銀行サイトのタブでの記録・backgroundの自動同期)を反映する
@@ -181,7 +215,7 @@ function watchStorage(app: AppContext): void {
     if (areaName !== "local") {
       return;
     }
-    const watched = [...LEDGER_KEYS, LAST_SYNCED_KEY, AUTO_TRANSFERS_KEY];
+    const watched = [...LEDGER_KEYS, LAST_SYNCED_KEY, AUTO_TRANSFERS_KEY, LAST_COLLECT_KEY];
     if (!watched.some((key) => key in changes)) {
       return;
     }

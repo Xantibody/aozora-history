@@ -1,5 +1,6 @@
 import type { BalanceSnapshot, Comments, TransferRecord } from "../domain/ledger.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
+import type { CollectReport } from "../domain/diagnostics.ts";
 import type { Reconciled } from "../domain/reconcile.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
@@ -15,6 +16,10 @@ export interface DashboardData {
   deletions: Record<string, number>;
   syncConfig: SyncConfig | null;
   lastSyncedAt: number | null;
+  /** 設定画面にデバッグ欄を出すか */
+  debugMode: boolean;
+  /** 最後に銀行APIを取り込んだ結果。まだ一度も走っていなければnull */
+  lastCollect: CollectReport | null;
 }
 
 export interface DashboardHandlers {
@@ -23,6 +28,9 @@ export interface DashboardHandlers {
   onSaveSyncConfig: (config: SyncConfig) => Promise<string>;
   onSyncNow: () => Promise<string>;
   onImportFile: (text: string) => Promise<string>;
+  onToggleDebug: (enabled: boolean) => void;
+  /** 次に銀行サイトを開いたときの取り込みを、間隔を待たずに走らせる */
+  onRequestCollect: () => void;
 }
 
 export interface DashboardOptions {

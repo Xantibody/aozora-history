@@ -88,6 +88,8 @@ function data(overrides: Partial<DashboardData> = {}): DashboardData {
     deletions: {},
     syncConfig: null,
     lastSyncedAt: null,
+    debugMode: false,
+    lastCollect: null,
     ...overrides,
   };
 }
@@ -103,6 +105,8 @@ function render(root: HTMLElement, dashboardData = data(), now?: () => number): 
     ),
     onSyncNow: vi.fn<() => Promise<string>>(() => Promise.resolve("同期しました")),
     onImportFile: vi.fn<(text: string) => Promise<string>>(() => Promise.resolve("読み込みました")),
+    onToggleDebug: vi.fn<(enabled: boolean) => void>(),
+    onRequestCollect: vi.fn<() => void>(),
   };
   const redraw = renderDashboard(root, dashboardData, { handlers, now });
   return { ...handlers, redraw };
@@ -1444,5 +1448,94 @@ describe("statementsCsv", () => {
         "2026-07-24,給与  カ）アツトマーク,635144,1080425,月給\r\n" +
         "2026-07-23,振込 ミツビシユーエフジエイ,-4100,445281,\r\n",
     );
+  });
+});
+
+describe("設定画面 (デバッグ)", () => {
+  const root = document.createElement("div");
+
+  const report = {
+    at: Date.UTC(2026, 6, 26, 6, 41),
+    skipped: false,
+    balances: { count: 3, saved: false },
+    statements: { count: 100, saved: true },
+    accountStatements: { count: null, saved: false },
+    autoTransfers: { count: 1, saved: true },
+    errors: [],
+  };
+
+  beforeEach(() => {
+    root.replaceChildren();
+    document.body.replaceChildren(root);
+  });
+
+  function openSettings(): void {
+    root.querySelector<HTMLButtonElement>("button.settings-button")!.click();
+  }
+
+  function statTexts(): string[] {
+    return [...root.querySelectorAll(".collect-stat")].map((row) => row.textContent ?? "");
+  }
+
+  it("既定では取り込みの詳細を出さない", () => {
+    render(root, data({ debugMode: false, lastCollect: report }));
+    openSettings();
+
+    expect(root.querySelector(".debug-toggle")).not.toBeNull();
+    expect(root.querySelector(".last-collect")).toBeNull();
+  });
+
+  it("有効にすると、APIごとに取れた件数と記録の更新有無を出す", () => {
+    render(root, data({ debugMode: true, lastCollect: report }));
+    openSettings();
+
+    expect(statTexts()).toStrictEqual([
+      "つかいわけ口座の残高3件 · 変化なし",
+      "代表口座の明細100件 · 記録を更新",
+      "つかいわけ口座の明細取得できず",
+      "定額自動振替の設定1件 · 記録を更新",
+    ]);
+  });
+
+  it("エラーがあればそのまま出す", () => {
+    render(root, data({ debugMode: true, lastCollect: { ...report, errors: ["HTTP 400"] } }));
+    openSettings();
+
+    expect(root.querySelector(".collect-error")!.textContent).toBe("HTTP 400");
+  });
+
+  it("見送った回はその旨だけ出す", () => {
+    render(root, data({ debugMode: true, lastCollect: { ...report, skipped: true } }));
+    openSettings();
+
+    expect(root.querySelector(".last-collect")!.textContent).toContain("間隔が空いていない");
+    expect(statTexts()).toStrictEqual([]);
+  });
+
+  it("一度も走っていなければ、その旨を出す", () => {
+    render(root, data({ debugMode: true, lastCollect: null }));
+    openSettings();
+
+    expect(root.querySelector(".last-collect")!.textContent).toContain(
+      "まだ取り込みが走っていません",
+    );
+  });
+
+  it("トグルの切り替えを通知する", () => {
+    const { onToggleDebug } = render(root, data({ debugMode: false }));
+    openSettings();
+
+    root.querySelector<HTMLInputElement>('input[name="debug-mode"]')!.click();
+
+    expect(onToggleDebug).toHaveBeenCalledWith(true);
+  });
+
+  it("「今すぐ取り込む」で取り込みを要求する", () => {
+    const { onRequestCollect } = render(root, data({ debugMode: true, lastCollect: report }));
+    openSettings();
+
+    root.querySelector<HTMLButtonElement>("button.collect-now")!.click();
+
+    expect(onRequestCollect).toHaveBeenCalledWith();
   });
 });
