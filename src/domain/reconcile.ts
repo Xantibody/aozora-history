@@ -1,6 +1,8 @@
 import type { BalanceChange, BalanceSnapshot, TransferRecord } from "./ledger.ts";
 import { detectBalanceChanges, transferKey } from "./ledger.ts";
 import type { AccountRef } from "./parser.ts";
+import type { AutoTransferSetting } from "./auto-transfer.ts";
+import { matchesAutoTransfer } from "./auto-transfer.ts";
 
 /**
  * つかいわけ口座の残高は、この拡張が検知していない理由でも動く。
@@ -68,15 +70,45 @@ function pairOf(group: BalanceChange[], amount: number): [BalanceChange, Balance
   return [outgoing[0], incoming[0]];
 }
 
+/**
+ * 定額自動振替の設定と一致する組。出金側・入金側が絞れずに pairOf が諦めた
+ * ときの手掛かりに使う。設定に合う組が1つだけのときは、それが起きたとみてよい
+ */
+function settingPair(
+  group: BalanceChange[],
+  amount: number,
+  settings: AutoTransferSetting[],
+): [BalanceChange, BalanceChange] | null {
+  const candidates = group
+    .filter((change) => change.externalDelta < 0)
+    .flatMap((outgoing) =>
+      group
+        .filter((change) => change.externalDelta > 0)
+        .map((incoming): [BalanceChange, BalanceChange] => [outgoing, incoming]),
+    )
+    .filter(([outgoing, incoming]) =>
+      matchesAutoTransfer(settings, {
+        transferredAt: 0,
+        from: accountRef(outgoing),
+        to: accountRef(incoming),
+        amount,
+      }),
+    );
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
 /** 同じ区間で打ち消し合う増減を1件の振替に組み直し、組めなかった分を残す */
-function pairOffsetting(interval: Interval): {
+function pairOffsetting(
+  interval: Interval,
+  settings: AutoTransferSetting[],
+): {
   transfers: TransferRecord[];
   rest: BalanceChange[];
 } {
   const transfers: TransferRecord[] = [];
   const paired = new Set<BalanceChange>();
   for (const [amount, group] of groupByAmount(interval.changes)) {
-    const pair = pairOf(group, amount);
+    const pair = pairOf(group, amount) ?? settingPair(group, amount, settings);
     if (pair !== null) {
       transfers.push({
         transferredAt: interval.toTakenAt,
@@ -110,11 +142,15 @@ export function isDetected(reconciled: Reconciled, transfer: TransferRecord): bo
  * 拾い直した振替は台帳には保存せず、読み出すたびにスナップショットから導出する
  * (銀行側の記録ではないので、記録が増えれば解釈も変わってよい)
  */
-export function reconcile(snapshots: BalanceSnapshot[], transfers: TransferRecord[]): Reconciled {
+export function reconcile(
+  snapshots: BalanceSnapshot[],
+  transfers: TransferRecord[],
+  settings: AutoTransferSetting[] = [],
+): Reconciled {
   const detected: TransferRecord[] = [];
   const changes: BalanceChange[] = [];
   for (const interval of groupByInterval(detectBalanceChanges(snapshots, transfers))) {
-    const paired = pairOffsetting(interval);
+    const paired = pairOffsetting(interval, settings);
     detected.push(...paired.transfers);
     changes.push(...paired.rest);
   }

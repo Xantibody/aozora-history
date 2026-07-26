@@ -68,7 +68,7 @@ class DashboardView {
     this.ctx = {
       root,
       data,
-      ledger: reconcile(data.snapshots, data.transfers),
+      ledger: reconcile(data.snapshots, data.transfers, data.autoTransfers),
       handlers: options.handlers,
       state: initialUiState(),
       now: options.now ?? Date.now,
@@ -81,7 +81,11 @@ class DashboardView {
   public draw(): void {
     const restoreFocus = captureFocus(this.ctx.root);
     // dataは同期や銀行APIの取得で描画の合間に差し替わるため、毎回照合し直す
-    this.ctx.ledger = reconcile(this.ctx.data.snapshots, this.ctx.data.transfers);
+    this.ctx.ledger = reconcile(
+      this.ctx.data.snapshots,
+      this.ctx.data.transfers,
+      this.ctx.data.autoTransfers,
+    );
     drawView(this.ctx);
     restoreFocus?.();
   }

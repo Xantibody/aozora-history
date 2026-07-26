@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseOrdinaryStatement, parseSpAccountBalances } from "./api-parser.ts";
+import {
+  parseAutoTransfers,
+  parseOrdinaryStatement,
+  parseSpAccountBalances,
+  parseSpAccountStatement,
+} from "./api-parser.ts";
 
 describe("parseSpAccountBalances", () => {
   it("つかいわけ口座の残高一覧をスナップショットに変換する", () => {
@@ -103,5 +108,74 @@ describe("parseOrdinaryStatement", () => {
     expect(parseOrdinaryStatement(null)).toBeNull();
     expect(parseOrdinaryStatement({})).toBeNull();
     expect(parseOrdinaryStatement({ statementList: [{ valueDate: "20260724" }] })).toBeNull();
+  });
+});
+
+describe("parseSpAccountStatement", () => {
+  const entry = {
+    accountEntryNumber: "0001",
+    valueDate: "20260724",
+    creditDebitType: "2",
+    amount: "5000",
+    balance: "129392",
+    remark: "カード引落",
+  };
+
+  it("代表口座と同じ形のレスポンスに、どの口座の明細かを付ける", () => {
+    const parsed = parseSpAccountStatement({ statementList: [entry] }, "133331");
+
+    expect(parsed).toStrictEqual([
+      {
+        entryNumber: "0001",
+        valueDate: "2026-07-24",
+        amount: -5000,
+        balance: 129_392,
+        remark: "カード引落",
+        accountId: "133331",
+      },
+    ]);
+  });
+
+  it("形が違えばnull", () => {
+    expect(parseSpAccountStatement({}, "133331")).toBeNull();
+  });
+});
+
+describe("parseAutoTransfers", () => {
+  const setting = {
+    spAutoTransferId: "9001",
+    debitSpAccountId: "133331",
+    debitSpAccountName: "01: お財布",
+    creditSpAccountId: "133805",
+    creditSpAccountName: "03: 支払い箱",
+    amount: "80000",
+    nextTransferDate: "20260826",
+    transferCycle: "1",
+    transferDayMonth: 26,
+  };
+
+  it("定額自動振替の設定を出金口座・入金口座・金額に落とす", () => {
+    const parsed = parseAutoTransfers({ spAccountAutoTransferList: [setting] });
+
+    expect(parsed).toStrictEqual([
+      {
+        id: "9001",
+        from: { id: "133331", name: "01: お財布" },
+        to: { id: "133805", name: "03: 支払い箱" },
+        amount: 80_000,
+      },
+    ]);
+  });
+
+  it("設定が1件もなければ空配列(設定なしと取得失敗を区別する)", () => {
+    expect(parseAutoTransfers({ spAccountAutoTransferList: [] })).toStrictEqual([]);
+  });
+
+  it("形が違えばnull", () => {
+    expect(parseAutoTransfers(null)).toBeNull();
+    expect(parseAutoTransfers({})).toBeNull();
+    expect(
+      parseAutoTransfers({ spAccountAutoTransferList: [{ spAutoTransferId: "9001" }] }),
+    ).toBeNull();
   });
 });

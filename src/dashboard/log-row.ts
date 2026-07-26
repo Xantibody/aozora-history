@@ -7,6 +7,7 @@ import type { RenderContext } from "./context.ts";
 import type { SwipeHandle } from "./swipe-delete.ts";
 import { commentInput } from "./comment-input.ts";
 import { isDetected } from "../domain/reconcile.ts";
+import { matchesAutoTransfer } from "../domain/auto-transfer.ts";
 
 export type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" }>;
 
@@ -22,14 +23,15 @@ function strongName(name: string): HTMLElement {
 }
 
 /**
- * 定額自動振替など、この拡張が操作を検知できない口座間の移動。
- * 残高の差額から組み直したもので銀行の記録ではないため、記録済みの振替と区別する
+ * この拡張が操作を検知できない口座間の移動。残高の差額から組み直したもので
+ * 銀行の記録ではないため、記録済みの振替と区別する。
+ * 定額自動振替の設定と一致していれば、何が起きたのかまで言い切れる
  */
-function detectedBadge(): HTMLElement {
+function detectedBadge(ctx: RenderContext, transfer: TransferRecord): HTMLElement {
   return el(
     "span",
     "detected-badge ml-1.5 rounded bg-slate-100 px-1.5 align-[2px] text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400",
-    "自動",
+    matchesAutoTransfer(ctx.data.autoTransfers, transfer) ? "定額自動振替" : "自動",
   );
 }
 
@@ -38,7 +40,7 @@ function logTitle(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
   if (entry.kind === "transfer") {
     title.append(strongName(entry.transfer.from.name), " → ", strongName(entry.transfer.to.name));
     if (isDetected(ctx.ledger, entry.transfer)) {
-      title.append(detectedBadge());
+      title.append(detectedBadge(ctx, entry.transfer));
     }
   } else if (entry.change.externalDelta > 0) {
     title.append("外部 → ", strongName(entry.change.accountName));

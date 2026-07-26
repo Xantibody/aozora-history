@@ -90,6 +90,37 @@ describe("reconcile", () => {
     expect(result.changes).toHaveLength(3);
   });
 
+  it("定額自動振替の設定に合う組が1つだけなら、候補が複数でも組める", () => {
+    // −5,000 が2口座。設定が「積立 → 支払い箱 5,000円」なので、お財布の分ではないと分かる
+    const snapshots = [
+      snapshot(100, { "1": 10_000, "2": 10_000, "3": 10_000 }),
+      snapshot(200, { "1": 5000, "2": 5000, "3": 15_000 }),
+    ];
+    const setting = { id: "9001", from: SAVINGS, to: PAYMENTS, amount: 5000 };
+
+    const result = reconcile(snapshots, [], [setting]);
+
+    expect(result.detected).toStrictEqual([
+      { transferredAt: 200, from: SAVINGS, to: PAYMENTS, amount: 5000 },
+    ]);
+    expect(result.changes.map((ch) => ch.externalDelta)).toStrictEqual([-5000]);
+  });
+
+  it("設定に合う組が複数あるときは、やはり推測しない", () => {
+    const snapshots = [
+      snapshot(100, { "1": 10_000, "2": 10_000, "3": 10_000 }),
+      snapshot(200, { "1": 5000, "2": 5000, "3": 15_000 }),
+    ];
+    const settings = [
+      { id: "9001", from: SAVINGS, to: PAYMENTS, amount: 5000 },
+      { id: "9002", from: WALLET, to: PAYMENTS, amount: 5000 },
+    ];
+
+    const result = reconcile(snapshots, [], settings);
+
+    expect(result.detected).toStrictEqual([]);
+  });
+
   it("区間をまたぐ増減は突き合わせない(別の機会に起きた入出金のため)", () => {
     const snapshots = [
       snapshot(100, { "1": 10_000, "3": 10_000 }),

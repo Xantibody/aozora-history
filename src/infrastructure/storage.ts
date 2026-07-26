@@ -1,5 +1,6 @@
 import type { BalanceSnapshot, CommentEntry, Comments, TransferRecord } from "../domain/ledger.ts";
 import { appendSnapshot, transferCommentKey, transferKey } from "../domain/ledger.ts";
+import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "./r2sync.ts";
@@ -18,6 +19,11 @@ const STATEMENTS_KEY = "statementEntries";
 const COMMENTS_KEY = "comments";
 const DELETIONS_KEY = "transferDeletions";
 const SYNC_CONFIG_KEY = "syncConfig";
+/**
+ * 定額自動振替の設定。銀行側の設定をそのまま写したもので記録ではないため、
+ * LEDGER_KEYSに含めない(端末間で同期しなくても、各端末が銀行から取り直せる)
+ */
+export const AUTO_TRANSFERS_KEY = "autoTransferSettings";
 /** 最後にR2と同期できた時刻。台帳ではないためLEDGER_KEYSに含めない(自動同期のループ防止) */
 export const LAST_SYNCED_KEY = "lastSyncedAt";
 /** 最後に銀行APIから取得した時刻。同上の理由でLEDGER_KEYSに含めない */
@@ -99,6 +105,21 @@ export class HistoryStore {
       return false;
     }
     await this.storage.set({ [STATEMENTS_KEY]: merged });
+    return true;
+  }
+
+  public async loadAutoTransfers(): Promise<AutoTransferSetting[]> {
+    const items = await this.storage.get(AUTO_TRANSFERS_KEY);
+    return (items[AUTO_TRANSFERS_KEY] as AutoTransferSetting[] | undefined) ?? [];
+  }
+
+  /** 設定は滅多に変わらないため、変わっていなければ書き込まない。保存したかどうかを返す */
+  public async recordAutoTransfers(settings: AutoTransferSetting[]): Promise<boolean> {
+    const existing = await this.loadAutoTransfers();
+    if (JSON.stringify(settings) === JSON.stringify(existing)) {
+      return false;
+    }
+    await this.storage.set({ [AUTO_TRANSFERS_KEY]: settings });
     return true;
   }
 

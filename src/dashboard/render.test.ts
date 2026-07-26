@@ -83,6 +83,7 @@ function data(overrides: Partial<DashboardData> = {}): DashboardData {
     snapshots,
     transfers,
     statements: [],
+    autoTransfers: [],
     comments: {},
     deletions: {},
     syncConfig: null,
@@ -1362,6 +1363,27 @@ describe("記録にない口座間の移動(定額自動振替など)", () => {
 
   it("打ち消し合う増減を1件の振替として表示する", () => {
     expect(logTitles()).toStrictEqual(["01: お財布 → 03: 支払い箱自動"]);
+  });
+
+  it("定額自動振替の設定と一致すれば、何の移動かを言い切る", () => {
+    render(
+      root,
+      data({
+        snapshots: autoTransferSnapshots,
+        transfers: [],
+        statements: [],
+        autoTransfers: [
+          {
+            id: "9001",
+            from: { id: "133331", name: "01: お財布" },
+            to: { id: "133805", name: "03: 支払い箱" },
+            amount: 80_000,
+          },
+        ],
+      }),
+    );
+
+    expect(root.querySelector(".detected-badge")!.textContent).toBe("定額自動振替");
   });
 
   it("外部入出金には数えない(口座間で動いただけなので収支は増減しない)", () => {

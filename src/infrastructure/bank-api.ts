@@ -1,5 +1,11 @@
-import { parseOrdinaryStatement, parseSpAccountBalances } from "../domain/api-parser.ts";
+import {
+  parseAutoTransfers,
+  parseOrdinaryStatement,
+  parseSpAccountBalances,
+  parseSpAccountStatement,
+} from "../domain/api-parser.ts";
 import type { AccountsSnapshot } from "../domain/parser.ts";
+import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 
 export const BANK_ORIGIN = "https://bank.gmo-aozora.com";
@@ -104,5 +110,33 @@ export class BankApiClient {
       depositOrderType: ORDER_DESC,
     });
     return parseOrdinaryStatement(json);
+  }
+
+  /**
+   * つかいわけ口座の入出金明細を新しい順に取る。
+   * 口座を指定するパラメータ名は銀行サイトのコードから確定できていないため
+   * spAccountId と仮定している。外れたときのために、取り込む側で
+   * 明細の最新残高とその口座の残高を突き合わせて捨てられるようにしてある
+   */
+  public async spAccountStatement(
+    accountId: string,
+    limit: number,
+  ): Promise<StatementEntry[] | null> {
+    const json = await this.get("sp-accounts/ordinary-deposits-statement", {
+      spAccountId: accountId,
+      limit: String(Math.min(limit, MAX_STATEMENT_LIMIT)),
+      offset: "0",
+      depositOrderType: ORDER_DESC,
+    });
+    return parseSpAccountStatement(json, accountId);
+  }
+
+  /** つかいわけ口座の定額自動振替の設定一覧 */
+  public async autoTransfers(limit: number): Promise<AutoTransferSetting[] | null> {
+    const json = await this.get("sp-accounts/auto-transfer", {
+      limit: String(Math.min(limit, MAX_STATEMENT_LIMIT)),
+      offset: "0",
+    });
+    return parseAutoTransfers(json);
   }
 }

@@ -1,4 +1,5 @@
 import type { BalanceSnapshot, Comments, TransferRecord } from "../domain/ledger.ts";
+import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { Reconciled } from "../domain/reconcile.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
@@ -6,8 +7,10 @@ import type { SyncConfig } from "../infrastructure/r2sync.ts";
 export interface DashboardData {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
-  /** 代表口座(普通預金)の入出金明細。銀行APIから取得したもの */
+  /** 代表口座とつかいわけ口座の入出金明細。銀行APIから取得したもの */
   statements: StatementEntry[];
+  /** つかいわけ口座の定額自動振替の設定。銀行APIから取得したもの */
+  autoTransfers: AutoTransferSetting[];
   comments: Comments;
   deletions: Record<string, number>;
   syncConfig: SyncConfig | null;
