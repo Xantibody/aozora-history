@@ -24,6 +24,19 @@ function statRow(label: string, stat: CollectStat): HTMLElement {
   return row;
 }
 
+/**
+ * 例外はstackごと出す。どのエンドポイントのどの段階で落ちたのかが、
+ * メッセージだけでは足りないことがある。長いので折り返して高さを制限する
+ */
+function errorBlock(message: string): HTMLElement {
+  const block = document.createElement("pre");
+  block.className =
+    "collect-error mt-2 max-h-48 overflow-auto rounded bg-rose-50 p-2 text-xs " +
+    "whitespace-pre-wrap text-rose-800 dark:bg-rose-950/40 dark:text-rose-300";
+  block.textContent = message;
+  return block;
+}
+
 function statRows(report: CollectReport): HTMLElement[] {
   return [
     el("p", `collect-at ${FINE_PRINT}`, formatDateTime(report.at)),
@@ -31,9 +44,7 @@ function statRows(report: CollectReport): HTMLElement[] {
     statRow("代表口座の明細", report.statements),
     statRow("つかいわけ口座の明細", report.accountStatements),
     statRow("定額自動振替の設定", report.autoTransfers),
-    ...report.errors.map((message) =>
-      el("p", "collect-error mt-1 text-sm text-rose-700 dark:text-rose-400", message),
-    ),
+    ...report.errors.map((message) => errorBlock(message)),
   ];
 }
 

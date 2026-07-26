@@ -26,8 +26,34 @@ export interface CollectReport {
   errors: string[];
 }
 
+/**
+ * 例外はstackごと残す。銀行側の応答が想定と違うとき、どのエンドポイントの
+ * どの段階で落ちたのかがメッセージだけでは分からないことがある
+ */
 export function errorMessages(errors: unknown[]): string[] {
-  return errors.map((error) => (error instanceof Error ? error.message : String(error)));
+  return errors.map((error) => {
+    if (!(error instanceof Error)) {
+      return String(error);
+    }
+    // stackは実装によってメッセージを含むものと含まないものがある
+    return error.stack?.includes(error.message) === true
+      ? error.stack
+      : `${error.message}\n${error.stack ?? ""}`;
+  });
+}
+
+/** 応答の中身は出さず、形だけを説明する。想定と違う原因の切り分けに使う */
+export function describeJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `配列 ${value.length}件`;
+  }
+  if (typeof value === "object" && value !== null) {
+    const keys = Object.entries(value).map(([key, item]) =>
+      Array.isArray(item) ? `${key}[${item.length}]` : key,
+    );
+    return `{ ${keys.join(", ")} }`;
+  }
+  return String(value);
 }
 
 /** 設定画面に出す1行の説明。件数が取れたか、保存まで進んだかが分かる形にする */

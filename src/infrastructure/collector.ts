@@ -60,18 +60,12 @@ async function collectBalances(
   now: () => number,
 ): Promise<BalanceResult> {
   const parsed = await client.spAccountBalances();
-  if (parsed === null) {
-    return { ...NOT_FETCHED, accounts: [] };
-  }
   const saved = await store.recordSnapshot({ takenAt: now(), ...parsed });
   return { count: parsed.accounts.length, saved, accounts: parsed.accounts };
 }
 
 async function collectStatements(store: HistoryStore, client: BankApiClient): Promise<Collected> {
   const parsed = await client.ordinaryStatement(STATEMENT_LIMIT);
-  if (parsed === null) {
-    return NOT_FETCHED;
-  }
   return { count: parsed.length, saved: await store.recordStatements(parsed) };
 }
 
@@ -80,9 +74,6 @@ async function collectAutoTransfers(
   client: BankApiClient,
 ): Promise<Collected> {
   const parsed = await client.autoTransfers(AUTO_TRANSFER_LIMIT);
-  if (parsed === null) {
-    return NOT_FETCHED;
-  }
   return { count: parsed.length, saved: await store.recordAutoTransfers(parsed) };
 }
 
@@ -114,14 +105,13 @@ async function collectAccountStatements(
   try {
     const parsed = await client.spAccountStatement(account.id, STATEMENT_LIMIT);
     // countが0より大きいのにsavedが偽なら、明細は取れたが残高の検算で弾かれている
-    const stored =
-      parsed !== null && statementsExplainBalance(parsed, account.balance)
-        ? await store.recordStatements(parsed)
-        : false;
+    const stored = statementsExplainBalance(parsed, account.balance)
+      ? await store.recordStatements(parsed)
+      : false;
     // 1口座ずつ順に。並べて投げると、使えないエンドポイントを口座数ぶん叩いてしまう
     const next = await collectAccountStatements(store, client, rest);
     return {
-      count: addCount(parsed?.length ?? null, next.count),
+      count: addCount(parsed.length, next.count),
       saved: stored || next.saved,
       errors: next.errors,
     };

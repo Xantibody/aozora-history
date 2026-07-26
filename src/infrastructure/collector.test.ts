@@ -202,14 +202,17 @@ describe("collectFromBank", () => {
     await expect(store.loadLastCollectedAt()).resolves.toBe(42);
   });
 
-  it("つかいわけ口座を使っていなければスナップショットを残さない", async () => {
+  it("残高の応答が想定と違えばスナップショットを残さず、理由をエラーに残す", async () => {
     const store = new HistoryStore(fakeStorage(), () => 42);
-    const client = fakeClient({ spAccountBalances: () => Promise.resolve(null) });
+    const client = fakeClient({
+      spAccountBalances: () => Promise.reject(new Error("応答が想定と違います")),
+    });
 
     const result = await collectFromBank(store, client, () => 42);
 
     // 取れなかった(null)であって、件数0ではない
     expect(result.balances).toStrictEqual({ count: null, saved: false });
+    expect(result.errors).toHaveLength(1);
     await expect(store.loadSnapshots()).resolves.toStrictEqual([]);
   });
 });
