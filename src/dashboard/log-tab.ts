@@ -1,6 +1,7 @@
 import { BORDER, INK_DECOR, INK_SOFT, MUTED, SELECTED, SURFACE, el, signedCell } from "./dom.ts";
 import type { BalanceChange, TransferRecord } from "../domain/ledger.ts";
 import type { LogFilter, RenderContext, UiState } from "./context.ts";
+import { PAGE_SIZE, moreButton, pageLimit } from "./paging.ts";
 import { dayStart, inPeriod } from "./period.ts";
 import { formatDayHeading, formatShortDateTime, localDayKey } from "./format.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
@@ -212,22 +213,56 @@ function dayCard(ctx: RenderContext, entries: LogEntry[]): HTMLElement {
   return list;
 }
 
-export function logSection(ctx: RenderContext): HTMLElement {
-  const node = el("section", "log");
-  node.append(filterChips(ctx));
-  const entries = logEntries({
+/** 積み上げた件数を引き継いでよい範囲。絞り込みが変われば並びも変わる */
+function filterKey(state: UiState): string {
+  return [
+    state.logFilter,
+    state.filterAccountId,
+    state.periodFrom,
+    state.periodToExclusive,
+    state.selectedSpan?.from,
+    state.selectedSpan?.to,
+  ].join("|");
+}
+
+function logMoreButton(ctx: RenderContext, rest: number): HTMLElement {
+  const more = moreButton(rest, () => {
+    ctx.state.logPaging.limit += PAGE_SIZE;
+    ctx.draw();
+  });
+  more.classList.add("log-more", "mt-1", "mb-4");
+  return more;
+}
+
+function visibleEntries(ctx: RenderContext): LogEntry[] {
+  return logEntries({
     snapshots: ctx.data.snapshots,
     transfers: ctx.ledger.transfers,
     statements: ctx.data.statements,
     dayStart,
   }).filter((entry) => matchesLog(ctx.state, entry));
-  if (entries.length === 0) {
-    node.append(el("p", `empty mt-2 ${MUTED}`, "まだ記録がありません"));
-    return node;
-  }
+}
+
+/** 日ごとのカードを上限まで積み、残りがあれば続きを足すボタンで締める */
+function dayCards(ctx: RenderContext, entries: LogEntry[]): HTMLElement[] {
+  // 日計は絞り込んだ全件から出す。表示を打ち切っても「その日の合計」は変わらない
   const totals = externalDayTotals(entries);
-  for (const group of groupByDay(entries)) {
-    node.append(dayHeadingEl(group, totals.get(group.day)), dayCard(ctx, group.entries));
-  }
+  const limit = pageLimit(ctx.state.logPaging, filterKey(ctx.state));
+  const nodes = groupByDay(entries.slice(0, limit)).flatMap((group) => [
+    dayHeadingEl(group, totals.get(group.day)),
+    dayCard(ctx, group.entries),
+  ]);
+  return entries.length > limit ? [...nodes, logMoreButton(ctx, entries.length - limit)] : nodes;
+}
+
+export function logSection(ctx: RenderContext): HTMLElement {
+  const node = el("section", "log");
+  node.append(filterChips(ctx));
+  const entries = visibleEntries(ctx);
+  node.append(
+    ...(entries.length === 0
+      ? [el("p", `empty mt-2 ${MUTED}`, "まだ記録がありません")]
+      : dayCards(ctx, entries)),
+  );
   return node;
 }

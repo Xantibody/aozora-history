@@ -5,6 +5,7 @@ import {
   appendGrid,
   appendSeries,
   chartScale,
+  markerPoints,
 } from "./charts.ts";
 import { formatDateTime, formatYen } from "./format.ts";
 import type { BalancePoint } from "../domain/ledger.ts";
@@ -174,24 +175,39 @@ function appendRug(svg: SVGElement, marks: RugMark[], scale: ChartScale): void {
   }
 }
 
-/** 点を選ぶための当たり判定。ホバーでは日時と残高を読める */
-function appendPickTargets(svg: SVGElement, points: BalancePoint[], picker: Picker): void {
+function pickTarget(point: BalancePoint, picker: Picker): SVGElement {
   const { scale, onPick } = picker;
-  for (const point of points) {
-    const cx = String(scale.xAt(point.takenAt));
-    const cy = String(scale.yAt(point.balance));
-    const hit = svgEl(
-      "circle",
-      { cx, cy, r: HIT_RADIUS, fill: "transparent" },
-      "chart-hit cursor-pointer",
-    );
-    const title = svgEl("title");
-    title.textContent = `${formatDateTime(point.takenAt)} ${formatYen(point.balance)}`;
-    hit.append(title);
-    hit.addEventListener("click", () => {
-      onPick(point.takenAt);
-    });
-    svg.append(hit);
+  const hit = svgEl(
+    "circle",
+    {
+      cx: String(scale.xAt(point.takenAt)),
+      cy: String(scale.yAt(point.balance)),
+      r: HIT_RADIUS,
+      fill: "transparent",
+    },
+    "chart-hit cursor-pointer",
+  );
+  const title = svgEl("title");
+  title.textContent = `${formatDateTime(point.takenAt)} ${formatYen(point.balance)}`;
+  hit.append(title);
+  hit.addEventListener("click", () => {
+    onPick(point.takenAt);
+  });
+  return hit;
+}
+
+/**
+ * 点を選ぶための当たり判定。ホバーでは日時と残高を読める。
+ * 見えているマーカーにだけ置く。間引かれた点にも置くと、判定が幾重にも
+ * 重なって狙った点を掴めないうえ、選んだ覚えのない日時が区間の端になる
+ */
+function appendPickTargets(svg: SVGElement, points: BalancePoint[], picker: Picker): void {
+  const last = points.at(-1);
+  if (last === undefined) {
+    return;
+  }
+  for (const point of [...markerPoints(points, picker.scale), last]) {
+    svg.append(pickTarget(point, picker));
   }
 }
 

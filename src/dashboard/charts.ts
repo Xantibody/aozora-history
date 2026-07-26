@@ -106,8 +106,12 @@ export function appendSeries(svg: SVGElement, points: BalancePoint[], scale: Cha
  */
 const POINT_MIN_GAP = 8;
 
-/** 間隔が空いている点だけを残す。終端は別に描くので候補から外す */
-function markerPoints(points: BalancePoint[], scale: ChartScale): BalancePoint[] {
+/**
+ * 間隔が空いている点だけを残す。終端は必ず含める(いちばん新しい記録は
+ * 落とさない)。当たり判定もこの並びに合わせる。見えていない点を選べても
+ * 隣とどちらを掴んだのか分からず、密集していると狙って選べない
+ */
+export function markerPoints(points: BalancePoint[], scale: ChartScale): BalancePoint[] {
   const kept: BalancePoint[] = [];
   let lastX = -Infinity;
   for (const point of points.slice(0, -1)) {

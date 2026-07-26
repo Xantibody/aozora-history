@@ -426,6 +426,74 @@ describe("renderDashboard", () => {
       expect(root.querySelector(".log .snapshot-row")!.className).not.toContain("rounded");
     });
 
+    describe("記録が多いとき", () => {
+      const DAY = 24 * 60 * 60 * 1000;
+
+      /** 1日1件の振替だけを持つ台帳。ログの件数だけを増やす */
+      function manyTransfers(count: number): DashboardData {
+        const base = Date.UTC(2026, 6, 18, 5, 30);
+        const many: TransferRecord[] = [];
+        for (let index = 0; index < count; index += 1) {
+          many.push({
+            transferredAt: base - index * DAY,
+            from: { id: "133331", name: "01: お財布" },
+            to: { id: "133332", name: "02: 積立" },
+            amount: 1000 + index,
+          });
+        }
+        return data({ snapshots: [], transfers: many });
+      }
+
+      function moreButton(): HTMLButtonElement | null {
+        return root.querySelector<HTMLButtonElement>(".log-more");
+      }
+
+      it("最初は直近の分だけ組み立てる(全件だと開くたびに数千行を作ることになる)", () => {
+        render(root, manyTransfers(300));
+        clearPeriod();
+
+        expect(root.querySelectorAll(".log .log-row")).toHaveLength(100);
+        expect(moreButton()!.textContent).toContain("残り200件");
+      });
+
+      it("「さらに表示」で続きを継ぎ足す", () => {
+        render(root, manyTransfers(300));
+        clearPeriod();
+
+        moreButton()!.click();
+
+        expect(root.querySelectorAll(".log .log-row")).toHaveLength(200);
+      });
+
+      it("すべて出したら「さらに表示」を消す", () => {
+        render(root, manyTransfers(150));
+        clearPeriod();
+
+        moreButton()!.click();
+
+        expect(root.querySelectorAll(".log .log-row")).toHaveLength(150);
+        expect(moreButton()).toBeNull();
+      });
+
+      it("収まる件数なら「さらに表示」を出さない", () => {
+        render(root, manyTransfers(20));
+        clearPeriod();
+
+        expect(root.querySelectorAll(".log .log-row")).toHaveLength(20);
+        expect(moreButton()).toBeNull();
+      });
+
+      it("絞り込みを変えたら最初の分まで戻す(別の並びの続きを見せない)", () => {
+        render(root, manyTransfers(300));
+        clearPeriod();
+        moreButton()!.click();
+
+        clickChip("振替");
+
+        expect(root.querySelectorAll(".log .log-row")).toHaveLength(100);
+      });
+    });
+
     describe("フィルタ", () => {
       it("「振替」は振替だけを表示し、記録行も隠す", () => {
         render(root);
@@ -860,15 +928,39 @@ describe("renderDashboard", () => {
       ]).toStrictEqual(["216,912円", null]);
     });
 
+    it("閉じている間は内訳を組み立てない(開かれない行のぶんだけ無駄になる)", () => {
+      render(root);
+      clickTab("残高");
+
+      expect(root.querySelector(".snapshots .snapshot-detail")).toBeNull();
+    });
+
     it("行を開くと口座ごとの内訳を表示する", () => {
       render(root);
       clickTab("残高");
 
-      const detail = root.querySelector(".snapshots .snapshot-item .snapshot-detail")!;
+      const item = root.querySelector<HTMLDetailsElement>(".snapshots .snapshot-item")!;
+      item.open = true;
+      item.dispatchEvent(new Event("toggle"));
+
+      const detail = item.querySelector(".snapshot-detail")!;
       expect(detail.textContent).toContain("01: お財布");
       expect(detail.textContent).toContain("129,392円");
       expect(detail.textContent).toContain("03: 支払い箱");
       expect(detail.textContent).toContain("272,469円");
+    });
+
+    it("二度開いても内訳は1つだけ", () => {
+      render(root);
+      clickTab("残高");
+
+      const item = root.querySelector<HTMLDetailsElement>(".snapshots .snapshot-item")!;
+      for (const open of [true, false, true]) {
+        item.open = open;
+        item.dispatchEvent(new Event("toggle"));
+      }
+
+      expect(item.querySelectorAll(".snapshot-detail")).toHaveLength(1);
     });
 
     it("期間で絞り込むと一覧も追随する", () => {
@@ -880,6 +972,34 @@ describe("renderDashboard", () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
 
       expect(root.querySelectorAll(".snapshots .snapshot-item")).toHaveLength(1);
+    });
+
+    it("記録が多いときは直近の分だけ並べ、続きは足せるようにする", () => {
+      const DAY = 24 * 60 * 60 * 1000;
+      const base = Date.UTC(2026, 6, 18, 5, 30);
+      const many: BalanceSnapshot[] = [];
+      for (let index = 0; index < 300; index += 1) {
+        many.push({
+          takenAt: base - (300 - index) * DAY,
+          updatedAt: null,
+          accounts: [{ id: "133331", name: "01: お財布", balance: 100_000 + index }],
+        });
+      }
+      render(root, data({ snapshots: many, transfers: [] }));
+      clearPeriod();
+      clickTab("残高");
+
+      expect(root.querySelectorAll(".snapshots .snapshot-item")).toHaveLength(100);
+      root.querySelector<HTMLButtonElement>(".snapshots .list-more")!.click();
+      expect(root.querySelectorAll(".snapshots .snapshot-item")).toHaveLength(200);
+    });
+
+    it("いちばん新しい記録を先頭に置く(打ち切っても最新から読める)", () => {
+      render(root);
+      clickTab("残高");
+
+      const first = root.querySelector(".snapshots .snapshot-item")!;
+      expect(first.textContent).toContain(shortDateTime(snapshots[1].takenAt));
     });
   });
 
@@ -935,6 +1055,16 @@ describe("renderDashboard", () => {
       const rug = xs("rect.chart-rug");
       expect(rug.length).toBeLessThan(400);
       expect(minGap(rug)).toBeGreaterThanOrEqual(3);
+    });
+
+    it("当たり判定も見えているマーカーの数に合わせる(重ねても隣を選べない)", () => {
+      render(root, denseData(200));
+      clearPeriod();
+      clickTab("残高");
+
+      const hits = root.querySelectorAll(".history circle.chart-hit");
+      const markers = root.querySelectorAll(".history circle.chart-point");
+      expect(hits).toHaveLength(markers.length + 1);
     });
 
     it("終端のマーカーは間引かず、必ず最新の位置に残す", () => {
