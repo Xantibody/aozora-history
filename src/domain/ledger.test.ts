@@ -282,6 +282,24 @@ describe("detectBalanceChanges", () => {
     ]);
   });
 
+  it("振替の並び順に関わらず、それぞれの区間に振り分ける", () => {
+    const wallets = [10, 20, 30].map((balance, index) =>
+      snapshot((index + 1) * 10, [{ ...wallet, balance: 100_000 - balance * 1000 }]),
+    );
+    // わざと新しい方から渡す
+    const transfers = [
+      transfer({ at: 25, from: ["100", "お財布"], to: ["101", "積立"], amount: 10_000 }),
+      transfer({ at: 15, from: ["100", "お財布"], to: ["101", "積立"], amount: 10_000 }),
+    ];
+
+    const changes = detectBalanceChanges(wallets, transfers);
+
+    expect(changes.map((change) => [change.toTakenAt, change.transferDelta])).toStrictEqual([
+      [20, -10_000],
+      [30, -10_000],
+    ]);
+  });
+
   it("振替記録のない急な増加は外部入金として検出する", () => {
     const s1 = snapshot(10, [wallet]);
     const s2 = snapshot(20, [{ ...wallet, balance: 380_000 }]);

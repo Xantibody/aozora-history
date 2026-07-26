@@ -164,11 +164,8 @@ export interface BalanceChange {
 function changesBetween(
   prev: BalanceSnapshot,
   curr: BalanceSnapshot,
-  transfers: TransferRecord[],
+  window: TransferRecord[],
 ): BalanceChange[] {
-  const window = transfers.filter(
-    (tr) => prev.takenAt < tr.transferredAt && tr.transferredAt <= curr.takenAt,
-  );
   const prevById = new Map(prev.accounts.map((account) => [account.id, account.balance]));
   const changes: BalanceChange[] = [];
   for (const account of curr.accounts) {
@@ -190,13 +187,40 @@ function changesBetween(
   return changes;
 }
 
+/**
+ * スナップショットの区間ごとに、その間に起きた振替を配る。
+ *
+ * 区間ごとに全件を絞り込み直すと、記録が増えるほど掛け算で効いてくる
+ * (数年ぶんたまると再描画のたびに数百万回の比較になる)。区間は隣り合って
+ * 途切れないので、時刻順に一度舐めれば足りる
+ */
+function transfersByInterval(
+  snapshots: BalanceSnapshot[],
+  transfers: TransferRecord[],
+): TransferRecord[][] {
+  const windows = snapshots.slice(1).map((): TransferRecord[] => []);
+  let index = 0;
+  for (const tr of transfers.toSorted((left, right) => left.transferredAt - right.transferredAt)) {
+    // 区間 index は (snapshots[index], snapshots[index + 1]] を受け持つ
+    while (index < windows.length && tr.transferredAt > snapshots[index + 1].takenAt) {
+      index += 1;
+    }
+    // どの区間にも入らない(最初の記録より前・最後の記録より後)ものは捨てる
+    if (index < windows.length && tr.transferredAt > snapshots[index].takenAt) {
+      windows[index].push(tr);
+    }
+  }
+  return windows;
+}
+
 export function detectBalanceChanges(
   snapshots: BalanceSnapshot[],
   transfers: TransferRecord[],
 ): BalanceChange[] {
+  const windows = transfersByInterval(snapshots, transfers);
   const changes: BalanceChange[] = [];
   for (let index = 1; index < snapshots.length; index += 1) {
-    changes.push(...changesBetween(snapshots[index - 1], snapshots[index], transfers));
+    changes.push(...changesBetween(snapshots[index - 1], snapshots[index], windows[index - 1]));
   }
   return changes;
 }
