@@ -7,7 +7,6 @@ import {
 } from "../infrastructure/storage.ts";
 import type { DashboardData, DashboardHandlers } from "./render.ts";
 import { R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
-import { transferCommentKey, transferKey } from "../domain/ledger.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
 import type { FetchLike } from "../infrastructure/r2sync.ts";
@@ -16,6 +15,8 @@ import type { TransferRecord } from "../domain/ledger.ts";
 import { mergeLedgers } from "../domain/merge.ts";
 import { parseLedgerJson } from "../domain/serialization.ts";
 import { renderDashboard } from "./render.ts";
+import { transferCommentKey } from "../domain/comments.ts";
+import { transferKey } from "../domain/ledger.ts";
 
 const fetchFn: FetchLike = (url, init) => fetch(url, init);
 

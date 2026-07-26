@@ -1,7 +1,8 @@
 import type { BalancePoint, BalanceSnapshot } from "../domain/ledger.ts";
 import { CARD, FINE_PRINT, MUTED, accountDot, el, signedCell } from "./dom.ts";
+import { PAGE_SIZE, moreButton, pageLimit } from "./paging.ts";
+import type { RenderContext, UiState } from "./context.ts";
 import { formatShortDateTime, formatYen } from "./format.ts";
-import type { RenderContext } from "./context.ts";
 import { inPeriod } from "./period.ts";
 import { totalBalancePoints } from "../domain/ledger.ts";
 
@@ -54,6 +55,11 @@ interface SnapshotTotals {
   prevTotal: number | null;
 }
 
+/**
+ * 行タップで口座ごとの内訳を開く。中身は開かれるまで組み立てない。
+ * 一覧のほとんどの行は畳まれたままなので、先に作ると口座数ぶんの行を
+ * 見られないまま並べることになる
+ */
 function snapshotItem(
   ctx: RenderContext,
   snapshot: BalanceSnapshot,
@@ -61,14 +67,24 @@ function snapshotItem(
 ): HTMLElement {
   const item = document.createElement("details");
   item.className = "snapshot-item";
-  // 行タップで口座ごとの内訳を開く
-  item.append(
-    snapshotSummary(snapshot, totals.total, totals.prevTotal),
-    snapshotBreakdown(ctx, snapshot),
-  );
+  item.append(snapshotSummary(snapshot, totals.total, totals.prevTotal));
+  item.addEventListener("toggle", () => {
+    if (item.open && item.querySelector(".snapshot-detail") === null) {
+      item.append(snapshotBreakdown(ctx, snapshot));
+    }
+  });
   return item;
 }
 
+/** 積み上げた件数を引き継いでよい範囲。期間が変われば並ぶものも変わる */
+function periodKey(state: UiState): string {
+  return `${state.periodFrom}|${state.periodToExclusive}`;
+}
+
+/**
+ * 新しい順に上限まで。古い方から作って先頭に差し込むと、打ち切ったときに
+ * 残るのがいちばん古い側になってしまうため、新しい方から数える
+ */
 function snapshotList(
   ctx: RenderContext,
   visible: BalanceSnapshot[],
@@ -78,9 +94,10 @@ function snapshotList(
     "div",
     `snapshot-list divide-y divide-slate-100 overflow-hidden ${CARD} dark:divide-slate-800`,
   );
-  for (const [index, snapshot] of visible.entries()) {
-    list.prepend(
-      snapshotItem(ctx, snapshot, {
+  const limit = pageLimit(ctx.state.snapshotPaging, periodKey(ctx.state));
+  for (let index = visible.length - 1; index >= 0 && visible.length - index <= limit; index -= 1) {
+    list.append(
+      snapshotItem(ctx, visible[index], {
         total: totals[index].balance,
         prevTotal: index > 0 ? totals[index - 1].balance : null,
       }),
@@ -98,5 +115,14 @@ export function snapshotSection(ctx: RenderContext): HTMLElement {
     return node;
   }
   node.append(snapshotList(ctx, visible, totalBalancePoints(visible)));
+  const rest = visible.length - ctx.state.snapshotPaging.limit;
+  if (rest > 0) {
+    node.append(
+      moreButton(rest, () => {
+        ctx.state.snapshotPaging.limit += PAGE_SIZE;
+        ctx.draw();
+      }),
+    );
+  }
   return node;
 }

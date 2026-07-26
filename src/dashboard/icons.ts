@@ -40,23 +40,37 @@ const STROKE = "2";
 /** 本文に添える大きさ。行の高さに収まり、単独でも潰れない */
 const DEFAULT_SIZE = 16;
 
-export function icon(name: IconName, size = DEFAULT_SIZE, className = ""): SVGElement {
-  const svg = svgEl(
-    "svg",
-    {
-      viewBox: "0 0 24 24",
-      width: String(size),
-      height: String(size),
-      fill: "none",
-      stroke: "currentColor",
-      "stroke-width": STROKE,
-      "stroke-linecap": "round",
-      "stroke-linejoin": "round",
-      "aria-hidden": "true",
-    },
-    `icon shrink-0 ${className}`.trim(),
-  );
+/**
+ * 図形を組み立てた見本。innerHTMLへの代入はそのたびにHTMLの構文解析が走り、
+ * ログ1行ごとに矢印と鉛筆を置くこの画面では再描画の大半をそこで使ってしまう。
+ * 名前ごとに一度だけ組み立て、以降は複製する
+ */
+const templates = new Map<IconName, SVGElement>();
+
+function template(name: IconName): SVGElement {
+  const cached = templates.get(name);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const svg = svgEl("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": STROKE,
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  });
   // 同梱の定数のみを入れる。外から渡された文字列は流し込まない
   svg.innerHTML = ICONS[name];
+  templates.set(name, svg);
+  return svg;
+}
+
+export function icon(name: IconName, size = DEFAULT_SIZE, className = ""): SVGElement {
+  const svg = template(name).cloneNode(true) as SVGElement;
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("class", `icon shrink-0 ${className}`.trim());
   return svg;
 }

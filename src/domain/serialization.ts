@@ -1,5 +1,6 @@
 import type { AccountRef, SubAccount } from "./parser.ts";
-import type { BalanceSnapshot, CommentEntry, Comments, TransferRecord } from "./ledger.ts";
+import type { BalanceSnapshot, TransferRecord } from "./ledger.ts";
+import type { CommentEntry, Comments } from "./comments.ts";
 import type { LedgerData } from "./merge.ts";
 import type { StatementEntry } from "./statement.ts";
 

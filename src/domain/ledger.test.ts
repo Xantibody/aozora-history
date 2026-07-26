@@ -2,7 +2,6 @@ import type { BalanceSnapshot, TransferRecord } from "./ledger.ts";
 import {
   appendSnapshot,
   balanceSeries,
-  commentSuggestions,
   destinationTotals,
   detectBalanceChanges,
   flowTotals,
@@ -283,6 +282,24 @@ describe("detectBalanceChanges", () => {
     ]);
   });
 
+  it("振替の並び順に関わらず、それぞれの区間に振り分ける", () => {
+    const wallets = [10, 20, 30].map((balance, index) =>
+      snapshot((index + 1) * 10, [{ ...wallet, balance: 100_000 - balance * 1000 }]),
+    );
+    // わざと新しい方から渡す
+    const transfers = [
+      transfer({ at: 25, from: ["100", "お財布"], to: ["101", "積立"], amount: 10_000 }),
+      transfer({ at: 15, from: ["100", "お財布"], to: ["101", "積立"], amount: 10_000 }),
+    ];
+
+    const changes = detectBalanceChanges(wallets, transfers);
+
+    expect(changes.map((change) => [change.toTakenAt, change.transferDelta])).toStrictEqual([
+      [20, -10_000],
+      [30, -10_000],
+    ]);
+  });
+
   it("振替記録のない急な増加は外部入金として検出する", () => {
     const s1 = snapshot(10, [wallet]);
     const s2 = snapshot(20, [{ ...wallet, balance: 380_000 }]);
@@ -496,66 +513,6 @@ describe("latestRecordAt", () => {
 
     expect(latestRecordAt([snap], [record])).toBe(25);
     expect(latestRecordAt([snap], [])).toBe(10);
-  });
-});
-
-const comment = (text: string, updatedAt = 0): { text: string; updatedAt: number } => ({
-  text,
-  updatedAt,
-});
-
-describe("commentSuggestions", () => {
-  it("コメントがなければ空を返す", () => {
-    expect(commentSuggestions({})).toStrictEqual([]);
-  });
-
-  it("同じ内容のコメントは1つの候補にまとめる", () => {
-    const comments = {
-      "transfer:100": comment("家賃"),
-      "transfer:200": comment("家賃"),
-      "change:101:300": comment("給料"),
-    };
-
-    expect(commentSuggestions(comments)).toStrictEqual(["家賃", "給料"]);
-  });
-
-  it("使用回数の多い順に並べる", () => {
-    const comments = {
-      "transfer:100": comment("積立"),
-      "transfer:200": comment("家賃"),
-      "transfer:300": comment("家賃"),
-      "transfer:400": comment("家賃"),
-      "transfer:500": comment("積立"),
-    };
-
-    expect(commentSuggestions(comments)).toStrictEqual(["家賃", "積立"]);
-  });
-
-  it("使用回数が同じなら新しい記録のコメントを先にする", () => {
-    const comments = {
-      "transfer:100": comment("古いメモ"),
-      "transfer:200": comment("新しいメモ"),
-    };
-
-    expect(commentSuggestions(comments)).toStrictEqual(["新しいメモ", "古いメモ"]);
-  });
-
-  it("編集時刻が記録より新しければそちらで比べる", () => {
-    const comments = {
-      "transfer:100": comment("後から編集", 900),
-      "transfer:200": comment("新しい記録"),
-    };
-
-    expect(commentSuggestions(comments)).toStrictEqual(["後から編集", "新しい記録"]);
-  });
-
-  it("削除の記録(tombstone)は候補に出さない", () => {
-    const comments = {
-      "transfer:100": comment("家賃"),
-      "transfer:200": comment("", 900),
-    };
-
-    expect(commentSuggestions(comments)).toStrictEqual(["家賃"]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { INK_SOFT, INK_WEAK, el } from "./dom.ts";
-import { changeCommentKey, commentText, transferCommentKey } from "../domain/ledger.ts";
+import { changeCommentKey, commentText, transferCommentKey } from "../domain/comments.ts";
 import type { LogEntry } from "../domain/log.ts";
 import type { RenderContext } from "./context.ts";
 import { commentInput } from "./comment-input.ts";

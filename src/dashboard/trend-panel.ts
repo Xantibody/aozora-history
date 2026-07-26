@@ -1,10 +1,10 @@
-import { BTN_PRIMARY, CARD, INK, INK_SOFT, MUTED, el, signedCell } from "./dom.ts";
-import type { ChartEvent, ChartSpan, RugMark } from "./trend-chart.ts";
+import { BTN_PRIMARY, CARD, FINE_PRINT, INK, INK_SOFT, MUTED, el, signedCell } from "./dom.ts";
+import type { ChartSpan, RugMark } from "./trend-chart.ts";
 import { detectBalanceChanges, totalBalancePoints } from "../domain/ledger.ts";
+import { formatShortDateTime, formatTime, formatYen } from "./format.ts";
 import type { BalancePoint } from "../domain/ledger.ts";
 import { MIN_CHART_POINTS } from "./charts.ts";
 import type { RenderContext } from "./context.ts";
-import { formatShortDateTime } from "./format.ts";
 import { inPeriod } from "./period.ts";
 import { trendChart } from "./trend-chart.ts";
 
@@ -12,11 +12,20 @@ import { trendChart } from "./trend-chart.ts";
  * 推移パネル。「どの段階で・何にお金が動いたか」を1枚から辿れるようにする。
  *
  * 折れ線は合計残高の形、下の目盛り帯は取引ひとつひとつ、破線は合計を大きく
- * 動かした出来事。区間を選ぶとログ側の絞り込みになり、グラフから明細へ降りられる
+ * 動かした出来事。区間を選ぶとログ側の絞り込みになり、グラフから明細へ降りられる。
+ *
+ * 値・日付・出来事の名前はグラフの中ではなくHTMLで出す。SVGは幅なりに
+ * 拡縮されるため、中に置いた文字は狭い画面で読めない大きさまで縮み、
+ * 長い口座名や大きな金額どうしで重なってしまう
  */
 
 /** 破線を引く出来事の数。増やすとグラフが読めなくなるので上位だけに絞る */
 const MAX_EVENTS = 2;
+
+interface TrendEvent {
+  at: number;
+  label: string;
+}
 
 function visibleSnapshots(ctx: RenderContext): BalancePoint[] {
   return totalBalancePoints(
@@ -24,16 +33,77 @@ function visibleSnapshots(ctx: RenderContext): BalancePoint[] {
   );
 }
 
-/** 合計残高を動かした外部入出金のうち、絶対額の大きいもの */
-function topEvents(ctx: RenderContext): ChartEvent[] {
+/**
+ * 合計残高を動かした外部入出金のうち、絶対額の大きいもの。
+ * 凡例と破線を左から順に読み合わせられるよう、選んだあとは時刻順に戻す
+ */
+function topEvents(ctx: RenderContext): TrendEvent[] {
   return detectBalanceChanges(ctx.data.snapshots, ctx.ledger.transfers)
     .filter((change) => change.externalDelta !== 0 && inPeriod(ctx.state, change.toTakenAt))
     .toSorted((left, right) => Math.abs(right.externalDelta) - Math.abs(left.externalDelta))
     .slice(0, MAX_EVENTS)
+    .toSorted((left, right) => left.toTakenAt - right.toTakenAt)
     .map((change) => ({
       at: change.toTakenAt,
       label: `${change.accountName} ${signedCell(change.externalDelta).textContent ?? ""}`,
     }));
+}
+
+/**
+ * グラフ見出しの右に置く最新の合計。
+ * 終端に置いていた金額ラベルの代わりで、桁が伸びても欠けず、縮んでも読める
+ */
+function latestLabel(points: BalancePoint[]): HTMLElement {
+  const last = points.at(-1);
+  const node = el("div", `chart-latest text-[13px] font-bold tabular-nums ${INK}`);
+  node.append(last === undefined ? "" : formatYen(last.balance));
+  return node;
+}
+
+/** 年をまたぐ期間か。またぐなら M/D だけでは去年の同じ日付と区別が付かない */
+function spansYears(points: BalancePoint[]): boolean {
+  const [first] = points;
+  const last = points.at(-1) ?? first;
+  return new Date(first.takenAt).getFullYear() !== new Date(last.takenAt).getFullYear();
+}
+
+function axisDate(epochMs: number, withYear: boolean): string {
+  const date = new Date(epochMs);
+  const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
+  return withYear ? `${date.getFullYear()}/${monthDay}` : monthDay;
+}
+
+/** グラフの下に置く期間の両端。目盛り帯と重ならないよう図の外に出す */
+function axisRow(points: BalancePoint[], withYear: boolean): HTMLElement {
+  const [first] = points;
+  const last = points.at(-1) ?? first;
+  const row = el("div", `chart-axis mt-1.5 flex items-baseline justify-between ${FINE_PRINT}`);
+  row.append(
+    el("span", "chart-axis-from tabular-nums", axisDate(first.takenAt, withYear)),
+    el("span", "chart-axis-to tabular-nums", axisDate(last.takenAt, withYear)),
+  );
+  return row;
+}
+
+/**
+ * 破線の凡例。図の中に名前を置くと、長い口座名どうしや終端の金額と重なるため
+ * 外に出す。並びは破線と同じ左からの順で、どれがどれかは日時で辿れる
+ */
+function eventLegend(events: TrendEvent[], withYear: boolean): HTMLElement {
+  const row = el("div", `chart-events mt-1.5 flex flex-wrap gap-x-4 gap-y-1 ${FINE_PRINT}`);
+  for (const event of events) {
+    const item = el("span", "chart-event-item inline-flex items-baseline gap-1.5");
+    item.append(
+      el(
+        "span",
+        `tabular-nums ${INK_SOFT}`,
+        `${axisDate(event.at, withYear)} ${formatTime(event.at)}`,
+      ),
+      el("span", undefined, event.label),
+    );
+    row.append(item);
+  }
+  return row;
 }
 
 /** 目盛り帯に出す取引。振替は口座間の移動でも「いつ何が動いたか」の手掛かりになる */
@@ -43,7 +113,7 @@ function rugMarks(ctx: RenderContext): RugMark[] {
     .map((transfer) => ({
       at: transfer.transferredAt,
       amount: transfer.amount,
-      fillClass: ctx.colorOf(transfer.from.id).dot,
+      inkClass: ctx.colorOf(transfer.from.id).line,
     }));
 }
 
@@ -98,6 +168,37 @@ function spanSummary(ctx: RenderContext, points: BalancePoint[]): HTMLElement {
   return bar;
 }
 
+/** 見出し。左に何のグラフか、右に最新の合計 */
+function titleRow(points: BalancePoint[]): HTMLElement {
+  const row = el("div", "flex items-baseline justify-between gap-3");
+  row.append(
+    el("div", `chart-label text-[13.5px] font-bold ${INK}`, "合計残高の推移"),
+    latestLabel(points),
+  );
+  return row;
+}
+
+/** 見出し・グラフ・期間の両端・破線の凡例をこの順に積む */
+function chartHead(ctx: RenderContext, points: BalancePoint[]): HTMLElement {
+  const head = el("div", "px-[18px] pt-4 pb-3");
+  const events = topEvents(ctx);
+  const withYear = spansYears(points);
+  head.append(
+    titleRow(points),
+    trendChart(points, {
+      span: ctx.state.selectedSpan,
+      events: events.map((event) => event.at),
+      rug: rugMarks(ctx),
+      onPickPoint: (at) => {
+        pickPoint(ctx, at);
+      },
+    }),
+    axisRow(points, withYear),
+    ...(events.length === 0 ? [] : [eventLegend(events, withYear)]),
+  );
+  return head;
+}
+
 export function trendPanel(ctx: RenderContext): HTMLElement {
   const node = el("section", `history overflow-hidden ${CARD}`);
   const points = visibleSnapshots(ctx);
@@ -105,18 +206,6 @@ export function trendPanel(ctx: RenderContext): HTMLElement {
     node.append(el("p", `empty p-4 ${MUTED}`, "推移を描くには残高の記録が2件以上必要です"));
     return node;
   }
-  const head = el("div", "px-[18px] pt-4");
-  head.append(el("div", `chart-label text-[13.5px] font-bold ${INK}`, "合計残高の推移"));
-  head.append(
-    trendChart(points, {
-      span: ctx.state.selectedSpan,
-      events: topEvents(ctx),
-      rug: rugMarks(ctx),
-      onPickPoint: (at) => {
-        pickPoint(ctx, at);
-      },
-    }),
-  );
-  node.append(head, spanSummary(ctx, points));
+  node.append(chartHead(ctx, points), spanSummary(ctx, points));
   return node;
 }

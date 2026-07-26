@@ -30,4 +30,19 @@ describe("icon", () => {
   it("図形を描く", () => {
     expect(icon("arrow-right").querySelectorAll("path")).toHaveLength(2);
   });
+
+  it("同じアイコンでも別々の要素を返す(使い回すと1か所にしか置けない)", () => {
+    const [first, second] = [icon("x"), icon("x")];
+
+    expect(first).not.toBe(second);
+    expect(first.querySelector("path")).not.toBe(second.querySelector("path"));
+  });
+
+  it("大きさやクラスの指定が、あとから作るアイコンに残らない", () => {
+    icon("pencil", 40, "text-[#64748b]");
+
+    const plain = icon("pencil");
+    expect(plain.getAttribute("width")).toBe("16");
+    expect(plain.getAttribute("class")).toBe("icon shrink-0");
+  });
 });

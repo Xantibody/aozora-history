@@ -11,3 +11,4 @@ sample/
 
 # ブラウザ検証用ハーネス(ビルド成果物のコピー+フェイクstorage)
 .preview/
+profiles/

@@ -1,11 +1,14 @@
-import type { BalanceSnapshot, Comments, TransferRecord } from "../domain/ledger.ts";
+import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
 import { applyBounds, monthOf } from "./period.ts";
 import type { AccountColor } from "./dom.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
+import type { Comments } from "../domain/comments.ts";
+import type { Paging } from "./paging.ts";
 import type { Reconciled } from "../domain/reconcile.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
+import { initialPaging } from "./paging.ts";
 
 export interface DashboardData {
   snapshots: BalanceSnapshot[];
@@ -66,6 +69,9 @@ export interface UiState {
   periodFromValue: string;
   periodToValue: string;
   monthValue: string;
+  /** ログと残高スナップショット一覧の、いま並べている件数 */
+  logPaging: Paging;
+  snapshotPaging: Paging;
   syncStatus: string;
   importStatus: string;
 }
@@ -88,6 +94,8 @@ export function initialUiState(now: () => number = Date.now): UiState {
     periodFromValue: "",
     periodToValue: "",
     monthValue: monthOf(now()),
+    logPaging: initialPaging(),
+    snapshotPaging: initialPaging(),
     syncStatus: "",
     importStatus: "",
   };

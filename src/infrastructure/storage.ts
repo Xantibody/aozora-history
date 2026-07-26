@@ -1,13 +1,15 @@
-import type { BalanceSnapshot, CommentEntry, Comments, TransferRecord } from "../domain/ledger.ts";
-import { appendSnapshot, transferCommentKey, transferKey } from "../domain/ledger.ts";
+import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
+import type { CommentEntry, Comments } from "../domain/comments.ts";
+import { appendSnapshot, transferKey } from "../domain/ledger.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "./r2sync.ts";
 import { mergeStatements } from "../domain/statement.ts";
+import { transferCommentKey } from "../domain/comments.ts";
 
-export type { Comments } from "../domain/ledger.ts";
+export type { Comments } from "../domain/comments.ts";
 
 export interface StorageArea {
   get: (key: string) => Promise<Record<string, unknown>>;

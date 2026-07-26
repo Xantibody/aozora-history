@@ -1,5 +1,5 @@
-import { commentSuggestions, commentText } from "../domain/ledger.ts";
-import type { Comments } from "../domain/ledger.ts";
+import { commentSuggestions, commentText } from "../domain/comments.ts";
+import type { Comments } from "../domain/comments.ts";
 import type { RenderContext } from "./context.ts";
 import { el } from "./dom.ts";
 

@@ -83,6 +83,16 @@ function dotColor(dot: Element): string {
   return [...dot.classList].filter((name) => name.includes("#")).join(" ");
 }
 
+/** 並べ替えたうえでの最小間隔。マーカーが重なっていないことの確認に使う */
+function minGap(values: number[]): number {
+  const sorted = values.toSorted((left, right) => left - right);
+  let min = Infinity;
+  for (const [index, value] of sorted.slice(1).entries()) {
+    min = Math.min(min, value - sorted[index]);
+  }
+  return min;
+}
+
 function data(overrides: Partial<DashboardData> = {}): DashboardData {
   return {
     snapshots,
@@ -181,6 +191,11 @@ describe("renderDashboard", () => {
     [...root.querySelectorAll<HTMLButtonElement>(".view-tab")]
       .find((tab) => tab.textContent === label)!
       .click();
+  }
+
+  /** 期間の絞り込みを外して全期間にする(既定は当月) */
+  function clearPeriod(): void {
+    root.querySelector<HTMLButtonElement>(".period-clear")!.click();
   }
 
   function clickChip(label: string): void {
@@ -409,6 +424,74 @@ describe("renderDashboard", () => {
 
       expect(root.querySelector(".log .log-row")!.className).toContain("rounded-[12px]");
       expect(root.querySelector(".log .snapshot-row")!.className).not.toContain("rounded");
+    });
+
+    describe("記録が多いとき", () => {
+      const DAY = 24 * 60 * 60 * 1000;
+
+      /** 1日1件の振替だけを持つ台帳。ログの件数だけを増やす */
+      function manyTransfers(count: number): DashboardData {
+        const base = Date.UTC(2026, 6, 18, 5, 30);
+        const many: TransferRecord[] = [];
+        for (let index = 0; index < count; index += 1) {
+          many.push({
+            transferredAt: base - index * DAY,
+            from: { id: "133331", name: "01: お財布" },
+            to: { id: "133332", name: "02: 積立" },
+            amount: 1000 + index,
+          });
+        }
+        return data({ snapshots: [], transfers: many });
+      }
+
+      function moreButton(): HTMLButtonElement | null {
+        return root.querySelector<HTMLButtonElement>(".log-more");
+      }
+
+      it("最初は直近の分だけ組み立てる(全件だと開くたびに数千行を作ることになる)", () => {
+        render(root, manyTransfers(300));
+        clearPeriod();
+
+        expect(root.querySelectorAll(".log .log-row")).toHaveLength(100);
+        expect(moreButton()!.textContent).toContain("残り200件");
+      });
+
+      it("「さらに表示」で続きを継ぎ足す", () => {
+        render(root, manyTransfers(300));
+        clearPeriod();
+
+        moreButton()!.click();
+
+        expect(root.querySelectorAll(".log .log-row")).toHaveLength(200);
+      });
+
+      it("すべて出したら「さらに表示」を消す", () => {
+        render(root, manyTransfers(150));
+        clearPeriod();
+
+        moreButton()!.click();
+
+        expect(root.querySelectorAll(".log .log-row")).toHaveLength(150);
+        expect(moreButton()).toBeNull();
+      });
+
+      it("収まる件数なら「さらに表示」を出さない", () => {
+        render(root, manyTransfers(20));
+        clearPeriod();
+
+        expect(root.querySelectorAll(".log .log-row")).toHaveLength(20);
+        expect(moreButton()).toBeNull();
+      });
+
+      it("絞り込みを変えたら最初の分まで戻す(別の並びの続きを見せない)", () => {
+        render(root, manyTransfers(300));
+        clearPeriod();
+        moreButton()!.click();
+
+        clickChip("振替");
+
+        expect(root.querySelectorAll(".log .log-row")).toHaveLength(100);
+      });
     });
 
     describe("フィルタ", () => {
@@ -763,8 +846,63 @@ describe("renderDashboard", () => {
 
       const chart = root.querySelector(".history svg.balance-chart");
       expect(chart).not.toBeNull();
-      // 最新の合計 129,392 + 82,520 + 272,469 = 484,381円 が終端ラベルに出る
-      expect(chart!.textContent).toContain("484,381円");
+      expect(chart!.querySelector(".chart-line")).not.toBeNull();
+      expect(chart!.querySelector(".chart-rug")).not.toBeNull();
+    });
+
+    it("グラフの中に文字を置かない(縮小で読めなくなり、互いに重なるため)", () => {
+      render(root);
+      clickTab("残高");
+
+      const chart = root.querySelector(".history svg.balance-chart")!;
+      expect(chart.querySelectorAll("text")).toHaveLength(0);
+    });
+
+    it("最新の合計と期間の両端をグラフの外に文字で出す", () => {
+      render(root);
+      clickTab("残高");
+
+      // 最新の合計 129,392 + 82,520 + 272,469 = 484,381円
+      expect(root.querySelector(".history .chart-latest")!.textContent).toContain("484,381円");
+      const axis = root.querySelector(".history .chart-axis")!;
+      expect(axis.querySelector(".chart-axis-from")!.textContent).toBe("7/9");
+      expect(axis.querySelector(".chart-axis-to")!.textContent).toBe("7/10");
+    });
+
+    it("年をまたぐ期間では両端に年を添える(M/Dだけでは区別できないため)", () => {
+      const older: BalanceSnapshot = {
+        ...snapshots[0],
+        takenAt: Date.UTC(2025, 6, 9, 13, 0),
+      };
+      render(root, data({ snapshots: [older, snapshots[1]], transfers: [] }));
+      clearPeriod();
+      clickTab("残高");
+
+      const axis = root.querySelector(".history .chart-axis")!;
+      expect(axis.querySelector(".chart-axis-from")!.textContent).toBe("2025/7/9");
+      expect(axis.querySelector(".chart-axis-to")!.textContent).toBe("2026/7/10");
+    });
+
+    it("目盛りは出金元の口座色で塗る(SVGの塗りはbg-*では変わらない)", () => {
+      render(root);
+      clickTab("残高");
+
+      // いちばん古い振替 (7/8) の出金元は 02: 積立。口座の並び順で2色目が付く
+      const rug = root.querySelector(".history rect.chart-rug")!;
+      expect(rug.getAttribute("fill")).toBe("currentColor");
+      expect(dotColor(rug)).toBe("text-[#D55E00] dark:text-[#E69F00]");
+    });
+
+    it("出来事は破線と同じ数の凡例を日付付きで出す", () => {
+      render(root);
+      clickTab("残高");
+
+      const lines = root.querySelectorAll(".history .chart-event");
+      const items = root.querySelectorAll(".history .chart-event-item");
+      expect(items).toHaveLength(lines.length);
+      expect(items.length).toBeGreaterThan(0);
+      expect(items[0].textContent).toContain("7/10");
+      expect(items[0].textContent).toContain("03: 支払い箱");
     });
 
     it("記録が1件なら推移を描かない", () => {
@@ -790,15 +928,39 @@ describe("renderDashboard", () => {
       ]).toStrictEqual(["216,912円", null]);
     });
 
+    it("閉じている間は内訳を組み立てない(開かれない行のぶんだけ無駄になる)", () => {
+      render(root);
+      clickTab("残高");
+
+      expect(root.querySelector(".snapshots .snapshot-detail")).toBeNull();
+    });
+
     it("行を開くと口座ごとの内訳を表示する", () => {
       render(root);
       clickTab("残高");
 
-      const detail = root.querySelector(".snapshots .snapshot-item .snapshot-detail")!;
+      const item = root.querySelector<HTMLDetailsElement>(".snapshots .snapshot-item")!;
+      item.open = true;
+      item.dispatchEvent(new Event("toggle"));
+
+      const detail = item.querySelector(".snapshot-detail")!;
       expect(detail.textContent).toContain("01: お財布");
       expect(detail.textContent).toContain("129,392円");
       expect(detail.textContent).toContain("03: 支払い箱");
       expect(detail.textContent).toContain("272,469円");
+    });
+
+    it("二度開いても内訳は1つだけ", () => {
+      render(root);
+      clickTab("残高");
+
+      const item = root.querySelector<HTMLDetailsElement>(".snapshots .snapshot-item")!;
+      for (const open of [true, false, true]) {
+        item.open = open;
+        item.dispatchEvent(new Event("toggle"));
+      }
+
+      expect(item.querySelectorAll(".snapshot-detail")).toHaveLength(1);
     });
 
     it("期間で絞り込むと一覧も追随する", () => {
@@ -810,6 +972,108 @@ describe("renderDashboard", () => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
 
       expect(root.querySelectorAll(".snapshots .snapshot-item")).toHaveLength(1);
+    });
+
+    it("記録が多いときは直近の分だけ並べ、続きは足せるようにする", () => {
+      const DAY = 24 * 60 * 60 * 1000;
+      const base = Date.UTC(2026, 6, 18, 5, 30);
+      const many: BalanceSnapshot[] = [];
+      for (let index = 0; index < 300; index += 1) {
+        many.push({
+          takenAt: base - (300 - index) * DAY,
+          updatedAt: null,
+          accounts: [{ id: "133331", name: "01: お財布", balance: 100_000 + index }],
+        });
+      }
+      render(root, data({ snapshots: many, transfers: [] }));
+      clearPeriod();
+      clickTab("残高");
+
+      expect(root.querySelectorAll(".snapshots .snapshot-item")).toHaveLength(100);
+      root.querySelector<HTMLButtonElement>(".snapshots .list-more")!.click();
+      expect(root.querySelectorAll(".snapshots .snapshot-item")).toHaveLength(200);
+    });
+
+    it("いちばん新しい記録を先頭に置く(打ち切っても最新から読める)", () => {
+      render(root);
+      clickTab("残高");
+
+      const first = root.querySelector(".snapshots .snapshot-item")!;
+      expect(first.textContent).toContain(shortDateTime(snapshots[1].takenAt));
+    });
+  });
+
+  describe("残高ページ · 推移 (記録が多いとき)", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const base = Date.UTC(2026, 6, 18, 5, 30);
+
+    function denseData(count: number): DashboardData {
+      const dense: BalanceSnapshot[] = [];
+      const moves: TransferRecord[] = [];
+      for (let index = 0; index < count; index += 1) {
+        const takenAt = base - (count - 1 - index) * DAY;
+        dense.push({
+          takenAt,
+          updatedAt: null,
+          accounts: [
+            { id: "133331", name: "01: お財布", balance: 100_000 + index * 1000 },
+            { id: "133332", name: "02: 積立", balance: 50_000 },
+          ],
+        });
+        moves.push({
+          transferredAt: takenAt - 1000,
+          from: { id: "133331", name: "01: お財布" },
+          to: { id: "133332", name: "02: 積立" },
+          amount: 1000 + index,
+        });
+      }
+      return data({ snapshots: dense, transfers: moves });
+    }
+
+    /** SVGの座標属性。jsdomはレイアウトを持たないため、属性値で間隔を測る */
+    function xs(selector: string): number[] {
+      return [...root.querySelectorAll(`.history ${selector}`)].map((node) =>
+        Number(node.getAttribute("cx") ?? node.getAttribute("x")),
+      );
+    }
+
+    it("点が密集したら途中のマーカーを間引く(潰れて線が読めなくなるため)", () => {
+      render(root, denseData(200));
+      clearPeriod();
+      clickTab("残高");
+
+      const points = xs("circle.chart-point");
+      expect(points.length).toBeLessThan(200);
+      expect(minGap(points)).toBeGreaterThanOrEqual(8);
+    });
+
+    it("目盛り帯も同じ位置に重ねず、いちばん大きいものを残す", () => {
+      render(root, denseData(400));
+      clearPeriod();
+      clickTab("残高");
+
+      const rug = xs("rect.chart-rug");
+      expect(rug.length).toBeLessThan(400);
+      expect(minGap(rug)).toBeGreaterThanOrEqual(3);
+    });
+
+    it("当たり判定も見えているマーカーの数に合わせる(重ねても隣を選べない)", () => {
+      render(root, denseData(200));
+      clearPeriod();
+      clickTab("残高");
+
+      const hits = root.querySelectorAll(".history circle.chart-hit");
+      const markers = root.querySelectorAll(".history circle.chart-point");
+      expect(hits).toHaveLength(markers.length + 1);
+    });
+
+    it("終端のマーカーは間引かず、必ず最新の位置に残す", () => {
+      render(root, denseData(200));
+      clearPeriod();
+      clickTab("残高");
+
+      const end = root.querySelector(".history circle.chart-end")!;
+      expect(Number(end.getAttribute("cx"))).toBeCloseTo(632, 0);
     });
   });
 
