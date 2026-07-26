@@ -1,6 +1,7 @@
 import type { BalanceSnapshot, CommentEntry, Comments, TransferRecord } from "../domain/ledger.ts";
 import { appendSnapshot, transferCommentKey, transferKey } from "../domain/ledger.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
+import type { CollectReport } from "../domain/diagnostics.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "./r2sync.ts";
@@ -24,6 +25,10 @@ const SYNC_CONFIG_KEY = "syncConfig";
  * LEDGER_KEYSに含めない(端末間で同期しなくても、各端末が銀行から取り直せる)
  */
 export const AUTO_TRANSFERS_KEY = "autoTransferSettings";
+/** 設定画面にデバッグ欄を出すかどうか。既定は出さない */
+export const DEBUG_MODE_KEY = "debugMode";
+/** 最後の取り込みの結果。記録ではなく診断用なのでLEDGER_KEYSに含めない */
+export const LAST_COLLECT_KEY = "lastCollectReport";
 /** 最後にR2と同期できた時刻。台帳ではないためLEDGER_KEYSに含めない(自動同期のループ防止) */
 export const LAST_SYNCED_KEY = "lastSyncedAt";
 /** 最後に銀行APIから取得した時刻。同上の理由でLEDGER_KEYSに含めない */
@@ -121,6 +126,32 @@ export class HistoryStore {
     }
     await this.storage.set({ [AUTO_TRANSFERS_KEY]: settings });
     return true;
+  }
+
+  public async loadDebugMode(): Promise<boolean> {
+    const items = await this.storage.get(DEBUG_MODE_KEY);
+    return items[DEBUG_MODE_KEY] === true;
+  }
+
+  public async saveDebugMode(enabled: boolean): Promise<void> {
+    await this.storage.set({ [DEBUG_MODE_KEY]: enabled });
+  }
+
+  public async loadLastCollect(): Promise<CollectReport | null> {
+    const items = await this.storage.get(LAST_COLLECT_KEY);
+    return (items[LAST_COLLECT_KEY] as CollectReport | undefined) ?? null;
+  }
+
+  public async recordLastCollect(report: CollectReport): Promise<void> {
+    await this.storage.set({ [LAST_COLLECT_KEY]: report });
+  }
+
+  /**
+   * 次に銀行サイトを開いたときの取り込みを、間隔を待たずに走らせる。
+   * 銀行サイトのタブが開いていれば、この変更を拾ってその場で取りに行く
+   */
+  public async requestCollect(): Promise<void> {
+    await this.storage.set({ [LAST_COLLECTED_KEY]: null });
   }
 
   public async loadComments(): Promise<Comments> {

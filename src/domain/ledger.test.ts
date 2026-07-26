@@ -8,7 +8,6 @@ import {
   flowTotals,
   latestRecordAt,
   latestSnapshot,
-  logEntries,
   signedAmountFor,
   sortTransfersDesc,
   totalBalancePoints,
@@ -17,6 +16,7 @@ import {
 } from "./ledger.ts";
 import { describe, expect, it } from "vitest";
 import type { SubAccount } from "./parser.ts";
+import { logEntries } from "./log.ts";
 
 function accounts(...balances: [string, number][]): SubAccount[] {
   return balances.map(([name, balance], index) => ({ id: String(100 + index), name, balance }));

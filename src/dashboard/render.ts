@@ -1,9 +1,11 @@
+import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
 import type { DashboardData, DashboardOptions, RenderContext } from "./context.ts";
-import { MUTED, el } from "./dom.ts";
+import { MUTED, accountColorAt, el } from "./dom.ts";
+import { accountRefs, latestRecordAt } from "../domain/ledger.ts";
+import type { AccountColor } from "./dom.ts";
 import { activeSection } from "./tabs.ts";
 import { header } from "./header.ts";
 import { initialUiState } from "./context.ts";
-import { latestRecordAt } from "../domain/ledger.ts";
 import { monthNav } from "./month-nav.ts";
 import { reconcile } from "../domain/reconcile.ts";
 import { settingsView } from "./settings.ts";
@@ -43,6 +45,15 @@ function captureFocus(root: HTMLElement): (() => void) | null {
   };
 }
 
+/** 口座の並び順で色を割り当てる。同じ口座には常に同じ色が付く */
+function colorResolver(
+  snapshots: BalanceSnapshot[],
+  transfers: TransferRecord[],
+): (accountId: string) => AccountColor {
+  const indexById = new Map(accountRefs(snapshots, transfers).map((ref, index) => [ref.id, index]));
+  return (accountId): AccountColor => accountColorAt(indexById.get(accountId) ?? 0);
+}
+
 function drawView(ctx: RenderContext): void {
   ctx.root.replaceChildren();
   if (ctx.state.view === "settings") {
@@ -69,8 +80,10 @@ class DashboardView {
       root,
       data,
       ledger: reconcile(data.snapshots, data.transfers, data.autoTransfers),
+      // 実際の割り当ては描画のたびに作り直す
+      colorOf: (): AccountColor => accountColorAt(0),
       handlers: options.handlers,
-      state: initialUiState(),
+      state: initialUiState(options.now ?? Date.now),
       now: options.now ?? Date.now,
       draw: (): void => {
         this.draw();
@@ -86,6 +99,7 @@ class DashboardView {
       this.ctx.data.transfers,
       this.ctx.data.autoTransfers,
     );
+    this.ctx.colorOf = colorResolver(this.ctx.data.snapshots, this.ctx.ledger.transfers);
     drawView(this.ctx);
     restoreFocus?.();
   }

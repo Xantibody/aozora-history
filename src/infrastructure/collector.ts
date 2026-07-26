@@ -1,4 +1,5 @@
 import type { BankApiClient } from "./bank-api.ts";
+import type { CollectStat } from "../domain/diagnostics.ts";
 import type { HistoryStore } from "./storage.ts";
 import type { SubAccount } from "../domain/parser.ts";
 import { statementsExplainBalance } from "../domain/statement.ts";
@@ -29,20 +30,27 @@ export function shouldCollect(
 /** 定額自動振替の設定は多くても口座数程度。1回で取り切れる件数にしておく */
 export const AUTO_TRANSFER_LIMIT = 100;
 
+/**
+ * 1つのAPIの結果。savedだけでは「取れたが記録に変化がなかった」と
+ * 「そもそも取れなかった」を区別できないため、取れた件数も持つ
+ */
+type Collected = CollectStat;
+
+const NOT_FETCHED: Collected = { count: null, saved: false };
+
 export interface CollectResult {
   /** 間隔が空いていないなどで問い合わせ自体を見送った */
   skipped: boolean;
-  snapshotSaved: boolean;
-  statementsSaved: boolean;
-  /** つかいわけ口座ごとの明細を1件でも取り込んだか */
-  accountStatementsSaved: boolean;
-  autoTransfersSaved: boolean;
+  balances: Collected;
+  statements: Collected;
+  /** つかいわけ口座ごとの明細。countは取り込めた明細の合計 */
+  accountStatements: Collected;
+  autoTransfers: Collected;
   /** 一部だけ失敗することがあるため、起きたエラーはまとめて返す */
   errors: unknown[];
 }
 
-interface BalanceResult {
-  saved: boolean;
+interface BalanceResult extends Collected {
   accounts: SubAccount[];
 }
 
@@ -52,27 +60,29 @@ async function collectBalances(
   now: () => number,
 ): Promise<BalanceResult> {
   const parsed = await client.spAccountBalances();
-  if (parsed === null) {
-    return { saved: false, accounts: [] };
-  }
   const saved = await store.recordSnapshot({ takenAt: now(), ...parsed });
-  return { saved, accounts: parsed.accounts };
+  return { count: parsed.accounts.length, saved, accounts: parsed.accounts };
 }
 
-async function collectStatements(store: HistoryStore, client: BankApiClient): Promise<boolean> {
+async function collectStatements(store: HistoryStore, client: BankApiClient): Promise<Collected> {
   const parsed = await client.ordinaryStatement(STATEMENT_LIMIT);
-  if (parsed === null) {
-    return false;
-  }
-  return store.recordStatements(parsed);
+  return { count: parsed.length, saved: await store.recordStatements(parsed) };
 }
 
-async function collectAutoTransfers(store: HistoryStore, client: BankApiClient): Promise<boolean> {
+async function collectAutoTransfers(
+  store: HistoryStore,
+  client: BankApiClient,
+): Promise<Collected> {
   const parsed = await client.autoTransfers(AUTO_TRANSFER_LIMIT);
-  if (parsed === null) {
-    return false;
-  }
-  return store.recordAutoTransfers(parsed);
+  return { count: parsed.length, saved: await store.recordAutoTransfers(parsed) };
+}
+
+function addCount(left: number | null, right: number | null): number | null {
+  return left === null && right === null ? null : (left ?? 0) + (right ?? 0);
+}
+
+interface AccountStatementsResult extends Collected {
+  errors: unknown[];
 }
 
 /**
@@ -87,23 +97,37 @@ async function collectAccountStatements(
   store: HistoryStore,
   client: BankApiClient,
   accounts: SubAccount[],
-): Promise<{ saved: boolean; errors: unknown[] }> {
+): Promise<AccountStatementsResult> {
   const [account, ...rest] = accounts;
   if (account === undefined) {
-    return { saved: false, errors: [] };
+    return { ...NOT_FETCHED, errors: [] };
   }
   try {
     const parsed = await client.spAccountStatement(account.id, STATEMENT_LIMIT);
-    const stored =
-      parsed !== null && statementsExplainBalance(parsed, account.balance)
-        ? await store.recordStatements(parsed)
-        : false;
+    // countが0より大きいのにsavedが偽なら、明細は取れたが残高の検算で弾かれている
+    const stored = statementsExplainBalance(parsed, account.balance)
+      ? await store.recordStatements(parsed)
+      : false;
     // 1口座ずつ順に。並べて投げると、使えないエンドポイントを口座数ぶん叩いてしまう
     const next = await collectAccountStatements(store, client, rest);
-    return { saved: stored || next.saved, errors: next.errors };
+    return {
+      count: addCount(parsed.length, next.count),
+      saved: stored || next.saved,
+      errors: next.errors,
+    };
   } catch (error) {
-    return { saved: false, errors: [error] };
+    return { ...NOT_FETCHED, errors: [error] };
   }
+}
+
+/** 呼び出し側でしか使わない口座一覧やエラーを落とし、結果だけにする */
+function onlyCollected({ count, saved }: Collected): Collected {
+  return { count, saved };
+}
+
+/** 例外で終わった問い合わせは「取得できなかった」として扱う(理由は errors に入る) */
+function settled(result: PromiseSettledResult<Collected>): Collected {
+  return result.status === "fulfilled" ? onlyCollected(result.value) : NOT_FETCHED;
 }
 
 function reasonsOf(results: PromiseSettledResult<unknown>[]): unknown[] {
@@ -125,10 +149,10 @@ export async function collectFromBank(
   if (!shouldCollect(lastCollectedAt, now())) {
     return {
       skipped: true,
-      snapshotSaved: false,
-      statementsSaved: false,
-      accountStatementsSaved: false,
-      autoTransfersSaved: false,
+      balances: NOT_FETCHED,
+      statements: NOT_FETCHED,
+      accountStatements: NOT_FETCHED,
+      autoTransfers: NOT_FETCHED,
       errors: [],
     };
   }
@@ -149,10 +173,10 @@ export async function collectFromBank(
 
   return {
     skipped: false,
-    snapshotSaved: balances.status === "fulfilled" && balances.value.saved,
-    statementsSaved: statements.status === "fulfilled" && statements.value,
-    accountStatementsSaved: accountStatements.saved,
-    autoTransfersSaved: autoTransfers.status === "fulfilled" && autoTransfers.value,
+    balances: settled(balances),
+    statements: settled(statements),
+    accountStatements: onlyCollected(accountStatements),
+    autoTransfers: settled(autoTransfers),
     errors: [...reasonsOf([balances, statements, autoTransfers]), ...accountStatements.errors],
   };
 }

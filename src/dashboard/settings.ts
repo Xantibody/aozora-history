@@ -13,6 +13,7 @@ import { DEFAULT_OBJECT_KEY, parseSyncConfigJson } from "../infrastructure/r2syn
 import type { DashboardData, RenderContext } from "./context.ts";
 import { statementsCsv, transfersCsv } from "./csv.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
+import { debugSection } from "./debug-section.ts";
 import { primaryStatements } from "../domain/statement.ts";
 
 interface SyncFieldDef {
@@ -274,6 +275,6 @@ export function settingsView(ctx: RenderContext): HTMLElement {
     ctx.state.view = "dashboard";
     ctx.draw();
   });
-  node.append(back, syncSection(ctx), importExportSection(ctx));
+  node.append(back, syncSection(ctx), importExportSection(ctx), debugSection(ctx));
   return node;
 }

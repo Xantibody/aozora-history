@@ -7,6 +7,7 @@ import {
 import type { AccountsSnapshot } from "../domain/parser.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
+import { describeJson } from "../domain/diagnostics.ts";
 
 export const BANK_ORIGIN = "https://bank.gmo-aozora.com";
 
@@ -18,6 +19,12 @@ const ORDER_DESC = "2";
 
 /** つかいわけ口座の明細は通貨を指定して取る。この拡張が扱うのは円普通預金だけ */
 const JPY = "JPY";
+
+/** 定額自動振替の並び替えキー。1 = 登録日 */
+const SORT_BY_REGISTERED_DATE = "1";
+
+/** JSONでない応答をエラーに載せる長さ。ログイン画面のHTMLだと分かれば十分 */
+const BODY_EXCERPT = 120;
 
 /** APIが1回に返せる明細の上限。銀行サイトの表示件数の選択肢に合わせている */
 export const MAX_STATEMENT_LIMIT = 100;
@@ -74,6 +81,10 @@ export class BankApiClient {
     this.origin = origin;
   }
 
+  /**
+   * 失敗はすべて例外にする。nullを返して黙って諦めると、取り込みが動いて
+   * いないのか銀行側の応答が変わったのかを後から切り分けられない
+   */
   private async get(path: string, params?: Record<string, string>): Promise<unknown> {
     const query = params === undefined ? "" : `?${new URLSearchParams(params).toString()}`;
     const token = xsrfToken(this.cookie());
@@ -88,31 +99,46 @@ export class BankApiClient {
       credentials: "include",
     });
     if (!res.ok) {
-      throw new Error(`銀行APIの取得に失敗しました (HTTP ${res.status})`);
+      throw new Error(`GET ${path} が HTTP ${res.status}`);
     }
     const body = await res.text();
     try {
       return JSON.parse(body);
     } catch {
-      // ログイン切れでログイン画面のHTMLが返るなど。記録は増やさず次の機会に取り直す
-      return null;
+      // ログイン切れでログイン画面のHTMLが返るなど
+      throw new Error(`GET ${path} がJSONを返しませんでした: ${body.slice(0, BODY_EXCERPT)}`);
     }
   }
 
-  /** つかいわけ口座の現在残高。つかいわけ口座を使っていなければnull */
-  public async spAccountBalances(): Promise<AccountsSnapshot | null> {
-    const json = await this.get("balances/sp-accounts");
-    return parseSpAccountBalances(json);
+  /** 応答は取れたが、この拡張が読める形ではなかった場合 */
+  private static unexpected(path: string, json: unknown): Error {
+    return new Error(`GET ${path} の応答が想定と違います: ${describeJson(json)}`);
+  }
+
+  /** つかいわけ口座の現在残高 */
+  public async spAccountBalances(): Promise<AccountsSnapshot> {
+    const path = "balances/sp-accounts";
+    const json = await this.get(path);
+    const parsed = parseSpAccountBalances(json);
+    if (parsed === null) {
+      throw BankApiClient.unexpected(path, json);
+    }
+    return parsed;
   }
 
   /** 代表口座(普通預金)の入出金明細を新しい順に取る */
-  public async ordinaryStatement(limit: number): Promise<StatementEntry[] | null> {
-    const json = await this.get("ordinary-deposits/statement", {
+  public async ordinaryStatement(limit: number): Promise<StatementEntry[]> {
+    const path = "ordinary-deposits/statement";
+    const json = await this.get(path, {
       limit: String(Math.min(limit, MAX_STATEMENT_LIMIT)),
       offset: "0",
       depositOrderType: ORDER_DESC,
     });
-    return parseOrdinaryStatement(json);
+    const parsed = parseOrdinaryStatement(json);
+    if (parsed === null) {
+      throw BankApiClient.unexpected(path, json);
+    }
+    return parsed;
   }
 
   /**
@@ -120,26 +146,39 @@ export class BankApiClient {
    * 銀行サイトの画面 S015「つかいわけ口座 入出金明細」と同じパラメータで呼ぶ。
    * この画面はメニューからの動線が公開されていないが、APIとルートは生きている
    */
-  public async spAccountStatement(
-    accountId: string,
-    limit: number,
-  ): Promise<StatementEntry[] | null> {
-    const json = await this.get("sp-accounts/ordinary-deposits-statement", {
+  public async spAccountStatement(accountId: string, limit: number): Promise<StatementEntry[]> {
+    const path = "sp-accounts/ordinary-deposits-statement";
+    const json = await this.get(path, {
       spAccountId: accountId,
       currency: JPY,
       limit: String(Math.min(limit, MAX_STATEMENT_LIMIT)),
       offset: "0",
       depositOrderType: ORDER_DESC,
     });
-    return parseSpAccountStatement(json, accountId);
+    const parsed = parseSpAccountStatement(json, accountId);
+    if (parsed === null) {
+      throw BankApiClient.unexpected(path, json);
+    }
+    return parsed;
   }
 
-  /** つかいわけ口座の定額自動振替の設定一覧 */
-  public async autoTransfers(limit: number): Promise<AutoTransferSetting[] | null> {
-    const json = await this.get("sp-accounts/auto-transfer", {
+  /**
+   * つかいわけ口座の定額自動振替の設定一覧。
+   * 画面「つかいわけ口座 定額自動振替」と同じ条件で呼ぶ。sortKey と
+   * depositOrderType は表示の並び順でしかないが、省くと弾かれることがあるため送る
+   */
+  public async autoTransfers(limit: number): Promise<AutoTransferSetting[]> {
+    const path = "sp-accounts/auto-transfer";
+    const json = await this.get(path, {
       limit: String(Math.min(limit, MAX_STATEMENT_LIMIT)),
       offset: "0",
+      sortKey: SORT_BY_REGISTERED_DATE,
+      depositOrderType: ORDER_DESC,
     });
-    return parseAutoTransfers(json);
+    const parsed = parseAutoTransfers(json);
+    if (parsed === null) {
+      throw BankApiClient.unexpected(path, json);
+    }
+    return parsed;
   }
 }

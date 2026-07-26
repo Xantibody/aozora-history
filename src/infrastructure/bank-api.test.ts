@@ -116,7 +116,8 @@ describe("BankApiClient", () => {
     const settings = await client.autoTransfers(100);
 
     expect(calls[0].url).toBe(
-      "https://bank.gmo-aozora.com/v1/sp-accounts/auto-transfer?limit=100&offset=0",
+      "https://bank.gmo-aozora.com/v1/sp-accounts/auto-transfer" +
+        "?limit=100&offset=0&sortKey=1&depositOrderType=2",
     );
     expect(settings).toStrictEqual([
       {
@@ -153,17 +154,21 @@ describe("BankApiClient", () => {
     await expect(client.spAccountBalances()).rejects.toThrow("HTTP 401");
   });
 
-  it("想定外の形のレスポンスはnullを返す(記録を壊さない)", async () => {
-    const { fetchFn } = recorder([{ body: { unexpected: true } }]);
+  it("想定外の形のレスポンスは、どのキーが返ったのかを添えて例外にする", async () => {
+    const { fetchFn } = recorder([{ body: { unexpected: true, list: [1, 2] } }]);
     const client = new BankApiClient(fetchFn, () => "");
 
-    await expect(client.spAccountBalances()).resolves.toBeNull();
+    await expect(client.spAccountBalances()).rejects.toThrow(
+      "GET balances/sp-accounts の応答が想定と違います: { unexpected, list[2] }",
+    );
   });
 
-  it("ログイン画面のHTMLが返ってきてもnullを返す", async () => {
+  it("ログイン画面のHTMLが返ってきたら、本文の先頭を添えて例外にする", async () => {
     const { fetchFn } = recorder([{ body: "<!DOCTYPE html><html>ログイン</html>" }]);
     const client = new BankApiClient(fetchFn, () => "");
 
-    await expect(client.ordinaryStatement(100)).resolves.toBeNull();
+    await expect(client.ordinaryStatement(100)).rejects.toThrow(
+      "GET ordinary-deposits/statement がJSONを返しませんでした: <!DOCTYPE html>",
+    );
   });
 });

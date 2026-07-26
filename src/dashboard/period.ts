@@ -31,9 +31,14 @@ export function shiftMonth(value: string, delta: number): string {
   return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}`;
 }
 
+/** エポックミリ秒をローカル時刻の "YYYY-MM" にする */
+export function monthOf(epochMs: number): string {
+  const date = new Date(epochMs);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
+}
+
 export function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  return monthOf(Date.now());
 }
 
 export function inPeriod(state: UiState, ms: number): boolean {

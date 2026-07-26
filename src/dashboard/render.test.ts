@@ -78,6 +78,11 @@ function swipe(target: Element, dx: number, dy = 0): void {
   dispatchTouch(target, "touchend", { clientX: 200 + dx, clientY: 300 + dy });
 }
 
+/** 大きさの指定を除いた、色を表すクラスだけ */
+function dotColor(dot: Element): string {
+  return [...dot.classList].filter((name) => name.includes("#")).join(" ");
+}
+
 function data(overrides: Partial<DashboardData> = {}): DashboardData {
   return {
     snapshots,
@@ -88,6 +93,8 @@ function data(overrides: Partial<DashboardData> = {}): DashboardData {
     deletions: {},
     syncConfig: null,
     lastSyncedAt: null,
+    debugMode: false,
+    lastCollect: null,
     ...overrides,
   };
 }
@@ -103,6 +110,8 @@ function render(root: HTMLElement, dashboardData = data(), now?: () => number): 
     ),
     onSyncNow: vi.fn<() => Promise<string>>(() => Promise.resolve("同期しました")),
     onImportFile: vi.fn<(text: string) => Promise<string>>(() => Promise.resolve("読み込みました")),
+    onToggleDebug: vi.fn<(enabled: boolean) => void>(),
+    onRequestCollect: vi.fn<() => void>(),
   };
   const redraw = renderDashboard(root, dashboardData, { handlers, now });
   return { ...handlers, redraw };
@@ -194,22 +203,30 @@ describe("renderDashboard", () => {
       expect(root.querySelector(".total-balance")!.textContent).toBe("484,381円");
     });
 
+    it("開いたときは当月を表示する", () => {
+      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+
+      expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe(
+        "2026-07",
+      );
+      expect(root.querySelector(".total-summary")!.textContent).toContain("合計残高 · 7月");
+    });
+
     it("期間内の合計残高の増減を表示する", () => {
-      render(root);
+      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
 
       const summary = root.querySelector(".total-summary")!;
-      expect(summary.textContent).toContain("合計残高 · 全期間");
       expect(summary.querySelector(".total-delta")!.textContent).toBe("+267,469円");
     });
 
-    it("月を選ぶとラベルが月名になる", () => {
-      render(root);
+    it("月を空にすると全期間に戻る", () => {
+      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
 
       const input = root.querySelector<HTMLInputElement>('input[name="period-month"]')!;
-      input.value = "2026-07";
+      input.value = "";
       input.dispatchEvent(new Event("change", { bubbles: true }));
 
-      expect(root.querySelector(".total-summary")!.textContent).toContain("7月");
+      expect(root.querySelector(".total-summary")!.textContent).toContain("全期間");
     });
 
     it("スナップショットが2件以上あればスパークラインを表示する", () => {
@@ -222,6 +239,40 @@ describe("renderDashboard", () => {
       render(root, data({ snapshots: [snapshots[0]], transfers: [] }));
 
       expect(root.querySelector(".total-sparkline")).toBeNull();
+    });
+  });
+
+  describe("口座の色", () => {
+    /** ログの「A → B」の行から、口座名とドットの色の組を集める */
+    function coloredNames(): Map<string, string> {
+      const pairs = new Map<string, string>();
+      for (const label of root.querySelectorAll(".log-title .account-name")) {
+        const dot = label.querySelector(".dot");
+        if (dot !== null) {
+          pairs.set(label.textContent ?? "", dotColor(dot));
+        }
+      }
+      return pairs;
+    }
+
+    it("口座ごとに違う色を割り当てる(並び順で決めるのでぶつからない)", () => {
+      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+
+      const byName = coloredNames();
+      expect(byName.size).toBeGreaterThan(1);
+      expect(new Set(byName.values()).size).toBe(byName.size);
+    });
+
+    it("同じ口座には口座別タブでも同じ色を使う", () => {
+      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      const wallet = coloredNames().get("01: お財布");
+      clickTab("口座別");
+
+      const card = [...root.querySelectorAll(".workspace-card")].find((node) =>
+        node.textContent?.includes("01: お財布"),
+      )!;
+
+      expect(dotColor(card.querySelector(".dot")!)).toBe(wallet);
     });
   });
 
@@ -1421,6 +1472,41 @@ describe("記録にない口座間の移動(定額自動振替など)", () => {
     expect(logTitles()).toContain("03: 支払い箱 → カ）ジェーシービー");
   });
 
+  it("起算日がスナップショットの前日でも突き合わせる(深夜の入金など)", () => {
+    const withDebit: BalanceSnapshot[] = [
+      autoTransferSnapshots[1],
+      {
+        ...autoTransferSnapshots[1],
+        takenAt: Date.UTC(2026, 6, 26, 16, 6),
+        accounts: [
+          { id: "133331", name: "01: お財布", balance: 420_000 },
+          { id: "133805", name: "03: 支払い箱", balance: 40_000 },
+        ],
+      },
+    ];
+
+    render(
+      root,
+      data({
+        snapshots: withDebit,
+        transfers: [],
+        statements: [
+          {
+            entryNumber: "0001",
+            // 区間の始まり(7/26 22:00 JST)より前の日付だが、同じ暦日なので拾う
+            valueDate: "2026-07-26",
+            amount: -50_000,
+            balance: 40_000,
+            remark: "カ）ジェーシービー",
+            accountId: "133805",
+          },
+        ],
+      }),
+    );
+
+    expect(logTitles()).toContain("03: 支払い箱 → カ）ジェーシービー");
+  });
+
   it("外部入出金には数えない(口座間で動いただけなので収支は増減しない)", () => {
     clickAccountsTab();
 
@@ -1444,5 +1530,105 @@ describe("statementsCsv", () => {
         "2026-07-24,給与  カ）アツトマーク,635144,1080425,月給\r\n" +
         "2026-07-23,振込 ミツビシユーエフジエイ,-4100,445281,\r\n",
     );
+  });
+});
+
+describe("設定画面 (デバッグ)", () => {
+  const root = document.createElement("div");
+
+  const report = {
+    at: Date.UTC(2026, 6, 26, 6, 41),
+    build: "2026-07-26 15:30:00",
+    skipped: false,
+    balances: { count: 3, saved: false },
+    statements: { count: 100, saved: true },
+    accountStatements: { count: null, saved: false },
+    autoTransfers: { count: 1, saved: true },
+    errors: [],
+  };
+
+  beforeEach(() => {
+    root.replaceChildren();
+    document.body.replaceChildren(root);
+  });
+
+  function openSettings(): void {
+    root.querySelector<HTMLButtonElement>("button.settings-button")!.click();
+  }
+
+  function statTexts(): string[] {
+    return [...root.querySelectorAll(".collect-stat")].map((row) => row.textContent ?? "");
+  }
+
+  it("既定では取り込みの詳細を出さない", () => {
+    render(root, data({ debugMode: false, lastCollect: report }));
+    openSettings();
+
+    expect(root.querySelector(".debug-toggle")).not.toBeNull();
+    expect(root.querySelector(".last-collect")).toBeNull();
+  });
+
+  it("有効にすると、APIごとに取れた件数と記録の更新有無を出す", () => {
+    render(root, data({ debugMode: true, lastCollect: report }));
+    openSettings();
+
+    expect(statTexts()).toStrictEqual([
+      "つかいわけ口座の残高3件 · 変化なし",
+      "代表口座の明細100件 · 記録を更新",
+      "つかいわけ口座の明細取得できず",
+      "定額自動振替の設定1件 · 記録を更新",
+    ]);
+  });
+
+  it("エラーはstackごとそのまま出す", () => {
+    const stack = "GET balances/sp-accounts が HTTP 403\n    at get (content.js:812:15)";
+    render(root, data({ debugMode: true, lastCollect: { ...report, errors: [stack] } }));
+    openSettings();
+
+    expect(root.querySelector(".collect-error")!.textContent).toBe(stack);
+  });
+
+  it("どのビルドが取り込んだのかを出す(入れ替えたつもりの取り違えを防ぐ)", () => {
+    render(root, data({ debugMode: true, lastCollect: report }));
+    openSettings();
+
+    expect(root.querySelector(".build-stamp")!.textContent).toContain(
+      "取り込み 2026-07-26 15:30:00",
+    );
+  });
+
+  it("見送った回はその旨だけ出す", () => {
+    render(root, data({ debugMode: true, lastCollect: { ...report, skipped: true } }));
+    openSettings();
+
+    expect(root.querySelector(".last-collect")!.textContent).toContain("間隔が空いていない");
+    expect(statTexts()).toStrictEqual([]);
+  });
+
+  it("一度も走っていなければ、その旨を出す", () => {
+    render(root, data({ debugMode: true, lastCollect: null }));
+    openSettings();
+
+    expect(root.querySelector(".last-collect")!.textContent).toContain(
+      "まだ取り込みが走っていません",
+    );
+  });
+
+  it("トグルの切り替えを通知する", () => {
+    const { onToggleDebug } = render(root, data({ debugMode: false }));
+    openSettings();
+
+    root.querySelector<HTMLInputElement>('input[name="debug-mode"]')!.click();
+
+    expect(onToggleDebug).toHaveBeenCalledWith(true);
+  });
+
+  it("「今すぐ取り込む」で取り込みを要求する", () => {
+    const { onRequestCollect } = render(root, data({ debugMode: true, lastCollect: report }));
+    openSettings();
+
+    root.querySelector<HTMLButtonElement>("button.collect-now")!.click();
+
+    expect(onRequestCollect).toHaveBeenCalledWith();
   });
 });

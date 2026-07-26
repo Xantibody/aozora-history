@@ -92,10 +92,10 @@ describe("collectFromBank", () => {
 
     expect(result).toStrictEqual({
       skipped: false,
-      snapshotSaved: true,
-      statementsSaved: true,
-      accountStatementsSaved: true,
-      autoTransfersSaved: true,
+      balances: { count: 1, saved: true },
+      statements: { count: 1, saved: true },
+      accountStatements: { count: 1, saved: true },
+      autoTransfers: { count: 1, saved: true },
       errors: [],
     });
     await expect(store.loadSnapshots()).resolves.toStrictEqual([{ takenAt: 42, ...snapshot }]);
@@ -115,7 +115,8 @@ describe("collectFromBank", () => {
 
     const result = await collectFromBank(store, client, () => 42);
 
-    expect(result.accountStatementsSaved).toBe(false);
+    // 取れてはいるが検算で弾いた、と分かるようにcountは残す
+    expect(result.accountStatements).toStrictEqual({ count: 1, saved: false });
     await expect(store.loadStatements()).resolves.toStrictEqual(statements);
   });
 
@@ -138,7 +139,7 @@ describe("collectFromBank", () => {
 
     expect(calls).toBe(1);
     expect(result.errors).toHaveLength(1);
-    expect(result.snapshotSaved).toBe(true);
+    expect(result.balances.saved).toBe(true);
   });
 
   it("間隔が空くまでは問い合わせない", async () => {
@@ -166,8 +167,8 @@ describe("collectFromBank", () => {
 
     const result = await collectFromBank(store, client, () => 42);
 
-    expect(result.snapshotSaved).toBe(false);
-    expect(result.statementsSaved).toBe(true);
+    expect(result.balances).toStrictEqual({ count: null, saved: false });
+    expect(result.statements.saved).toBe(true);
     expect(result.errors).toHaveLength(1);
     await expect(store.loadStatements()).resolves.toStrictEqual(statements);
   });
@@ -201,13 +202,17 @@ describe("collectFromBank", () => {
     await expect(store.loadLastCollectedAt()).resolves.toBe(42);
   });
 
-  it("つかいわけ口座を使っていなければスナップショットを残さない", async () => {
+  it("残高の応答が想定と違えばスナップショットを残さず、理由をエラーに残す", async () => {
     const store = new HistoryStore(fakeStorage(), () => 42);
-    const client = fakeClient({ spAccountBalances: () => Promise.resolve(null) });
+    const client = fakeClient({
+      spAccountBalances: () => Promise.reject(new Error("応答が想定と違います")),
+    });
 
     const result = await collectFromBank(store, client, () => 42);
 
-    expect(result.snapshotSaved).toBe(false);
+    // 取れなかった(null)であって、件数0ではない
+    expect(result.balances).toStrictEqual({ count: null, saved: false });
+    expect(result.errors).toHaveLength(1);
     await expect(store.loadSnapshots()).resolves.toStrictEqual([]);
   });
 });
