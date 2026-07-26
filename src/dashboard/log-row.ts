@@ -4,6 +4,7 @@ import { attachSwipeDelete, confirmDeleteTransfer, transferDetail } from "./swip
 import { changeCommentKey, commentText, transferCommentKey } from "../domain/ledger.ts";
 import { formatSigned, formatTime, formatYen, localDayKey } from "./format.ts";
 import type { RenderContext } from "./context.ts";
+import type { StatementEntry } from "../domain/statement.ts";
 import type { SwipeHandle } from "./swipe-delete.ts";
 import { accountStatements } from "../domain/statement.ts";
 import { commentInput } from "./comment-input.ts";
@@ -32,22 +33,31 @@ function strongName(name: string): HTMLElement {
 function detectedBadge(ctx: RenderContext, transfer: TransferRecord): HTMLElement {
   return el(
     "span",
-    "detected-badge ml-1.5 rounded bg-slate-100 px-1.5 align-[2px] text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+    "detected-badge ml-1.5 rounded bg-slate-100 px-1.5 align-[2px] text-[11px] font-semibold " +
+      "whitespace-nowrap text-slate-500 dark:bg-slate-800 dark:text-slate-400",
     matchesAutoTransfer(ctx.data.autoTransfers, transfer) ? "定額自動振替" : "自動",
   );
 }
 
 /**
+ * 明細がその増減の区間に入るか。明細は起算日(日単位)しか持たないため、
+ * 区間の始まりはその日の0時まで広げて見る。スナップショットを取った時刻と
+ * 銀行が起算する日は必ずしも同じ日にならない(深夜の入金など)
+ */
+function withinChange(statement: StatementEntry, change: BalanceChange): boolean {
+  const at = dayStart(statement.valueDate);
+  const from = dayStart(localDayKey(change.fromTakenAt));
+  return at !== null && from !== null && at >= from && at <= change.toTakenAt;
+}
+
+/**
  * 口座の外との入出金の相手。つかいわけ口座ごとの明細を取り込めていれば、
- * 自動引落の引落先などが摘要で分かる。金額と日付で1件に絞れたときだけ言い切り、
+ * 自動引落の引落先などが摘要で分かる。金額と期間で1件に絞れたときだけ言い切り、
  * 絞れなければ「外部」のままにする
  */
 function counterparty(ctx: RenderContext, change: BalanceChange): string {
-  const day = localDayKey(change.toTakenAt);
   const matched = accountStatements(ctx.data.statements, change.accountId).filter(
-    (statement) =>
-      statement.amount === change.externalDelta &&
-      localDayKey(dayStart(statement.valueDate) ?? 0) === day,
+    (statement) => statement.amount === change.externalDelta && withinChange(statement, change),
   );
   return matched.length === 1 && matched[0].remark !== "" ? matched[0].remark : "外部";
 }

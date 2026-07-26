@@ -1425,6 +1425,41 @@ describe("記録にない口座間の移動(定額自動振替など)", () => {
     expect(logTitles()).toContain("03: 支払い箱 → カ）ジェーシービー");
   });
 
+  it("起算日がスナップショットの前日でも突き合わせる(深夜の入金など)", () => {
+    const withDebit: BalanceSnapshot[] = [
+      autoTransferSnapshots[1],
+      {
+        ...autoTransferSnapshots[1],
+        takenAt: Date.UTC(2026, 6, 26, 16, 6),
+        accounts: [
+          { id: "133331", name: "01: お財布", balance: 420_000 },
+          { id: "133805", name: "03: 支払い箱", balance: 40_000 },
+        ],
+      },
+    ];
+
+    render(
+      root,
+      data({
+        snapshots: withDebit,
+        transfers: [],
+        statements: [
+          {
+            entryNumber: "0001",
+            // 区間の始まり(7/26 22:00 JST)より前の日付だが、同じ暦日なので拾う
+            valueDate: "2026-07-26",
+            amount: -50_000,
+            balance: 40_000,
+            remark: "カ）ジェーシービー",
+            accountId: "133805",
+          },
+        ],
+      }),
+    );
+
+    expect(logTitles()).toContain("03: 支払い箱 → カ）ジェーシービー");
+  });
+
   it("外部入出金には数えない(口座間で動いただけなので収支は増減しない)", () => {
     clickAccountsTab();
 
