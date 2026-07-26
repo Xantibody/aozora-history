@@ -76,10 +76,10 @@ function freshness(ctx: RenderContext, latest: number): HTMLElement {
 function settingsButton(ctx: RenderContext): HTMLElement {
   const button = el(
     "button",
-    `settings-button flex shrink-0 cursor-pointer items-center justify-center rounded-full ${INK_SOFT} ` +
+    `settings-button flex shrink-0 cursor-pointer items-center justify-center rounded-full max-sm:hidden ${INK_SOFT} ` +
       "bg-[#f4f6f9] ring-1 ring-[#e4e8ee] transition-colors hover:bg-[#eef1f5] " +
       "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 " +
-      "max-sm:h-11 max-sm:w-11 sm:h-[34px] sm:w-[34px] dark:bg-[#1a222c] dark:ring-[#243040] dark:hover:bg-[#1e2733]",
+      "sm:h-[34px] sm:w-[34px] dark:bg-[#1a222c] dark:ring-[#243040] dark:hover:bg-[#1e2733]",
   );
   button.append(icon("settings-2", SETTINGS_ICON_SIZE));
   button.title = "設定";
@@ -131,7 +131,7 @@ function tabButton(ctx: RenderContext, def: { key: ViewTab; label: string }): HT
 }
 
 function viewTabs(ctx: RenderContext): HTMLElement {
-  const tabs = el("div", "view-tabs flex gap-6");
+  const tabs = el("div", "view-tabs flex gap-6 max-sm:hidden");
   tabs.setAttribute("role", "tablist");
   tabs.setAttribute("aria-label", "表示切り替え");
   for (const def of TABS) {
@@ -176,7 +176,10 @@ function totalSummary(ctx: RenderContext): HTMLElement {
 }
 
 function headerTitle(ctx: RenderContext, latest: number | null): HTMLElement {
-  const left = el("div", "flex min-w-0 items-center gap-3");
+  const left = el(
+    "div",
+    "flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 sm:w-auto sm:flex-nowrap",
+  );
   left.append(el("h1", `shrink-0 text-[15px] font-bold ${INK}`, "つかいわけ口座"));
   if (latest !== null) {
     left.append(monthNav(ctx));
@@ -185,7 +188,8 @@ function headerTitle(ctx: RenderContext, latest: number | null): HTMLElement {
 }
 
 function headerStatus(ctx: RenderContext, latest: number | null): HTMLElement {
-  const side = el("div", "flex items-center gap-2 sm:gap-3");
+  const side = el("div", "flex min-w-0 items-center gap-2 max-sm:w-full sm:gap-3");
+  // 狭い幅では鮮度が1行を占めるので、設定は下部バーに任せて歯車を出さない
   if (latest !== null) {
     side.append(freshness(ctx, latest));
   }
@@ -194,7 +198,7 @@ function headerStatus(ctx: RenderContext, latest: number | null): HTMLElement {
 }
 
 function headerTopRow(ctx: RenderContext, latest: number | null): HTMLElement {
-  const row = el("div", "flex flex-wrap items-center justify-between gap-x-4 gap-y-2");
+  const row = el("div", "flex flex-wrap items-center justify-between gap-x-4 gap-y-1");
   row.append(headerTitle(ctx, latest), headerStatus(ctx, latest));
   return row;
 }

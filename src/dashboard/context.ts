@@ -95,6 +95,14 @@ export function initialUiState(now: () => number = Date.now): UiState {
   return state;
 }
 
+/**
+ * 狭い幅かどうか。ホバーが使えず縦も横も足りないため、行の組み方と
+ * タブの置き場所を変える。判定は描画のたびに読み直す(回転や分割表示で変わる)
+ */
+export function isNarrow(): boolean {
+  return globalThis.matchMedia?.("(max-width: 639px)").matches === true;
+}
+
 /** 各セクションの描画関数に渡す描画コンテキスト */
 export interface RenderContext {
   root: HTMLElement;

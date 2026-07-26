@@ -35,7 +35,8 @@ function monthStepButton(ctx: RenderContext, delta: number): HTMLElement {
 function monthInputEl(ctx: RenderContext): HTMLInputElement {
   const input = document.createElement("input");
   input.className =
-    `month-input w-[9.5rem] cursor-pointer border-none bg-transparent text-center text-[13px] font-bold tabular-nums ${INK} ` +
+    "month-input w-[8.5rem] cursor-pointer border-none bg-transparent text-center text-[13px] " +
+    `font-bold tabular-nums sm:w-[9.5rem] ${INK} ` +
     "focus:outline-2 focus:outline-sky-500";
   input.type = "month";
   input.name = "period-month";
@@ -104,13 +105,15 @@ function periodDetail(ctx: RenderContext): HTMLElement {
  * 合計・鮮度・タブと合わせて4段積みになり、本文が押し下げられるため
  */
 export function monthNav(ctx: RenderContext): HTMLElement {
-  const node = el("div", "period flex flex-wrap items-center gap-x-1 gap-y-2");
-  node.append(
-    monthStepButton(ctx, -1),
-    monthInputEl(ctx),
-    monthStepButton(ctx, 1),
-    detailToggle(ctx),
+  const node = el(
+    "div",
+    "period flex w-full items-center justify-between gap-x-1 gap-y-2 " +
+      "sm:w-auto sm:flex-wrap sm:justify-start",
   );
+  // 日付範囲の指定は使う頻度が低い。狭い幅では畳んで月の移動に場所を譲る
+  const detail = el("span", "max-sm:hidden");
+  detail.append(detailToggle(ctx));
+  node.append(monthStepButton(ctx, -1), monthInputEl(ctx), monthStepButton(ctx, 1), detail);
   node.append(periodDetail(ctx));
   return node;
 }

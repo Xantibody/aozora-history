@@ -108,7 +108,7 @@ function titleParts(ctx: RenderContext, entry: TransactionEntry): TitlePart[] {
 export function logTitle(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
   const title = el(
     "div",
-    `log-title flex min-w-0 flex-wrap items-center gap-[9px] text-[15.5px] leading-snug ${INK}`,
+    `log-title flex min-w-0 flex-wrap items-center gap-2 text-[14.5px] leading-snug sm:gap-[9px] sm:text-[15.5px] ${INK}`,
   );
   title.append(...titleParts(ctx, entry));
   return title;

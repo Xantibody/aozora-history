@@ -36,7 +36,8 @@ function deleteButton(ctx: RenderContext, transfer: TransferRecord): HTMLElement
 }
 
 // 可変幅だと桁数で右端がずれるため、固定幅で右揃えにする
-const AMOUNT = "amount w-[120px] shrink-0 text-right text-[17px] font-bold tabular-nums";
+const AMOUNT =
+  "amount w-[104px] shrink-0 text-right text-base font-bold tabular-nums sm:w-[120px] sm:text-[17px]";
 
 /** 極性は符号とインクの濃淡で示す。色で意味を持つのは口座色だけ */
 function signedAmount(amount: number): HTMLElement {
@@ -63,16 +64,36 @@ function trailingColumn(ctx: RenderContext, entry: TransactionEntry): HTMLElemen
   return el("span", "delete-spacer w-[18px] shrink-0 max-sm:hidden");
 }
 
+/**
+ * 2段目。狭い幅では時刻を左の固定列から外してここへ回す。
+ * 44pxの列を空けるだけで口座名に使える幅がはっきり増える
+ */
+function memoRow(memo: MemoField, at: number): HTMLElement {
+  const row = el("div", "flex items-baseline justify-between gap-3");
+  row.append(
+    memo.field,
+    el("span", `time-inline shrink-0 text-xs tabular-nums sm:hidden ${INK_WEAK}`, formatTime(at)),
+  );
+  return row;
+}
+
 function transactionMain(
   ctx: RenderContext,
   entry: TransactionEntry,
   memo: MemoField,
 ): HTMLElement {
-  const main = el("div", "flex items-center gap-[18px] px-[18px] py-[15px]");
+  const main = el(
+    "div",
+    "flex items-center gap-3 px-3.5 py-3 sm:gap-[18px] sm:px-[18px] sm:py-[15px]",
+  );
   const body = el("div", "flex min-w-0 flex-1 flex-col gap-[5px]");
-  body.append(logTitle(ctx, entry), memo.field);
+  body.append(logTitle(ctx, entry), memoRow(memo, entry.at));
   main.append(
-    el("span", `time w-11 shrink-0 text-xs tabular-nums ${INK_WEAK}`, formatTime(entry.at)),
+    el(
+      "span",
+      `time w-11 shrink-0 text-xs tabular-nums max-sm:hidden ${INK_WEAK}`,
+      formatTime(entry.at),
+    ),
     body,
     transactionAmount(entry),
     trailingColumn(ctx, entry),
