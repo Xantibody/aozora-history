@@ -8,11 +8,11 @@ export const MIN_CHART_POINTS = 2;
 const HALF = 2;
 
 // 折れ線グラフの寸法。右側は終端の金額ラベル分の余白
-const CHART = { width: 640, height: 160, left: 8, right: 76, top: 16, bottom: 22 };
-const PLOT_RIGHT = CHART.width - CHART.right;
-const PLOT_BOTTOM = CHART.height - CHART.bottom;
+export const CHART = { width: 640, height: 160, left: 8, right: 76, top: 16, bottom: 22 };
+export const PLOT_RIGHT = CHART.width - CHART.right;
+export const PLOT_BOTTOM = CHART.height - CHART.bottom;
 
-interface ChartScale {
+export interface ChartScale {
   t0: number;
   tN: number;
   xAt: (time: number) => number;
@@ -27,7 +27,7 @@ function lastPoint(points: BalancePoint[]): BalancePoint {
   return last;
 }
 
-function chartScale(points: BalancePoint[]): ChartScale {
+export function chartScale(points: BalancePoint[]): ChartScale {
   const { left, top } = CHART;
   const t0 = points[0].takenAt;
   const tN = lastPoint(points).takenAt;
@@ -43,7 +43,7 @@ function chartScale(points: BalancePoint[]): ChartScale {
   return { t0, tN, xAt, yAt };
 }
 
-function appendGrid(svg: SVGElement): void {
+export function appendGrid(svg: SVGElement): void {
   // 罫線は面から1段ずらしたヘアライン
   for (const gridY of [CHART.top, (CHART.top + PLOT_BOTTOM) / HALF, PLOT_BOTTOM]) {
     svg.append(
@@ -56,7 +56,7 @@ function appendGrid(svg: SVGElement): void {
           y2: String(gridY),
           "stroke-width": "1",
         },
-        "chart-grid stroke-slate-200 dark:stroke-slate-700",
+        "chart-grid stroke-[#eef0f4] dark:stroke-[#1e2733]",
       ),
     );
   }
@@ -66,7 +66,7 @@ function seriesCoords(points: BalancePoint[], scale: ChartScale): string[] {
   return points.map((point) => `${scale.xAt(point.takenAt)},${scale.yAt(point.balance)}`);
 }
 
-function appendSeries(svg: SVGElement, points: BalancePoint[], scale: ChartScale): void {
+export function appendSeries(svg: SVGElement, points: BalancePoint[], scale: ChartScale): void {
   const coords = seriesCoords(points, scale).join(" ");
   const baseline = `${CHART.left},${PLOT_BOTTOM}`;
   const closing = `${scale.xAt(scale.tN)},${PLOT_BOTTOM}`;
@@ -95,7 +95,19 @@ function appendSeries(svg: SVGElement, points: BalancePoint[], scale: ChartScale
   );
 }
 
-function appendEndMarker(svg: SVGElement, points: BalancePoint[], scale: ChartScale): void {
+export function appendEndMarker(svg: SVGElement, points: BalancePoint[], scale: ChartScale): void {
+  // 途中の点は白抜き、終端だけ塗る。どこが最新かを形で示す
+  for (const point of points.slice(0, -1)) {
+    const cx = String(scale.xAt(point.takenAt));
+    const cy = String(scale.yAt(point.balance));
+    svg.append(
+      svgEl(
+        "circle",
+        { cx, cy, r: "3", stroke: "currentColor", "stroke-width": "2" },
+        "chart-point fill-white dark:fill-[#121821]",
+      ),
+    );
+  }
   // 終端マーカーはカード面の色のリングで線から浮かせる
   const last = lastPoint(points);
   const cx = String(scale.xAt(last.takenAt));
@@ -104,24 +116,24 @@ function appendEndMarker(svg: SVGElement, points: BalancePoint[], scale: ChartSc
     svgEl(
       "circle",
       { cx, cy, r: "4", fill: "currentColor", "stroke-width": "2" },
-      "chart-end stroke-white dark:stroke-slate-950",
+      "chart-end stroke-white dark:stroke-[#121821]",
     ),
   );
 }
 
 // ラベルは系列色ではなくテキスト用のインクで描く
-const LABEL_INK = "fill-slate-500 dark:fill-slate-400";
+export const LABEL_INK = "fill-[#5b6675] dark:fill-[#c3cedb]";
 const END_LABEL_OFFSET_X = 8;
 const END_LABEL_OFFSET_Y = 4;
 const X_LABEL_BASELINE_PAD = 6;
 
-function chartLabel(text: string, attrs: Record<string, string>, cls: string): SVGElement {
+export function chartLabel(text: string, attrs: Record<string, string>, cls: string): SVGElement {
   const node = svgEl("text", { "font-size": "11", ...attrs }, cls);
   node.textContent = text;
   return node;
 }
 
-function appendLabels(svg: SVGElement, points: BalancePoint[], scale: ChartScale): void {
+export function appendLabels(svg: SVGElement, points: BalancePoint[], scale: ChartScale): void {
   const last = lastPoint(points);
   const endX = String(scale.xAt(scale.tN) + END_LABEL_OFFSET_X);
   const endY = String(scale.yAt(last.balance) + END_LABEL_OFFSET_Y);
@@ -141,7 +153,11 @@ function appendLabels(svg: SVGElement, points: BalancePoint[], scale: ChartScale
   );
 }
 
-function appendHoverTargets(svg: SVGElement, points: BalancePoint[], scale: ChartScale): void {
+export function appendHoverTargets(
+  svg: SVGElement,
+  points: BalancePoint[],
+  scale: ChartScale,
+): void {
   // ホバーで各点の日時と残高を読めるようにする(マークより広い当たり判定)
   for (const point of points) {
     const cx = String(scale.xAt(point.takenAt));
@@ -165,7 +181,7 @@ export function balanceChart(points: BalancePoint[]): SVGElement {
   const svg = svgEl(
     "svg",
     { viewBox: `0 0 ${CHART.width} ${CHART.height}`, role: "img", "aria-label": "残高推移" },
-    "balance-chart mt-3 w-full text-sky-600 dark:text-sky-400",
+    "balance-chart mt-3 w-full text-[#0f172a] dark:text-[#e6ecf3]",
   );
   appendGrid(svg);
   appendSeries(svg, points, scale);

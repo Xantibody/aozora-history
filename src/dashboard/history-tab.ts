@@ -1,6 +1,5 @@
 import type { BalancePoint, BalanceSnapshot } from "../domain/ledger.ts";
 import { CARD, FINE_PRINT, MUTED, accountDot, el, signedCell } from "./dom.ts";
-import { MIN_CHART_POINTS, balanceChart } from "./charts.ts";
 import { formatShortDateTime, formatYen } from "./format.ts";
 import type { RenderContext } from "./context.ts";
 import { inPeriod } from "./period.ts";
@@ -70,19 +69,6 @@ function snapshotItem(
   return item;
 }
 
-function chartCard(totals: BalancePoint[]): HTMLElement {
-  const chartBox = el("div", `total-chart p-3.5 ${CARD}`);
-  chartBox.append(
-    el(
-      "div",
-      "chart-label text-xs font-semibold text-slate-500 dark:text-slate-400",
-      "合計残高の推移",
-    ),
-    balanceChart(totals),
-  );
-  return chartBox;
-}
-
 function snapshotList(
   ctx: RenderContext,
   visible: BalanceSnapshot[],
@@ -103,17 +89,14 @@ function snapshotList(
   return list;
 }
 
-export function historySection(ctx: RenderContext): HTMLElement {
-  const node = el("section", "history flex flex-col gap-2.5 pt-1");
+/** 残高スナップショットの一覧。推移パネルが形を、この表が値を担う */
+export function snapshotSection(ctx: RenderContext): HTMLElement {
+  const node = el("section", "snapshots");
   const visible = ctx.data.snapshots.filter((snapshot) => inPeriod(ctx.state, snapshot.takenAt));
   if (visible.length === 0) {
     node.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
     return node;
   }
-  const totals = totalBalancePoints(visible);
-  if (totals.length >= MIN_CHART_POINTS) {
-    node.append(chartCard(totals));
-  }
-  node.append(snapshotList(ctx, visible, totals));
+  node.append(snapshotList(ctx, visible, totalBalancePoints(visible)));
   return node;
 }

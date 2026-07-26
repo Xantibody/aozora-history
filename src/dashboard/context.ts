@@ -56,6 +56,11 @@ export interface UiState {
   statementFilter: StatementFilter;
   filterAccountId: string | null;
   detailOpen: boolean;
+  /**
+   * 推移で選んだ区間。残高ページで選び、ログページで絞り込みとして効く。
+   * ページをまたいで保つことで「この山は何だったのか」を辿れる
+   */
+  selectedSpan: { from: number; to: number } | null;
   periodFrom: number | null;
   periodToExclusive: number | null;
   periodFromValue: string;
@@ -77,6 +82,7 @@ export function initialUiState(now: () => number = Date.now): UiState {
     statementFilter: "all",
     filterAccountId: null,
     detailOpen: false,
+    selectedSpan: null,
     periodFrom: null,
     periodToExclusive: null,
     periodFromValue: "",
