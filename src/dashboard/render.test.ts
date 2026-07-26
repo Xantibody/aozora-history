@@ -1622,6 +1622,75 @@ describe("statementsCsv", () => {
   });
 });
 
+describe("設定画面 (整理)", () => {
+  const root = document.createElement("div");
+
+  beforeEach(() => {
+    root.replaceChildren();
+    document.body.replaceChildren(root);
+  });
+
+  function openSettings(config: SyncConfig | null = null): void {
+    render(root, data({ syncConfig: config, statements }));
+    root.querySelector<HTMLButtonElement>("button.settings-button")!.click();
+  }
+
+  const savedConfig: SyncConfig = {
+    accountId: "abc123",
+    bucket: "aozora",
+    objectKey: "aozora-history.json",
+    accessKeyId: "AKID",
+    secretAccessKey: "SECRET",
+  };
+
+  it("接続の状態と記録の時刻を同期カードの先頭に出す", () => {
+    openSettings(savedConfig);
+
+    expect(root.querySelector(".sync-state")!.textContent).toContain("接続済み");
+    expect(root.querySelector(".record-state")!.textContent).toContain("最終記録");
+  });
+
+  it("未接続ならその旨を出す", () => {
+    openSettings();
+
+    expect(root.querySelector(".sync-state")!.textContent).toContain("未接続");
+  });
+
+  it("接続設定は既定で畳む(接続済みなら普段触らない)", () => {
+    openSettings(savedConfig);
+
+    const details = root.querySelector<HTMLDetailsElement>("details.sync-connection")!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector('input[name="sync-account-id"]')).not.toBeNull();
+  });
+
+  it("書き出しは3つのボタンにする", () => {
+    openSettings();
+
+    expect(
+      [".export", ".export-csv", ".export-statement-csv"].map(
+        (marker) => root.querySelector(marker)!.textContent,
+      ),
+    ).toStrictEqual(["JSON(全記録)", "振替CSV", "明細CSV"]);
+  });
+
+  it("読み込みは面で受け、生のファイル入力は隠す", () => {
+    openSettings();
+
+    const row = root.querySelector(".import-row")!;
+    expect(row.textContent).toContain("ドロップ");
+    expect(row.querySelector('input[name="import-file"]')!.className).toContain("sr-only");
+  });
+
+  it("保存されている記録の件数を出す(書き出す前に量が分かる)", () => {
+    openSettings();
+
+    expect(root.querySelector(".record-counts")!.textContent).toBe(
+      "保存されている記録 / 振替 2件 · 明細 3件 · スナップショット 2件",
+    );
+  });
+});
+
 describe("設定画面 (デバッグ)", () => {
   const root = document.createElement("div");
 
