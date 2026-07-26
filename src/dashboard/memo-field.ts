@@ -1,8 +1,22 @@
 import { INK_SOFT, INK_WEAK, el } from "./dom.ts";
+import { changeCommentKey, commentText, transferCommentKey } from "../domain/ledger.ts";
+import type { LogEntry } from "../domain/log.ts";
 import type { RenderContext } from "./context.ts";
 import { commentInput } from "./comment-input.ts";
-import { commentText } from "../domain/ledger.ts";
 import { icon } from "./icons.ts";
+import { statementCommentKey } from "../domain/statement.ts";
+
+type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" | "statement" }>;
+
+/** 記録の種類ごとに、コメントを紐付ける安定キーを決める */
+export function commentKeyOf(entry: TransactionEntry): string {
+  if (entry.kind === "transfer") {
+    return transferCommentKey(entry.transfer);
+  }
+  return entry.kind === "statement"
+    ? statementCommentKey(entry.statement)
+    : changeCommentKey(entry.change);
+}
 
 /** 行の文字より一回り小さくして、主役である取引の内容に譲る */
 const ICON_SIZE = 12;

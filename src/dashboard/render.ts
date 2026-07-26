@@ -6,7 +6,6 @@ import type { AccountColor } from "./dom.ts";
 import { activeSection } from "./tabs.ts";
 import { header } from "./header.ts";
 import { initialUiState } from "./context.ts";
-import { monthNav } from "./month-nav.ts";
 import { reconcile } from "../domain/reconcile.ts";
 import { settingsView } from "./settings.ts";
 import { suggestionList } from "./comment-input.ts";
@@ -60,7 +59,7 @@ function drawView(ctx: RenderContext): void {
     ctx.root.append(settingsView(ctx));
     return;
   }
-  const main = el("main", "mx-auto max-w-[760px] px-4 pb-8 sm:px-6");
+  const main = el("main", "mx-auto max-w-[1040px] px-4 pt-4 pb-8 sm:px-7");
   ctx.root.append(suggestionList(ctx.data.comments), header(ctx), main);
   if (
     latestRecordAt(ctx.data.snapshots, ctx.data.transfers) === null &&
@@ -69,7 +68,7 @@ function drawView(ctx: RenderContext): void {
     main.append(el("p", `empty pt-4 ${MUTED}`, "まだ記録がありません"));
     return;
   }
-  main.append(monthNav(ctx), activeSection(ctx));
+  main.append(activeSection(ctx));
 }
 
 class DashboardView {

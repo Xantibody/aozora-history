@@ -1,6 +1,6 @@
 import { BORDER, INK, INK_DECOR, INK_SOFT, INK_WEAK, SURFACE, el } from "./dom.ts";
 import { attachSwipeDelete, confirmDeleteTransfer, transferDetail } from "./swipe-delete.ts";
-import { changeCommentKey, transferCommentKey } from "../domain/ledger.ts";
+import { commentKeyOf, memoField } from "./memo-field.ts";
 import { formatSigned, formatTime, formatYen } from "./format.ts";
 import type { LogEntry } from "../domain/log.ts";
 import type { MemoField } from "./memo-field.ts";
@@ -10,9 +10,8 @@ import type { TransferRecord } from "../domain/ledger.ts";
 import { icon } from "./icons.ts";
 import { isDetected } from "../domain/reconcile.ts";
 import { logTitle } from "./log-title.ts";
-import { memoField } from "./memo-field.ts";
 
-export type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" }>;
+export type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" | "statement" }>;
 
 /** 行の文字より一回り小さくして、主役である取引の内容に譲る */
 const DELETE_ICON_SIZE = 15;
@@ -39,13 +38,18 @@ function deleteButton(ctx: RenderContext, transfer: TransferRecord): HTMLElement
 // 可変幅だと桁数で右端がずれるため、固定幅で右揃えにする
 const AMOUNT = "amount w-[120px] shrink-0 text-right text-[17px] font-bold tabular-nums";
 
+/** 極性は符号とインクの濃淡で示す。色で意味を持つのは口座色だけ */
+function signedAmount(amount: number): HTMLElement {
+  return el("span", `${AMOUNT} ${amount > 0 ? INK : INK_SOFT}`, formatSigned(amount));
+}
+
 function transactionAmount(entry: TransactionEntry): HTMLElement {
   if (entry.kind === "transfer") {
     return el("span", `${AMOUNT} ${INK}`, formatYen(entry.transfer.amount));
   }
-  // 極性は符号とインクの濃淡で示す。色で意味を持つのは口座色だけ
-  const polarity = entry.change.externalDelta > 0 ? INK : INK_SOFT;
-  return el("span", `${AMOUNT} ${polarity}`, formatSigned(entry.change.externalDelta));
+  return signedAmount(
+    entry.kind === "statement" ? entry.statement.amount : entry.change.externalDelta,
+  );
 }
 
 /**
@@ -91,11 +95,9 @@ function attachMemoOpen(row: HTMLElement, memo: MemoField, swipe: SwipeHandle | 
   });
 }
 
-/** 振替・外部入出金の1件。1取引=1カードにして、行の切れ目を面で示す */
+/** 振替・外部入出金・明細の1件。1取引=1カードにして、行の切れ目を面で示す */
 export function transactionRow(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
-  const key =
-    entry.kind === "transfer" ? transferCommentKey(entry.transfer) : changeCommentKey(entry.change);
-  const memo = memoField(ctx, key);
+  const memo = memoField(ctx, commentKeyOf(entry));
   // スワイプ削除のパネルを覆えるよう、行の中身はカードと同じ面に載せて滑らせる
   const slider = el("div", `swipe-slider relative transition-transform duration-150 ${SURFACE}`);
   slider.append(transactionMain(ctx, entry, memo));

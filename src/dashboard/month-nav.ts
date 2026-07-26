@@ -1,6 +1,7 @@
-import { FINE_PRINT, INPUT, LINK_BUTTON, el } from "./dom.ts";
+import { FINE_PRINT, INK, INK_SOFT, INPUT, LINK_BUTTON, el } from "./dom.ts";
 import { applyBounds, currentMonth, shiftMonth } from "./period.ts";
 import type { RenderContext } from "./context.ts";
+import { icon } from "./icons.ts";
 
 function selectMonth(ctx: RenderContext, value: string): void {
   ctx.state.monthValue = value;
@@ -10,17 +11,20 @@ function selectMonth(ctx: RenderContext, value: string): void {
   ctx.draw();
 }
 
-const ROUND_BUTTON =
-  "shrink-0 cursor-pointer rounded-full bg-white text-[13px] text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 max-sm:h-11 max-sm:w-11 sm:h-9 sm:w-9 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-800 dark:hover:bg-slate-800";
+/** タップ標的は44px以上を確保しつつ、見た目の面は28pxに収めて主役を譲る */
+const STEP_BUTTON =
+  `flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-transparent ${INK_SOFT} ` +
+  "transition-colors hover:bg-[#eef1f5] focus-visible:outline-2 focus-visible:outline-offset-2 " +
+  "focus-visible:outline-sky-500 max-sm:h-11 max-sm:w-11 sm:h-7 sm:w-7 dark:hover:bg-[#1e2733]";
+
+const STEP_ICON_SIZE = 16;
 
 function monthStepButton(ctx: RenderContext, delta: number): HTMLElement {
   const forward = delta > 0;
-  const button = el(
-    "button",
-    `${forward ? "month-next" : "month-prev"} ${ROUND_BUTTON}`,
-    forward ? "▶" : "◀",
-  );
+  const button = el("button", `${forward ? "month-next" : "month-prev"} ${STEP_BUTTON}`);
+  button.append(icon(forward ? "chevron-right" : "chevron-left", STEP_ICON_SIZE));
   button.title = forward ? "次の月" : "前の月";
+  button.setAttribute("aria-label", button.title);
   button.addEventListener("click", () => {
     const base = ctx.state.monthValue === "" ? currentMonth() : ctx.state.monthValue;
     selectMonth(ctx, shiftMonth(base, delta));
@@ -31,7 +35,8 @@ function monthStepButton(ctx: RenderContext, delta: number): HTMLElement {
 function monthInputEl(ctx: RenderContext): HTMLInputElement {
   const input = document.createElement("input");
   input.className =
-    "month-input flex-1 cursor-pointer border-none bg-transparent text-center text-[15px] font-semibold tabular-nums focus:outline-2 focus:outline-sky-500 sm:max-w-44 sm:flex-none";
+    `month-input w-[9.5rem] cursor-pointer border-none bg-transparent text-center text-[13px] font-bold tabular-nums ${INK} ` +
+    "focus:outline-2 focus:outline-sky-500";
   input.type = "month";
   input.name = "period-month";
   input.value = ctx.state.monthValue;
@@ -94,9 +99,12 @@ function periodDetail(ctx: RenderContext): HTMLElement {
   return detail;
 }
 
-/** ◀ 月 ▶ のナビ。詳細指定を開くと日付範囲の入力に切り替えられる */
+/**
+ * ◀ 月 ▶ のナビ。ヘッダーの1段目に置く。独立した段にすると
+ * 合計・鮮度・タブと合わせて4段積みになり、本文が押し下げられるため
+ */
 export function monthNav(ctx: RenderContext): HTMLElement {
-  const node = el("div", "period flex flex-wrap items-center gap-x-1 gap-y-2 pt-3 pb-2");
+  const node = el("div", "period flex flex-wrap items-center gap-x-1 gap-y-2");
   node.append(
     monthStepButton(ctx, -1),
     monthInputEl(ctx),

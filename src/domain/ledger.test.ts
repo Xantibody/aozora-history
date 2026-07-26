@@ -572,7 +572,9 @@ describe("sortTransfersDesc", () => {
 
 describe("logEntries", () => {
   it("記録がなければ空を返す", () => {
-    expect(logEntries([], [])).toStrictEqual([]);
+    expect(
+      logEntries({ snapshots: [], transfers: [], statements: [], dayStart: () => null }),
+    ).toStrictEqual([]);
   });
 
   it("振替・外部入出金・残高記録を新しい順の1本のログに統合する", () => {
@@ -581,7 +583,12 @@ describe("logEntries", () => {
     const s2 = snapshot(40, accounts(["お財布", 80], ["積立", 80]));
     const record = transfer({ at: 20, from: ["100", "お財布"], to: ["101", "積立"], amount: 1000 });
 
-    const entries = logEntries([s1, s2], [record]);
+    const entries = logEntries({
+      snapshots: [s1, s2],
+      transfers: [record],
+      statements: [],
+      dayStart: () => null,
+    });
 
     expect(entries.map((entry) => [entry.kind, entry.at])).toStrictEqual([
       ["external", 40],
@@ -595,7 +602,12 @@ describe("logEntries", () => {
   it("スナップショットのエントリは全口座の合計残高を持つ", () => {
     const snap = snapshot(10, accounts(["お財布", 100], ["積立", 50]));
 
-    const entries = logEntries([snap], []);
+    const entries = logEntries({
+      snapshots: [snap],
+      transfers: [],
+      statements: [],
+      dayStart: () => null,
+    });
 
     expect(entries).toStrictEqual([{ kind: "snapshot", at: 10, snapshot: snap, total: 150 }]);
   });
@@ -605,7 +617,12 @@ describe("logEntries", () => {
     const s2 = snapshot(40, accounts(["お財布", 90], ["積立", 60]));
     const record = transfer({ at: 20, from: ["100", "お財布"], to: ["101", "積立"], amount: 10 });
 
-    const entries = logEntries([s1, s2], [record]);
+    const entries = logEntries({
+      snapshots: [s1, s2],
+      transfers: [record],
+      statements: [],
+      dayStart: () => null,
+    });
 
     expect(entries.filter((entry) => entry.kind === "external")).toStrictEqual([]);
   });
@@ -615,7 +632,12 @@ describe("logEntries", () => {
     const s2 = snapshot(20, accounts(["お財布", 100]));
     const record = transfer({ at: 20, from: ["100", "お財布"], to: ["999", "外"], amount: 0 });
 
-    const entries = logEntries([s1, s2], [record]);
+    const entries = logEntries({
+      snapshots: [s1, s2],
+      transfers: [record],
+      statements: [],
+      dayStart: () => null,
+    });
 
     expect(entries.map((entry) => entry.kind)).toStrictEqual(["transfer", "snapshot", "snapshot"]);
   });

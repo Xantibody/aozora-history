@@ -1,11 +1,10 @@
+import { BORDER, INK_SOFT, MUTED, SELECTED, SURFACE, el, signedCell } from "./dom.ts";
 import type { BalanceChange, TransferRecord } from "../domain/ledger.ts";
-import { INK_SOFT, MUTED, el, signedCell } from "./dom.ts";
 import type { LogFilter, RenderContext, UiState } from "./context.ts";
+import { dayStart, inPeriod } from "./period.ts";
 import { formatDayHeading, localDayKey } from "./format.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
 import type { LogEntry } from "../domain/log.ts";
-import { accountRefs } from "../domain/ledger.ts";
-import { inPeriod } from "./period.ts";
 import { logEntries } from "../domain/log.ts";
 
 const FILTERS: { key: LogFilter; label: string }[] = [
@@ -17,9 +16,8 @@ const FILTERS: { key: LogFilter; label: string }[] = [
 
 const CHIP_BASE =
   "min-h-9 shrink-0 cursor-pointer rounded-full px-3.5 text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500";
-const CHIP_ON = "bg-slate-900 font-semibold text-white dark:bg-sky-400 dark:text-slate-950";
-const CHIP_OFF =
-  "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-800 dark:hover:bg-slate-800";
+const CHIP_ON = `font-bold ${SELECTED}`;
+const CHIP_OFF = `${SURFACE} ${BORDER} ${INK_SOFT} hover:bg-[#f6f7f9] dark:hover:bg-[#1a222c]`;
 
 function filterChip(ctx: RenderContext, def: { key: LogFilter; label: string }): HTMLElement {
   const active = ctx.state.logFilter === def.key;
@@ -36,32 +34,11 @@ function filterChip(ctx: RenderContext, def: { key: LogFilter; label: string }):
   return chip;
 }
 
-// 口座での絞り込み。チップ列の見た目に合わせたセレクト
-function accountFilterSelect(ctx: RenderContext): HTMLSelectElement {
-  const select = document.createElement("select");
-  select.className = `account-filter ${CHIP_BASE} appearance-none ${
-    ctx.state.filterAccountId === null ? CHIP_OFF : `active ${CHIP_ON}`
-  }`;
-  select.name = "account-filter";
-  select.setAttribute("aria-label", "口座で絞り込み");
-  select.append(new Option("口座 ▾", ""));
-  for (const account of accountRefs(ctx.data.snapshots, ctx.ledger.transfers)) {
-    select.append(new Option(account.name, account.id));
-  }
-  select.value = ctx.state.filterAccountId ?? "";
-  select.addEventListener("change", () => {
-    ctx.state.filterAccountId = select.value === "" ? null : select.value;
-    ctx.draw();
-  });
-  return select;
-}
-
 function filterChips(ctx: RenderContext): HTMLElement {
-  const row = el("div", "log-filters flex gap-1.5 overflow-x-auto pb-2");
+  const row = el("div", "log-filters flex gap-1.5 overflow-x-auto pb-3.5");
   for (const def of FILTERS) {
     row.append(filterChip(ctx, def));
   }
-  row.append(accountFilterSelect(ctx));
   return row;
 }
 
@@ -89,12 +66,29 @@ function matchesExternal(state: UiState, change: BalanceChange): boolean {
   return state.filterAccountId === null || change.accountId === state.filterAccountId;
 }
 
+/**
+ * 代表口座の明細。つかいわけ口座ではないので、口座で絞っている間は出さない。
+ * 入金・出金の絞り込みは符号で判断する
+ */
+function matchesStatement(state: UiState, amount: number): boolean {
+  if (state.logFilter === "transfer" || state.filterAccountId !== null) {
+    return false;
+  }
+  if (state.logFilter === "in") {
+    return amount > 0;
+  }
+  return state.logFilter === "out" ? amount < 0 : true;
+}
+
 function matchesLog(state: UiState, entry: LogEntry): boolean {
   if (!inPeriod(state, entry.at)) {
     return false;
   }
   if (entry.kind === "transfer") {
     return matchesTransfer(state, entry.transfer);
+  }
+  if (entry.kind === "statement") {
+    return matchesStatement(state, entry.statement.amount);
   }
   if (entry.kind === "external") {
     return matchesExternal(state, entry.change);
@@ -103,15 +97,22 @@ function matchesLog(state: UiState, entry: LogEntry): boolean {
   return state.logFilter === "all" && state.filterAccountId === null;
 }
 
-// 日計は外部入出金の合計のみ(振替は口座間移動なので合計に含めない)
+/** 口座の外と出入りした額だけ。振替は口座間の移動なので日計に含めない */
+function dayFlow(entry: LogEntry): number {
+  if (entry.kind === "external") {
+    return entry.change.externalDelta;
+  }
+  return entry.kind === "statement" ? entry.statement.amount : 0;
+}
+
 function externalDayTotals(entries: LogEntry[]): Map<string, number> {
   const totals = new Map<string, number>();
   for (const entry of entries) {
-    if (entry.kind !== "external") {
-      continue;
+    const flow = dayFlow(entry);
+    if (flow !== 0) {
+      const key = localDayKey(entry.at);
+      totals.set(key, (totals.get(key) ?? 0) + flow);
     }
-    const key = localDayKey(entry.at);
-    totals.set(key, (totals.get(key) ?? 0) + entry.change.externalDelta);
   }
   return totals;
 }
@@ -162,9 +163,12 @@ function dayCard(ctx: RenderContext, entries: LogEntry[]): HTMLElement {
 export function logSection(ctx: RenderContext): HTMLElement {
   const node = el("section", "log");
   node.append(filterChips(ctx));
-  const entries = logEntries(ctx.data.snapshots, ctx.ledger.transfers).filter((entry) =>
-    matchesLog(ctx.state, entry),
-  );
+  const entries = logEntries({
+    snapshots: ctx.data.snapshots,
+    transfers: ctx.ledger.transfers,
+    statements: ctx.data.statements,
+    dayStart,
+  }).filter((entry) => matchesLog(ctx.state, entry));
   if (entries.length === 0) {
     node.append(el("p", `empty mt-2 ${MUTED}`, "まだ記録がありません"));
     return node;
