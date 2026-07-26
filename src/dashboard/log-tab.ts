@@ -1,5 +1,5 @@
 import type { BalanceChange, TransferRecord } from "../domain/ledger.ts";
-import { CARD, MUTED, el, signedCell } from "./dom.ts";
+import { INK_SOFT, MUTED, el, signedCell } from "./dom.ts";
 import type { LogFilter, RenderContext, UiState } from "./context.ts";
 import { formatDayHeading, localDayKey } from "./format.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
@@ -136,33 +136,27 @@ function groupByDay(entries: LogEntry[]): DayGroup[] {
   return groups;
 }
 
+/** 日の見出し。カードの外に置き、その日の取引がどこからどこまでかを示す */
 function dayHeadingEl(group: DayGroup, total: number | undefined): HTMLElement {
-  // 右余白はカード内の金額列の右端に合わせる(モバイル: pr-3、デスクトップ:
-  // pr-3 + 削除ボタン列 w-6 + gap-3 = pr-12)
-  const heading = el(
-    "div",
-    "day-heading flex items-baseline justify-between pt-1.5 pb-1 pr-3 pl-0.5 sm:pr-12",
-  );
+  const heading = el("div", "day-heading flex items-baseline justify-between px-1 pb-2.5");
   heading.append(
-    el("span", "text-xs font-bold text-slate-500 dark:text-slate-400", formatDayHeading(group.at)),
+    el("span", `text-xs font-bold tracking-[.03em] ${INK_SOFT}`, formatDayHeading(group.at)),
   );
   if (total !== undefined) {
     const cell = signedCell(total);
-    cell.classList.add("day-total", "text-xs", "font-semibold", "tabular-nums");
+    cell.classList.add("day-total", "text-xs", "font-bold");
     heading.append(cell);
   }
   return heading;
 }
 
+/** 1取引=1カード。カードの切れ目が取引の切れ目になり、行の境目を罫線で探さずに済む */
 function dayCard(ctx: RenderContext, entries: LogEntry[]): HTMLElement {
-  const card = el(
-    "div",
-    `day-card mb-2 divide-y divide-slate-100 overflow-hidden ${CARD} dark:divide-slate-800`,
-  );
+  const list = el("div", "day-card mb-4 flex flex-col gap-2");
   for (const entry of entries) {
-    card.append(entry.kind === "snapshot" ? snapshotRow(entry) : transactionRow(ctx, entry));
+    list.append(entry.kind === "snapshot" ? snapshotRow(entry) : transactionRow(ctx, entry));
   }
-  return card;
+  return list;
 }
 
 export function logSection(ctx: RenderContext): HTMLElement {
