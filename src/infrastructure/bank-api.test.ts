@@ -104,7 +104,7 @@ describe("BankApiClient", () => {
 
     expect(calls[0].url).toBe(
       "https://bank.gmo-aozora.com/v1/sp-accounts/ordinary-deposits-statement" +
-        "?spAccountId=133331&limit=100&offset=0&depositOrderType=2",
+        "?spAccountId=133331&currency=JPY&limit=100&offset=0&depositOrderType=2",
     );
     expect(entries?.[0].accountId).toBe("133331");
   });

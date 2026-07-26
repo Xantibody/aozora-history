@@ -63,9 +63,11 @@ export function sortStatementsDesc(statements: StatementEntry[]): StatementEntry
 
 /**
  * 明細の最新の残高が、その口座の残高と一致するか。
- * つかいわけ口座の明細APIは口座を指定するパラメータ名を銀行サイトのコードから
- * 確定できていない。パラメータ名が違えば別口座や代表口座の明細が返ってくるため、
- * 取り込む前にこの検算を通し、合わない明細は捨てて台帳を汚さないようにする
+ *
+ * つかいわけ口座の明細を取る画面は銀行サイトのメニューからの動線が公開されて
+ * おらず、いつ仕様が変わっても不思議はない。口座の指定が効かなくなって別口座や
+ * 全口座の明細が返るようになっても気づけるよう、取り込む前にこの検算を通し、
+ * 合わない明細は捨てて台帳を汚さないようにする
  */
 export function statementsExplainBalance(statements: StatementEntry[], balance: number): boolean {
   const [latest] = sortStatementsDesc(statements);
