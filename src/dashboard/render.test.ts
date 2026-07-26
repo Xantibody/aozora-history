@@ -1456,6 +1456,7 @@ describe("設定画面 (デバッグ)", () => {
 
   const report = {
     at: Date.UTC(2026, 6, 26, 6, 41),
+    build: "2026-07-26 15:30:00",
     skipped: false,
     balances: { count: 3, saved: false },
     statements: { count: 100, saved: true },
@@ -1497,11 +1498,21 @@ describe("設定画面 (デバッグ)", () => {
     ]);
   });
 
-  it("エラーがあればそのまま出す", () => {
-    render(root, data({ debugMode: true, lastCollect: { ...report, errors: ["HTTP 400"] } }));
+  it("エラーはstackごとそのまま出す", () => {
+    const stack = "GET balances/sp-accounts が HTTP 403\n    at get (content.js:812:15)";
+    render(root, data({ debugMode: true, lastCollect: { ...report, errors: [stack] } }));
     openSettings();
 
-    expect(root.querySelector(".collect-error")!.textContent).toBe("HTTP 400");
+    expect(root.querySelector(".collect-error")!.textContent).toBe(stack);
+  });
+
+  it("どのビルドが取り込んだのかを出す(入れ替えたつもりの取り違えを防ぐ)", () => {
+    render(root, data({ debugMode: true, lastCollect: report }));
+    openSettings();
+
+    expect(root.querySelector(".build-stamp")!.textContent).toContain(
+      "取り込み 2026-07-26 15:30:00",
+    );
   });
 
   it("見送った回はその旨だけ出す", () => {

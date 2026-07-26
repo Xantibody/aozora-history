@@ -16,6 +16,8 @@ export interface CollectStat {
 export interface CollectReport {
   /** 取り込みを試みた時刻 */
   at: number;
+  /** 取り込んだ content script のビルド時刻。入れ替えたつもりの確認に使う */
+  build: string;
   /** 間隔が空いていないなどで問い合わせ自体を見送った */
   skipped: boolean;
   balances: CollectStat;

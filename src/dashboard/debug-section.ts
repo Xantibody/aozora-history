@@ -1,6 +1,7 @@
 import { BTN_SECONDARY, FINE_PRINT, MUTED, el, section } from "./dom.ts";
 import type { CollectReport, CollectStat } from "../domain/diagnostics.ts";
 import type { RenderContext } from "./context.ts";
+import { buildStamp } from "../build.ts";
 import { describeStat } from "../domain/diagnostics.ts";
 import { formatDateTime } from "./format.ts";
 
@@ -59,9 +60,19 @@ function lastCollectBody(report: CollectReport | null): HTMLElement[] {
   return statRows(report);
 }
 
+/**
+ * どのビルドが取り込んだのか。拡張を入れ替えたつもりでタブに古いコードが
+ * 残っていると、直したはずの挙動が直らず切り分けが的外れになる
+ */
+function buildRow(report: CollectReport | null): HTMLElement {
+  const dashboard = `画面 ${buildStamp}`;
+  const collected = report === null ? "" : ` · 取り込み ${report.build}`;
+  return el("p", `build-stamp ${FINE_PRINT}`, `ビルド: ${dashboard}${collected}`);
+}
+
 function lastCollectView(report: CollectReport | null): HTMLElement {
   const node = el("div", "last-collect mt-1");
-  node.append(...lastCollectBody(report));
+  node.append(buildRow(report), ...lastCollectBody(report));
   return node;
 }
 

@@ -2,6 +2,7 @@ import { HistoryStore, LAST_COLLECTED_KEY } from "./infrastructure/storage.ts";
 import { BankApiClient } from "./infrastructure/bank-api.ts";
 import type { BankFetchLike } from "./infrastructure/bank-api.ts";
 import type { CollectReport } from "./domain/diagnostics.ts";
+import { buildStamp } from "./build.ts";
 import { collectFromBank } from "./infrastructure/collector.ts";
 import { errorMessages } from "./domain/diagnostics.ts";
 import { setupContentScript } from "./content-script.ts";
@@ -45,6 +46,7 @@ async function collect(): Promise<unknown> {
   const result = await collectFromBank(store, client);
   const report: CollectReport = {
     at: Date.now(),
+    build: buildStamp,
     ...result,
     errors: errorMessages(result.errors),
   };
