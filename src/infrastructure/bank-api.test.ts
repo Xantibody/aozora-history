@@ -42,6 +42,25 @@ const statementBody = {
   ],
 };
 
+const autoTransferBody = {
+  queryDatetime: "2026-07-26T14:59:00+09:00",
+  spAccountAutoTransferList: [
+    {
+      spAutoTransferId: "9001",
+      applyDate: "20260721",
+      currency: "JPY",
+      debitSpAccountId: "133331",
+      debitSpAccountName: "01: お財布",
+      creditSpAccountId: "133805",
+      creditSpAccountName: "03: 支払い箱",
+      amount: "80000",
+      nextTransferDate: "20260826",
+      transferCycle: "1",
+      transferDayMonth: 26,
+    },
+  ],
+};
+
 describe("BankApiClient", () => {
   it("つかいわけ口座の残高を同一オリジンのAPIから取る", async () => {
     const { calls, fetchFn } = recorder([{ body: balancesBody }]);
@@ -73,6 +92,38 @@ describe("BankApiClient", () => {
         amount: -173_000,
         balance: 907_425,
         remark: "振込 ラクテン",
+      },
+    ]);
+  });
+
+  it("つかいわけ口座の入出金明細を口座を指定して取り、明細に口座IDを付ける", async () => {
+    const { calls, fetchFn } = recorder([{ body: statementBody }]);
+    const client = new BankApiClient(fetchFn, () => "");
+
+    const entries = await client.spAccountStatement("133331", 100);
+
+    expect(calls[0].url).toBe(
+      "https://bank.gmo-aozora.com/v1/sp-accounts/ordinary-deposits-statement" +
+        "?spAccountId=133331&currency=JPY&limit=100&offset=0&depositOrderType=2",
+    );
+    expect(entries?.[0].accountId).toBe("133331");
+  });
+
+  it("定額自動振替の設定を取る", async () => {
+    const { calls, fetchFn } = recorder([{ body: autoTransferBody }]);
+    const client = new BankApiClient(fetchFn, () => "");
+
+    const settings = await client.autoTransfers(100);
+
+    expect(calls[0].url).toBe(
+      "https://bank.gmo-aozora.com/v1/sp-accounts/auto-transfer?limit=100&offset=0",
+    );
+    expect(settings).toStrictEqual([
+      {
+        id: "9001",
+        from: { id: "133331", name: "01: お財布" },
+        to: { id: "133805", name: "03: 支払い箱" },
+        amount: 80_000,
       },
     ]);
   });

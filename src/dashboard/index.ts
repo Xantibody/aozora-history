@@ -1,7 +1,13 @@
+import {
+  AUTO_TRANSFERS_KEY,
+  HistoryStore,
+  LAST_SYNCED_KEY,
+  LEDGER_KEYS,
+} from "../infrastructure/storage.ts";
 import type { DashboardData, DashboardHandlers } from "./render.ts";
-import { HistoryStore, LAST_SYNCED_KEY, LEDGER_KEYS } from "../infrastructure/storage.ts";
 import { R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
 import { transferCommentKey, transferKey } from "../domain/ledger.ts";
+import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { FetchLike } from "../infrastructure/r2sync.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { TransferRecord } from "../domain/ledger.ts";
@@ -12,17 +18,35 @@ import { renderDashboard } from "./render.ts";
 const fetchFn: FetchLike = (url, init) => fetch(url, init);
 
 async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
-  const [snapshots, transfers, statements, comments, deletions, syncConfig, lastSyncedAt] =
-    await Promise.all([
-      store.loadSnapshots(),
-      store.loadTransfers(),
-      store.loadStatements(),
-      store.loadComments(),
-      store.loadDeletions(),
-      store.loadSyncConfig(),
-      store.loadLastSyncedAt(),
-    ]);
-  return { snapshots, transfers, statements, comments, deletions, syncConfig, lastSyncedAt };
+  const [
+    snapshots,
+    transfers,
+    statements,
+    autoTransfers,
+    comments,
+    deletions,
+    syncConfig,
+    lastSyncedAt,
+  ] = await Promise.all([
+    store.loadSnapshots(),
+    store.loadTransfers(),
+    store.loadStatements(),
+    store.loadAutoTransfers(),
+    store.loadComments(),
+    store.loadDeletions(),
+    store.loadSyncConfig(),
+    store.loadLastSyncedAt(),
+  ]);
+  return {
+    snapshots,
+    transfers,
+    statements,
+    autoTransfers,
+    comments,
+    deletions,
+    syncConfig,
+    lastSyncedAt,
+  };
 }
 
 function currentLedger(data: DashboardData): LedgerData {
@@ -117,18 +141,31 @@ interface AppContext {
   redraw: () => void;
 }
 
+interface StoredState {
+  ledger: LedgerData;
+  autoTransfers: AutoTransferSetting[];
+  syncedAt: number | null;
+}
+
+function sameAsShown(app: AppContext, stored: StoredState): boolean {
+  return (
+    stored.syncedAt === app.data.lastSyncedAt &&
+    JSON.stringify(stored.ledger) === JSON.stringify(currentLedger(app.data)) &&
+    JSON.stringify(stored.autoTransfers) === JSON.stringify(app.data.autoTransfers)
+  );
+}
+
 async function refreshFromStorage(app: AppContext): Promise<void> {
-  const [ledger, syncedAt] = await Promise.all([
+  const [ledger, autoTransfers, syncedAt] = await Promise.all([
     app.store.loadLedger(),
+    app.store.loadAutoTransfers(),
     app.store.loadLastSyncedAt(),
   ]);
-  const unchanged =
-    syncedAt === app.data.lastSyncedAt &&
-    JSON.stringify(ledger) === JSON.stringify(currentLedger(app.data));
-  if (unchanged) {
+  if (sameAsShown(app, { ledger, autoTransfers, syncedAt })) {
     return;
   }
   applyLedger(app.data, ledger);
+  app.data.autoTransfers = autoTransfers;
   app.data.lastSyncedAt = syncedAt;
   // コメント入力中に再描画するとフォーカスを奪うため見送る(dataには反映済み)
   const active = document.activeElement;
@@ -144,7 +181,8 @@ function watchStorage(app: AppContext): void {
     if (areaName !== "local") {
       return;
     }
-    if (!LEDGER_KEYS.some((key) => key in changes) && !(LAST_SYNCED_KEY in changes)) {
+    const watched = [...LEDGER_KEYS, LAST_SYNCED_KEY, AUTO_TRANSFERS_KEY];
+    if (!watched.some((key) => key in changes)) {
       return;
     }
     void refreshFromStorage(app);

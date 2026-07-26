@@ -1,5 +1,11 @@
-import { parseOrdinaryStatement, parseSpAccountBalances } from "../domain/api-parser.ts";
+import {
+  parseAutoTransfers,
+  parseOrdinaryStatement,
+  parseSpAccountBalances,
+  parseSpAccountStatement,
+} from "../domain/api-parser.ts";
 import type { AccountsSnapshot } from "../domain/parser.ts";
+import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 
 export const BANK_ORIGIN = "https://bank.gmo-aozora.com";
@@ -9,6 +15,9 @@ const API_BASE = "/v1/";
 
 /** 明細の並び順コード。2 = 降順(新しい順) */
 const ORDER_DESC = "2";
+
+/** つかいわけ口座の明細は通貨を指定して取る。この拡張が扱うのは円普通預金だけ */
+const JPY = "JPY";
 
 /** APIが1回に返せる明細の上限。銀行サイトの表示件数の選択肢に合わせている */
 export const MAX_STATEMENT_LIMIT = 100;
@@ -104,5 +113,33 @@ export class BankApiClient {
       depositOrderType: ORDER_DESC,
     });
     return parseOrdinaryStatement(json);
+  }
+
+  /**
+   * つかいわけ口座(円普通預金)の入出金明細を新しい順に取る。
+   * 銀行サイトの画面 S015「つかいわけ口座 入出金明細」と同じパラメータで呼ぶ。
+   * この画面はメニューからの動線が公開されていないが、APIとルートは生きている
+   */
+  public async spAccountStatement(
+    accountId: string,
+    limit: number,
+  ): Promise<StatementEntry[] | null> {
+    const json = await this.get("sp-accounts/ordinary-deposits-statement", {
+      spAccountId: accountId,
+      currency: JPY,
+      limit: String(Math.min(limit, MAX_STATEMENT_LIMIT)),
+      offset: "0",
+      depositOrderType: ORDER_DESC,
+    });
+    return parseSpAccountStatement(json, accountId);
+  }
+
+  /** つかいわけ口座の定額自動振替の設定一覧 */
+  public async autoTransfers(limit: number): Promise<AutoTransferSetting[] | null> {
+    const json = await this.get("sp-accounts/auto-transfer", {
+      limit: String(Math.min(limit, MAX_STATEMENT_LIMIT)),
+      offset: "0",
+    });
+    return parseAutoTransfers(json);
   }
 }

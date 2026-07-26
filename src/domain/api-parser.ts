@@ -1,4 +1,5 @@
 import type { AccountsSnapshot, SubAccount } from "./parser.ts";
+import type { AutoTransferSetting } from "./auto-transfer.ts";
 import type { StatementEntry } from "./statement.ts";
 
 /**
@@ -128,4 +129,55 @@ export function parseOrdinaryStatement(json: unknown): StatementEntry[] | null {
     entries.push(entry);
   }
   return entries;
+}
+
+/**
+ * GET /v1/sp-accounts/ordinary-deposits-statement のレスポンス。
+ * 形は代表口座版と同じで、どの口座の明細かはリクエスト側でしか分からないため付け直す
+ */
+export function parseSpAccountStatement(json: unknown, accountId: string): StatementEntry[] | null {
+  const entries = parseOrdinaryStatement(json);
+  if (entries === null) {
+    return null;
+  }
+  const scoped: StatementEntry[] = [];
+  for (const entry of entries) {
+    scoped.push({ ...entry, accountId });
+  }
+  return scoped;
+}
+
+function toAutoTransfer(value: unknown): AutoTransferSetting | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = toText(value.spAutoTransferId);
+  const fromId = toText(value.debitSpAccountId);
+  const toId = toText(value.creditSpAccountId);
+  const amount = toAmount(value.amount);
+  if (id === null || fromId === null || toId === null || amount === null) {
+    return null;
+  }
+  return {
+    id,
+    from: { id: fromId, name: toText(value.debitSpAccountName) ?? "" },
+    to: { id: toId, name: toText(value.creditSpAccountName) ?? "" },
+    amount,
+  };
+}
+
+/** GET /v1/sp-accounts/auto-transfer のレスポンス。取れなければnull */
+export function parseAutoTransfers(json: unknown): AutoTransferSetting[] | null {
+  if (!isRecord(json) || !Array.isArray(json.spAccountAutoTransferList)) {
+    return null;
+  }
+  const settings: AutoTransferSetting[] = [];
+  for (const item of json.spAccountAutoTransferList) {
+    const setting = toAutoTransfer(item);
+    if (setting === null) {
+      return null;
+    }
+    settings.push(setting);
+  }
+  return settings;
 }

@@ -56,7 +56,7 @@ function workspaceCard(summary: WorkspaceSummary): HTMLElement {
 
 export function accountsSection(ctx: RenderContext): HTMLElement {
   const node = el("section", "accounts pt-1");
-  const summaries = workspaceSummaries(ctx.data.snapshots, ctx.data.transfers, (ms) =>
+  const summaries = workspaceSummaries(ctx.data.snapshots, ctx.ledger.transfers, (ms) =>
     inPeriod(ctx.state, ms),
   );
   if (summaries.length === 0) {

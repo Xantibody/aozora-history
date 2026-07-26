@@ -1,12 +1,16 @@
 import type { BalanceSnapshot, Comments, TransferRecord } from "../domain/ledger.ts";
+import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
+import type { Reconciled } from "../domain/reconcile.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
 
 export interface DashboardData {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
-  /** 代表口座(普通預金)の入出金明細。銀行APIから取得したもの */
+  /** 代表口座とつかいわけ口座の入出金明細。銀行APIから取得したもの */
   statements: StatementEntry[];
+  /** つかいわけ口座の定額自動振替の設定。銀行APIから取得したもの */
+  autoTransfers: AutoTransferSetting[];
   comments: Comments;
   deletions: Record<string, number>;
   syncConfig: SyncConfig | null;
@@ -69,6 +73,12 @@ export function initialUiState(): UiState {
 export interface RenderContext {
   root: HTMLElement;
   data: DashboardData;
+  /**
+   * 差額を拾い直した台帳。集計と表示はこちらを使う。
+   * dataは保存された記録そのもので、定額自動振替のように拡張が検知できない
+   * 口座間の移動が入っていないため、そのまま集計すると収支が合わない
+   */
+  ledger: Reconciled;
   handlers: DashboardHandlers;
   state: UiState;
   now: () => number;

@@ -1,5 +1,6 @@
 import { COLLECT_INTERVAL_MS, collectFromBank, shouldCollect } from "./collector.ts";
 import { describe, expect, it } from "vitest";
+import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { BankApiClient } from "./bank-api.ts";
 import { HistoryStore } from "./storage.ts";
 import type { StatementEntry } from "../domain/statement.ts";
@@ -33,11 +34,34 @@ const statements: StatementEntry[] = [
   },
 ];
 
+/** つかいわけ口座「01: お財布」の明細。最新の残高がスナップショットと一致している */
+const accountStatements: StatementEntry[] = [
+  {
+    entryNumber: "0001",
+    valueDate: "2026-07-24",
+    amount: -5000,
+    balance: 129_392,
+    remark: "カード引落",
+    accountId: "133331",
+  },
+];
+
+const autoTransfers: AutoTransferSetting[] = [
+  {
+    id: "9001",
+    from: { id: "133331", name: "01: お財布" },
+    to: { id: "133805", name: "03: 支払い箱" },
+    amount: 80_000,
+  },
+];
+
 /** 成否を差し替えられる最小のAPIクライアント */
 function fakeClient(overrides: Partial<BankApiClient> = {}): BankApiClient {
   return {
     spAccountBalances: () => Promise.resolve(snapshot),
     ordinaryStatement: () => Promise.resolve(statements),
+    spAccountStatement: () => Promise.resolve(accountStatements),
+    autoTransfers: () => Promise.resolve(autoTransfers),
     ...overrides,
   } as BankApiClient;
 }
@@ -61,7 +85,7 @@ describe("shouldCollect", () => {
 });
 
 describe("collectFromBank", () => {
-  it("残高スナップショットと入出金明細を両方記録する", async () => {
+  it("残高スナップショット・明細・定額自動振替の設定をまとめて記録する", async () => {
     const store = new HistoryStore(fakeStorage(), () => 42);
 
     const result = await collectFromBank(store, fakeClient(), () => 42);
@@ -70,10 +94,51 @@ describe("collectFromBank", () => {
       skipped: false,
       snapshotSaved: true,
       statementsSaved: true,
+      accountStatementsSaved: true,
+      autoTransfersSaved: true,
       errors: [],
     });
     await expect(store.loadSnapshots()).resolves.toStrictEqual([{ takenAt: 42, ...snapshot }]);
+    await expect(store.loadStatements()).resolves.toStrictEqual([
+      ...statements,
+      ...accountStatements,
+    ]);
+    await expect(store.loadAutoTransfers()).resolves.toStrictEqual(autoTransfers);
+  });
+
+  it("残高が合わないつかいわけ口座の明細は取り込まない(別口座の明細が返っている)", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 42);
+    const client = fakeClient({
+      spAccountStatement: () =>
+        Promise.resolve([{ ...accountStatements[0], balance: 999_999 }] as StatementEntry[]),
+    });
+
+    const result = await collectFromBank(store, client, () => 42);
+
+    expect(result.accountStatementsSaved).toBe(false);
     await expect(store.loadStatements()).resolves.toStrictEqual(statements);
+  });
+
+  it("つかいわけ口座の明細に対応していなければ、残りの口座は試さない", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 42);
+    let calls = 0;
+    const client = fakeClient({
+      spAccountBalances: () =>
+        Promise.resolve({
+          ...snapshot,
+          accounts: [...snapshot.accounts, { id: "133805", name: "03: 支払い箱", balance: 1 }],
+        }),
+      spAccountStatement: () => {
+        calls += 1;
+        return Promise.reject(new Error("HTTP 400"));
+      },
+    });
+
+    const result = await collectFromBank(store, client, () => 42);
+
+    expect(calls).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.snapshotSaved).toBe(true);
   });
 
   it("間隔が空くまでは問い合わせない", async () => {
@@ -105,6 +170,22 @@ describe("collectFromBank", () => {
     expect(result.statementsSaved).toBe(true);
     expect(result.errors).toHaveLength(1);
     await expect(store.loadStatements()).resolves.toStrictEqual(statements);
+  });
+
+  it("残高が取れなければ、つかいわけ口座ごとの明細は取りに行かない", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 42);
+    let calls = 0;
+    const client = fakeClient({
+      spAccountBalances: () => Promise.reject(new Error("HTTP 500")),
+      spAccountStatement: () => {
+        calls += 1;
+        return Promise.resolve(accountStatements);
+      },
+    });
+
+    await collectFromBank(store, client, () => 42);
+
+    expect(calls).toBe(0);
   });
 
   it("失敗しても取得時刻は記録する(未ログインのページで叩き続けない)", async () => {

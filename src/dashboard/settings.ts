@@ -13,6 +13,7 @@ import { DEFAULT_OBJECT_KEY, parseSyncConfigJson } from "../infrastructure/r2syn
 import type { DashboardData, RenderContext } from "./context.ts";
 import { statementsCsv, transfersCsv } from "./csv.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
+import { primaryStatements } from "../domain/statement.ts";
 
 interface SyncFieldDef {
   label: string;
@@ -216,7 +217,7 @@ function statementCsvExportLink(data: DashboardData): HTMLAnchorElement {
   csvLink.className = `export-statement-csv mb-3 inline-block text-sm ${LINK}`;
   csvLink.download = "aozora-statements.csv";
   csvLink.textContent = "普通口座の明細をCSVでエクスポート";
-  csvLink.href = `data:text/csv;charset=utf-8,${encodeURIComponent(statementsCsv(data.statements, data.comments))}`;
+  csvLink.href = `data:text/csv;charset=utf-8,${encodeURIComponent(statementsCsv(primaryStatements(data.statements), data.comments))}`;
   return csvLink;
 }
 

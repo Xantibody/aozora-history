@@ -1,9 +1,24 @@
+import {
+  accountStatements,
+  mergeStatements,
+  primaryStatements,
+  sortStatementsDesc,
+  statementKey,
+  statementsExplainBalance,
+} from "./statement.ts";
 import { describe, expect, it } from "vitest";
-import { mergeStatements, sortStatementsDesc, statementKey } from "./statement.ts";
 import type { StatementEntry } from "./statement.ts";
 
 function statement(valueDate: string, entryNumber: string, amount: number): StatementEntry {
   return { valueDate, entryNumber, amount, balance: 0, remark: "" };
+}
+
+function inAccount(accountId: string, entry: StatementEntry): StatementEntry {
+  return { ...entry, accountId };
+}
+
+function withBalance(entry: StatementEntry, balance: number): StatementEntry {
+  return { ...entry, balance };
 }
 
 describe("statementKey", () => {
@@ -12,6 +27,36 @@ describe("statementKey", () => {
     expect(statementKey(statement("2026-07-25", "0001", -100))).not.toBe(
       statementKey(statement("2026-07-24", "0001", -100)),
     );
+  });
+
+  it("つかいわけ口座の明細は口座ごとに採番されるため、口座IDでも区別する", () => {
+    const entry = statement("2026-07-24", "0001", -100);
+
+    expect(statementKey(inAccount("133331", entry))).not.toBe(
+      statementKey(inAccount("133332", entry)),
+    );
+  });
+
+  it("代表口座の明細のキーは変えない(既存のコメントの紐付けを保つ)", () => {
+    expect(statementKey(statement("2026-07-24", "0001", -100))).toBe("2026-07-24:0001");
+  });
+});
+
+describe("primaryStatements / accountStatements", () => {
+  const all = [
+    statement("2026-07-24", "0001", -100),
+    inAccount("133331", statement("2026-07-24", "0001", -200)),
+    inAccount("133332", statement("2026-07-24", "0001", -300)),
+  ];
+
+  it("代表口座の明細だけを取り出す", () => {
+    expect(primaryStatements(all)).toStrictEqual([statement("2026-07-24", "0001", -100)]);
+  });
+
+  it("指定したつかいわけ口座の明細だけを取り出す", () => {
+    expect(accountStatements(all, "133331")).toStrictEqual([
+      inAccount("133331", statement("2026-07-24", "0001", -200)),
+    ]);
   });
 });
 
@@ -25,6 +70,15 @@ describe("mergeStatements", () => {
     expect(merged).toStrictEqual([{ ...statement("2026-07-24", "0001", -100), remark: "新" }]);
   });
 
+  it("口座が違えば同じ日付・明細番号でも別の明細として残す", () => {
+    const merged = mergeStatements(
+      [statement("2026-07-24", "0001", -100)],
+      [inAccount("133331", statement("2026-07-24", "0001", -200))],
+    );
+
+    expect(merged).toHaveLength(2);
+  });
+
   it("別の明細は両方残し、日付と明細番号の昇順に並べる", () => {
     const merged = mergeStatements(
       [statement("2026-07-24", "0002", 200)],
@@ -36,6 +90,27 @@ describe("mergeStatements", () => {
       "2026-07-24:0001",
       "2026-07-24:0002",
     ]);
+  });
+});
+
+describe("statementsExplainBalance", () => {
+  it("最新の明細の残高が口座の残高と一致すれば取り込んでよい", () => {
+    const entries = [
+      withBalance(statement("2026-07-23", "0001", -100), 900),
+      withBalance(statement("2026-07-24", "0001", -100), 800),
+    ];
+
+    expect(statementsExplainBalance(entries, 800)).toBe(true);
+  });
+
+  it("残高が合わなければ別口座の明細が返っているとみなす", () => {
+    const entries = [withBalance(statement("2026-07-24", "0001", -100), 800)];
+
+    expect(statementsExplainBalance(entries, 129_392)).toBe(false);
+  });
+
+  it("明細が空なら検算できないので取り込まない", () => {
+    expect(statementsExplainBalance([], 0)).toBe(false);
   });
 });
 

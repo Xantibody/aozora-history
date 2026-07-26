@@ -1,6 +1,6 @@
 import type { BalanceChange, LogEntry, TransferRecord } from "../domain/ledger.ts";
 import { CARD, MUTED, el, signedCell } from "./dom.ts";
-import type { DashboardData, LogFilter, RenderContext, UiState } from "./context.ts";
+import type { LogFilter, RenderContext, UiState } from "./context.ts";
 import { formatDayHeading, localDayKey } from "./format.ts";
 import { latestSnapshot, logEntries } from "../domain/ledger.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
@@ -34,12 +34,12 @@ function pushUniqueAccount(collector: AccountCollector, ref: AccountRef): void {
 }
 
 /** フィルタに出す口座一覧。最新スナップショットの並びを基本に、振替にしか現れない口座を補う */
-function accountsOf(data: DashboardData): AccountRef[] {
+function accountsOf(ctx: RenderContext): AccountRef[] {
   const collector: AccountCollector = { accounts: [], seen: new Set() };
-  for (const account of latestSnapshot(data.snapshots)?.accounts ?? []) {
+  for (const account of latestSnapshot(ctx.data.snapshots)?.accounts ?? []) {
     pushUniqueAccount(collector, account);
   }
-  for (const transfer of data.transfers) {
+  for (const transfer of ctx.ledger.transfers) {
     pushUniqueAccount(collector, transfer.from);
     pushUniqueAccount(collector, transfer.to);
   }
@@ -70,7 +70,7 @@ function accountFilterSelect(ctx: RenderContext): HTMLSelectElement {
   select.name = "account-filter";
   select.setAttribute("aria-label", "口座で絞り込み");
   select.append(new Option("口座 ▾", ""));
-  for (const account of accountsOf(ctx.data)) {
+  for (const account of accountsOf(ctx)) {
     select.append(new Option(account.name, account.id));
   }
   select.value = ctx.state.filterAccountId ?? "";
@@ -193,7 +193,7 @@ function dayCard(ctx: RenderContext, entries: LogEntry[]): HTMLElement {
 export function logSection(ctx: RenderContext): HTMLElement {
   const node = el("section", "log");
   node.append(filterChips(ctx));
-  const entries = logEntries(ctx.data.snapshots, ctx.data.transfers).filter((entry) =>
+  const entries = logEntries(ctx.data.snapshots, ctx.ledger.transfers).filter((entry) =>
     matchesLog(ctx.state, entry),
   );
   if (entries.length === 0) {
