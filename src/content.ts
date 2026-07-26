@@ -32,7 +32,19 @@ const store = new HistoryStore(browser.storage.local);
 // ログイン中のタブのcookieをそのまま使うので、拡張側に認証情報を持たなくてよい
 const client = new BankApiClient(fetchFn, () => document.cookie);
 
-void setupContentScript(document, store, {
-  now: Date.now,
-  collect: () => collectFromBank(store, client),
-});
+/**
+ * 取り込みは裏で走るため、失敗しても画面には何も出ない。銀行側の仕様変更で
+ * 静かに取れなくなったときに原因を追えるよう、結果をコンソールに残す
+ */
+async function collect(): Promise<unknown> {
+  const result = await collectFromBank(store, client);
+  if (result.skipped) {
+    return result;
+  }
+  // eslint-disable-next-line no-console -- 裏で走る処理の唯一の手掛かり
+  const log = result.errors.length === 0 ? console.info : console.warn;
+  log("[aozora-history] 銀行APIの取り込み", result);
+  return result;
+}
+
+void setupContentScript(document, store, { now: Date.now, collect });

@@ -19,6 +19,9 @@ const ORDER_DESC = "2";
 /** つかいわけ口座の明細は通貨を指定して取る。この拡張が扱うのは円普通預金だけ */
 const JPY = "JPY";
 
+/** 定額自動振替の並び替えキー。1 = 登録日 */
+const SORT_BY_REGISTERED_DATE = "1";
+
 /** APIが1回に返せる明細の上限。銀行サイトの表示件数の選択肢に合わせている */
 export const MAX_STATEMENT_LIMIT = 100;
 
@@ -134,11 +137,17 @@ export class BankApiClient {
     return parseSpAccountStatement(json, accountId);
   }
 
-  /** つかいわけ口座の定額自動振替の設定一覧 */
+  /**
+   * つかいわけ口座の定額自動振替の設定一覧。
+   * 画面「つかいわけ口座 定額自動振替」と同じ条件で呼ぶ。sortKey と
+   * depositOrderType は表示の並び順でしかないが、省くと弾かれることがあるため送る
+   */
   public async autoTransfers(limit: number): Promise<AutoTransferSetting[] | null> {
     const json = await this.get("sp-accounts/auto-transfer", {
       limit: String(Math.min(limit, MAX_STATEMENT_LIMIT)),
       offset: "0",
+      sortKey: SORT_BY_REGISTERED_DATE,
+      depositOrderType: ORDER_DESC,
     });
     return parseAutoTransfers(json);
   }

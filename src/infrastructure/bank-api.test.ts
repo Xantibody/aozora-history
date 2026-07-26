@@ -116,7 +116,8 @@ describe("BankApiClient", () => {
     const settings = await client.autoTransfers(100);
 
     expect(calls[0].url).toBe(
-      "https://bank.gmo-aozora.com/v1/sp-accounts/auto-transfer?limit=100&offset=0",
+      "https://bank.gmo-aozora.com/v1/sp-accounts/auto-transfer" +
+        "?limit=100&offset=0&sortKey=1&depositOrderType=2",
     );
     expect(settings).toStrictEqual([
       {
