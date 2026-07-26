@@ -1,10 +1,10 @@
 import { BORDER, INK_SOFT, MUTED, SELECTED, SURFACE, el, signedCell } from "./dom.ts";
 import type { BalanceChange, TransferRecord } from "../domain/ledger.ts";
 import type { LogFilter, RenderContext, UiState } from "./context.ts";
+import { dayStart, inPeriod } from "./period.ts";
 import { formatDayHeading, localDayKey } from "./format.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
 import type { LogEntry } from "../domain/log.ts";
-import { inPeriod } from "./period.ts";
 import { logEntries } from "../domain/log.ts";
 
 const FILTERS: { key: LogFilter; label: string }[] = [
@@ -66,12 +66,29 @@ function matchesExternal(state: UiState, change: BalanceChange): boolean {
   return state.filterAccountId === null || change.accountId === state.filterAccountId;
 }
 
+/**
+ * 代表口座の明細。つかいわけ口座ではないので、口座で絞っている間は出さない。
+ * 入金・出金の絞り込みは符号で判断する
+ */
+function matchesStatement(state: UiState, amount: number): boolean {
+  if (state.logFilter === "transfer" || state.filterAccountId !== null) {
+    return false;
+  }
+  if (state.logFilter === "in") {
+    return amount > 0;
+  }
+  return state.logFilter === "out" ? amount < 0 : true;
+}
+
 function matchesLog(state: UiState, entry: LogEntry): boolean {
   if (!inPeriod(state, entry.at)) {
     return false;
   }
   if (entry.kind === "transfer") {
     return matchesTransfer(state, entry.transfer);
+  }
+  if (entry.kind === "statement") {
+    return matchesStatement(state, entry.statement.amount);
   }
   if (entry.kind === "external") {
     return matchesExternal(state, entry.change);
@@ -80,15 +97,22 @@ function matchesLog(state: UiState, entry: LogEntry): boolean {
   return state.logFilter === "all" && state.filterAccountId === null;
 }
 
-// 日計は外部入出金の合計のみ(振替は口座間移動なので合計に含めない)
+/** 口座の外と出入りした額だけ。振替は口座間の移動なので日計に含めない */
+function dayFlow(entry: LogEntry): number {
+  if (entry.kind === "external") {
+    return entry.change.externalDelta;
+  }
+  return entry.kind === "statement" ? entry.statement.amount : 0;
+}
+
 function externalDayTotals(entries: LogEntry[]): Map<string, number> {
   const totals = new Map<string, number>();
   for (const entry of entries) {
-    if (entry.kind !== "external") {
-      continue;
+    const flow = dayFlow(entry);
+    if (flow !== 0) {
+      const key = localDayKey(entry.at);
+      totals.set(key, (totals.get(key) ?? 0) + flow);
     }
-    const key = localDayKey(entry.at);
-    totals.set(key, (totals.get(key) ?? 0) + entry.change.externalDelta);
   }
   return totals;
 }
@@ -139,9 +163,12 @@ function dayCard(ctx: RenderContext, entries: LogEntry[]): HTMLElement {
 export function logSection(ctx: RenderContext): HTMLElement {
   const node = el("section", "log");
   node.append(filterChips(ctx));
-  const entries = logEntries(ctx.data.snapshots, ctx.ledger.transfers).filter((entry) =>
-    matchesLog(ctx.state, entry),
-  );
+  const entries = logEntries({
+    snapshots: ctx.data.snapshots,
+    transfers: ctx.ledger.transfers,
+    statements: ctx.data.statements,
+    dayStart,
+  }).filter((entry) => matchesLog(ctx.state, entry));
   if (entries.length === 0) {
     node.append(el("p", `empty mt-2 ${MUTED}`, "まだ記録がありません"));
     return node;

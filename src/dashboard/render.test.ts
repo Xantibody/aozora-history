@@ -1297,6 +1297,94 @@ const statements: StatementEntry[] = [
   },
 ];
 
+describe("代表口座の明細をログに統合する", () => {
+  const root = document.createElement("div");
+
+  beforeEach(() => {
+    root.replaceChildren();
+    document.body.replaceChildren(root);
+  });
+
+  function open(): void {
+    render(root, data({ statements }), () => Date.UTC(2026, 6, 27, 0, 0));
+  }
+
+  function titles(): string[] {
+    return [...root.querySelectorAll(".log .log-title")].map((node) => node.textContent ?? "");
+  }
+
+  function clickChip(label: string): void {
+    [...root.querySelectorAll<HTMLButtonElement>(".log-filters button")]
+      .find((chip) => chip.textContent === label)!
+      .click();
+  }
+
+  it("振替と同じ時系列に並べる(別タブに分けない)", () => {
+    open();
+
+    expect(titles()).toContain("給与  カ）アツトマーク → 普通預金");
+    expect(titles()).toContain("普通預金 → 振込 ラクテン");
+    expect(root.querySelector(".statements")).toBeNull();
+  });
+
+  it("代表口座は口座色を割り当てず灰色で示す", () => {
+    open();
+
+    const row = [...root.querySelectorAll(".log .log-row")].find((node) =>
+      node.textContent?.includes("給与"),
+    )!;
+    expect(row.querySelector(".dot")!.className).toContain("bg-[#94a3b8]");
+  });
+
+  it("その日の合計に明細の出入りを含める", () => {
+    open();
+
+    // 7/24 は 給与 +635,144 と 振込 −173,000
+    const heading = [...root.querySelectorAll(".log .day-heading")].find((node) =>
+      node.textContent?.includes("7月24日"),
+    )!;
+    expect(heading.querySelector(".day-total")!.textContent).toBe("+462,144円");
+  });
+
+  it("入金・出金の絞り込みが明細にも効く", () => {
+    open();
+    clickChip("入金");
+
+    expect(titles()).toContain("給与  カ）アツトマーク → 普通預金");
+    expect(titles()).not.toContain("普通預金 → 振込 ラクテン");
+  });
+
+  it("振替で絞ると明細は出さない(口座間の移動ではない)", () => {
+    open();
+    clickChip("振替");
+
+    expect(titles().some((title) => title.includes("普通預金"))).toBe(false);
+  });
+
+  it("摘要が空でも行として読める", () => {
+    render(root, data({ statements: [{ ...statements[0], remark: "" }] }), () =>
+      Date.UTC(2026, 6, 27, 0, 0),
+    );
+
+    expect(titles()).toContain("普通預金 → (摘要なし)");
+  });
+
+  it("明細にもメモを付けられる", () => {
+    const { onCommentChange } = render(root, data({ statements }), () =>
+      Date.UTC(2026, 6, 27, 0, 0),
+    );
+
+    const row = [...root.querySelectorAll<HTMLElement>(".log .log-row")].find((node) =>
+      node.textContent?.includes("給与"),
+    )!;
+    const input = row.querySelector<HTMLInputElement>("input.comment")!;
+    input.value = "月給";
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(onCommentChange).toHaveBeenCalledWith("statement:2026-07-24:0001", "月給");
+  });
+});
+
 describe("記録にない口座間の移動(定額自動振替など)", () => {
   const root = document.createElement("div");
 

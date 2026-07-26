@@ -1,6 +1,7 @@
 import { BADGE, INK, INK_DECOR, INK_SOFT, accountDot, el } from "./dom.ts";
 import type { LogEntry } from "../domain/log.ts";
 import type { RenderContext } from "./context.ts";
+import type { StatementEntry } from "../domain/statement.ts";
 import type { TransferRecord } from "../domain/ledger.ts";
 import { counterparty } from "./counterparty.ts";
 import { icon } from "./icons.ts";
@@ -10,7 +11,7 @@ import { matchesAutoTransfer } from "../domain/auto-transfer.ts";
 /** 振替の出金側・入金側と同じ形。口座の参照だけのためにモジュールを増やさない */
 type AccountRef = TransferRecord["from"];
 
-type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" }>;
+type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" | "statement" }>;
 
 /** 行の文字より一回り小さくして、主役である口座名に譲る */
 const ARROW_SIZE = 15;
@@ -73,15 +74,42 @@ function externalTitle(
   return change.externalDelta > 0 ? [other, arrow(), account] : [account, arrow(), other];
 }
 
+export /**
+ * 代表口座(普通預金)。つかいわけ口座と同じ形で並べつつ、口座色は割り当てず
+ * 灰色にする。色は「つかいわけ口座のどれか」を見分けるための手掛かりなので、
+ * 別の口座に同じ意味を持たせない
+ */
+function primaryAccountName(): HTMLElement {
+  const label = el("span", "account-name inline-flex items-center gap-[9px]");
+  const mark = el(
+    "span",
+    "dot h-[9px] w-[9px] shrink-0 rounded-[3px] bg-[#94a3b8] dark:bg-[#8695a6]",
+  );
+  label.append(mark, strongName("普通預金"));
+  return label;
+}
+
+/** 代表口座の明細。入金なら相手先→口座、出金なら口座→相手先と、振替と同じ向きで読める */
+function statementTitle(statement: StatementEntry): TitlePart[] {
+  const account = primaryAccountName();
+  const other = otherParty(statement.remark === "" ? "(摘要なし)" : statement.remark);
+  return statement.amount > 0 ? [other, arrow(), account] : [account, arrow(), other];
+}
+
+function titleParts(ctx: RenderContext, entry: TransactionEntry): TitlePart[] {
+  if (entry.kind === "transfer") {
+    return transferTitle(ctx, entry.transfer);
+  }
+  return entry.kind === "statement"
+    ? statementTitle(entry.statement)
+    : externalTitle(ctx, entry.change);
+}
+
 export function logTitle(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
   const title = el(
     "div",
     `log-title flex min-w-0 flex-wrap items-center gap-[9px] text-[15.5px] leading-snug ${INK}`,
   );
-  title.append(
-    ...(entry.kind === "transfer"
-      ? transferTitle(ctx, entry.transfer)
-      : externalTitle(ctx, entry.change)),
-  );
+  title.append(...titleParts(ctx, entry));
   return title;
 }
