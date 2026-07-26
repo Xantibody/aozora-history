@@ -93,6 +93,17 @@ describe("mergeStatements", () => {
   });
 });
 
+describe("明細番号の並び", () => {
+  it("ゼロ埋めされていなくても数値の大小で並べる", () => {
+    const sorted = sortStatementsDesc([
+      statement("2026-07-26", "9", 100),
+      statement("2026-07-26", "10", 200),
+    ]);
+
+    expect(sorted.map((line) => line.entryNumber)).toStrictEqual(["10", "9"]);
+  });
+});
+
 describe("statementsExplainBalance", () => {
   it("最新の明細の残高が口座の残高と一致すれば取り込んでよい", () => {
     const entries = [

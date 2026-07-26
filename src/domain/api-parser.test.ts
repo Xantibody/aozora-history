@@ -148,6 +148,49 @@ describe("parseSpAccountStatement", () => {
     ]);
   });
 
+  it("つかいわけ口座は一覧・明細番号・日付のキーが代表口座と違う", () => {
+    const json = {
+      spAccountStatementList: [
+        {
+          spAccountStatementId: "12",
+          transactionDate: "20260726",
+          creditDebitType: "2",
+          amount: "50000.0",
+          balance: "264000.0",
+          remark: "カ）ジェーシービー",
+          isStatementMoveable: false,
+        },
+      ],
+    };
+
+    expect(parseSpAccountStatement(json, "133805")).toStrictEqual([
+      {
+        entryNumber: "12",
+        valueDate: "2026-07-26",
+        amount: -50_000,
+        balance: 264_000,
+        remark: "カ）ジェーシービー",
+        accountId: "133805",
+      },
+    ]);
+  });
+
+  it("日付に時刻が続いても読める", () => {
+    const json = {
+      spAccountStatementList: [
+        {
+          spAccountStatementId: "1",
+          transactionDate: "2026-07-26T09:00:00+09:00",
+          creditDebitType: "1",
+          amount: "1",
+          balance: "1",
+        },
+      ],
+    };
+
+    expect(parseSpAccountStatement(json, "1")?.[0].valueDate).toBe("2026-07-26");
+  });
+
   it("形が違えばnull", () => {
     expect(parseSpAccountStatement({}, "133331")).toBeNull();
   });

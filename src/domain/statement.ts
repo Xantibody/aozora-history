@@ -48,10 +48,22 @@ export function statementCommentKey(statement: StatementEntry): string {
   return `statement:${statementKey(statement)}`;
 }
 
+/**
+ * 明細番号の大小。代表口座は "0001" のようにゼロ埋めされるが、つかいわけ口座は
+ * 埋められていない。文字列のまま比べると "9" が "10" より後になり、
+ * 最新の明細を取り違えるため、数値として読めるときは数値で比べる
+ */
+function compareEntryNumber(left: string, right: string): number {
+  const [leftValue, rightValue] = [Number(left), Number(right)];
+  const numeric =
+    left !== "" && right !== "" && Number.isFinite(leftValue) && Number.isFinite(rightValue);
+  return numeric ? leftValue - rightValue : left.localeCompare(right);
+}
+
 function compareAsc(left: StatementEntry, right: StatementEntry): number {
   return (
     left.valueDate.localeCompare(right.valueDate) ||
-    left.entryNumber.localeCompare(right.entryNumber) ||
+    compareEntryNumber(left.entryNumber, right.entryNumber) ||
     scopeOf(left).localeCompare(scopeOf(right))
   );
 }

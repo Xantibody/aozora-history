@@ -39,8 +39,11 @@ function toText(value: unknown): string | null {
   return null;
 }
 
-/** 起算日は yyyyMMdd で返るが、区切り付きで返っても読めるようにする */
-const DATE_PATTERN = /^(?<year>\d{4})[-/]?(?<month>\d{2})[-/]?(?<day>\d{2})$/u;
+/**
+ * 起算日は yyyyMMdd で返るが、区切り付きで返っても読めるようにする。
+ * 時刻が続く形で返ることもあるため、日付から先は見ない
+ */
+const DATE_PATTERN = /^(?<year>\d{4})[-/]?(?<month>\d{2})[-/]?(?<day>\d{2})(?:[T\s].*)?$/u;
 
 function toIsoDate(value: unknown): string | null {
   const text = toText(value)?.trim();
@@ -105,12 +108,18 @@ export function parseSpAccountBalances(json: unknown): AccountsSnapshot | null {
 /** 入金を表す creditDebitType のコード。これ以外は出金として扱う */
 const CREDIT = "1";
 
+/**
+ * 明細1件。代表口座とつかいわけ口座で項目名が違うため、どちらも読む。
+ *
+ *   代表口座        accountEntryNumber   / valueDate
+ *   つかいわけ口座   spAccountStatementId / transactionDate
+ */
 function toStatement(value: unknown): StatementEntry | null {
   if (!isRecord(value)) {
     return null;
   }
-  const entryNumber = toText(value.accountEntryNumber);
-  const valueDate = toIsoDate(value.valueDate);
+  const entryNumber = toText(value.accountEntryNumber ?? value.spAccountStatementId);
+  const valueDate = toIsoDate(value.valueDate ?? value.transactionDate);
   const magnitude = toAmount(value.amount);
   const balance = toAmount(value.balance);
   if (entryNumber === null || valueDate === null || magnitude === null || balance === null) {
@@ -127,13 +136,23 @@ function toStatement(value: unknown): StatementEntry | null {
   };
 }
 
+/** 明細の一覧。項目名と同じく、キーも口座の種類で違う */
+function statementList(json: unknown): unknown[] | null {
+  if (!isRecord(json)) {
+    return null;
+  }
+  const list = json.statementList ?? json.spAccountStatementList;
+  return Array.isArray(list) ? list : null;
+}
+
 /** GET /v1/ordinary-deposits/statement のレスポンス。取れなければnull */
 export function parseOrdinaryStatement(json: unknown): StatementEntry[] | null {
-  if (!isRecord(json) || !Array.isArray(json.statementList)) {
+  const list = statementList(json);
+  if (list === null) {
     return null;
   }
   const entries: StatementEntry[] = [];
-  for (const item of json.statementList) {
+  for (const item of list) {
     const entry = toStatement(item);
     if (entry === null) {
       return null;
