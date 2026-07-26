@@ -1,4 +1,4 @@
-import { CARD, MUTED, NEGATIVE, POSITIVE, el, signedCell } from "./dom.ts";
+import { CARD, INK, INK_SOFT, MUTED, el, signedCell } from "./dom.ts";
 import type { RenderContext, StatementFilter, UiState } from "./context.ts";
 import { dayStart, inPeriod } from "./period.ts";
 import { formatDayHeading, formatYen } from "./format.ts";
@@ -110,7 +110,7 @@ function statementBody(ctx: RenderContext, key: string, statement: StatementEntr
 }
 
 function statementAmount(statement: StatementEntry): HTMLElement {
-  const polarity = statement.amount > 0 ? POSITIVE : NEGATIVE;
+  const polarity = statement.amount > 0 ? INK : INK_SOFT;
   const amount = signedCell(statement.amount);
   amount.className = `${AMOUNT} ${polarity}`;
   return amount;

@@ -13,45 +13,59 @@ export function el(tag: string, className?: string, text?: string): HTMLElement 
 
 // クラス名の先頭は意味を表すマーカー(テストとイベント処理のフック)、
 // 続くTailwindユーティリティが見た目を担う
-export const MUTED = "text-sm text-slate-500 dark:text-slate-400";
-export const FINE_PRINT = "text-xs text-slate-500 dark:text-slate-400";
+
+/**
+ * 文字の濃さは3段。意味の重みをサイズと濃淡で表し、色には持たせない。
+ * どれも載る面の上で 4.5:1 以上あり、本文に使える
+ */
+export const INK = "text-[#0f172a] dark:text-[#e6ecf3]";
+export const INK_SOFT = "text-[#5b6675] dark:text-[#c3cedb]";
+export const INK_WEAK = "text-[#64748b] dark:text-[#9aa7b6]";
+/** 矢印や補助アイコンなど、読まなくても意味が通る装飾だけに使う */
+export const INK_DECOR = "text-[#94a3b8] dark:text-[#7f8b99]";
+
+export const MUTED = `text-sm ${INK_WEAK}`;
+export const FINE_PRINT = `text-xs ${INK_WEAK}`;
+
+/** カードの面と罫線。影は使わず罫線だけで面を分ける */
+export const SURFACE = "bg-white dark:bg-[#121821]";
+export const BORDER = "ring-1 ring-[#e8ebf0] dark:ring-[#1e2733]";
+export const CARD = `rounded-[14px] ${SURFACE} ${BORDER}`;
+/** カードの中を区切る罫。外周より一段薄い */
+export const DIVIDER = "border-[#f1f3f7] dark:border-[#1a222c]";
+
+/** 選択中のチップ・主ボタン。面を反転させて示す */
+export const SELECTED = "bg-[#0f172a] text-white dark:bg-[#1c2733] dark:text-[#e6ecf3]";
+/** バッジの地色。この上でも本文の濃さが 4.5:1 を満たす */
+export const BADGE = `rounded-[5px] bg-[#eef1f5] px-[7px] dark:bg-[#1e2733] ${INK_SOFT}`;
+/** 推移で選んだ区間の帯 */
+export const SPAN_HIGHLIGHT = "bg-[#eef2f6] dark:bg-[#1a2330]";
+/** 同期済みの合図。必ずテキストと併記する */
+export const SUCCESS = "text-[#2f8f5b] dark:text-[#3fa66f]";
+/** 記録が止まっているときの警告。同上 */
+export const WARNING = "text-amber-700 dark:text-amber-400";
+
 export const INPUT =
-  "rounded-md bg-white px-2.5 py-1.5 text-sm ring-1 ring-slate-300 focus:ring-2 focus:ring-sky-500 focus:outline-none dark:bg-slate-800 dark:ring-slate-600";
+  "h-[38px] rounded-[9px] bg-white px-3 text-sm ring-1 ring-[#dfe4ea] focus:ring-2 focus:ring-sky-500 focus:outline-none dark:bg-[#121821] dark:ring-[#243040]";
 const BTN =
-  "cursor-pointer rounded-lg text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500";
-export const BTN_PRIMARY = `${BTN} bg-sky-600 px-4 py-1.5 font-medium text-white hover:bg-sky-700 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400`;
-export const BTN_SECONDARY = `${BTN} bg-white ring-1 ring-slate-300 hover:bg-slate-100 dark:bg-slate-800 dark:ring-slate-600 dark:hover:bg-slate-700`;
+  "cursor-pointer rounded-[9px] text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500";
+export const BTN_PRIMARY = `${BTN} ${SELECTED} px-4 py-2 font-semibold`;
+export const BTN_SECONDARY = `${BTN} ${SURFACE} px-3.5 py-2 ring-1 ring-[#e4e8ee] hover:bg-[#f6f7f9] dark:ring-[#243040] dark:hover:bg-[#1a222c]`;
 export const LINK =
   "cursor-pointer text-sky-700 underline hover:text-sky-900 dark:text-sky-400 dark:hover:text-sky-300";
 export const LINK_BUTTON = `${LINK} border-none bg-transparent p-0`;
-// 極性色(WCAG AA検証済み)。符号(+/−)自体が色以外の手掛かりを担う
-export const POSITIVE = "text-emerald-700 dark:text-emerald-400";
-export const NEGATIVE = "text-rose-700 dark:text-rose-400";
-// ログ行・日カード・KPIカードの共通の面
-export const CARD =
-  "rounded-[14px] bg-white ring-1 ring-slate-200 dark:bg-slate-950 dark:ring-slate-800";
 
-function signedClass(amount: number): string | undefined {
-  if (amount > 0) {
-    return POSITIVE;
-  }
-  if (amount < 0) {
-    return NEGATIVE;
-  }
-  return undefined;
-}
-
-/** 符号付き金額。+(入金)は緑、−(出金)は赤で表示する */
+/**
+ * 符号付き金額。色で入金・出金を分けず、符号とインクの濃淡で示す。
+ * 色で意味を持つのは口座色だけに絞っているため
+ */
 export function signedCell(amount: number): HTMLElement {
-  return el("span", signedClass(amount), formatSigned(amount));
+  return el("span", `tabular-nums ${amount < 0 ? INK_SOFT : INK}`, formatSigned(amount));
 }
 
 export function section(className: string, title: string): HTMLElement {
-  const node = el(
-    "section",
-    `${className} mt-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 max-sm:p-3 dark:bg-slate-900 dark:ring-slate-800`,
-  );
-  node.append(el("h2", "mb-3 text-base font-semibold", title));
+  const node = el("section", `${className} mt-3.5 p-4 max-sm:p-3 ${CARD}`);
+  node.append(el("h2", `mb-3 text-[13.5px] font-bold ${INK}`, title));
   return node;
 }
 
@@ -98,6 +112,7 @@ export function accountColorAt(index: number): AccountColor {
   return ACCOUNT_COLORS[index % ACCOUNT_COLORS.length];
 }
 
+/** 口座色の四角。円より角のある形の方が小さくても識別しやすい */
 export function accountDot(color: AccountColor, sizing = "h-2 w-2"): HTMLElement {
-  return el("span", `dot ${sizing} shrink-0 rounded-full ${color.dot}`);
+  return el("span", `dot ${sizing} shrink-0 rounded-[3px] ${color.dot}`);
 }

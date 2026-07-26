@@ -1,4 +1,4 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["design_handoff_card_log/"]
+  "ignorePatterns": ["design_handoff_card_log/", "design_handoff_dashboard_refresh/"]
 }

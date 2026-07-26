@@ -1,4 +1,4 @@
-import { FINE_PRINT, NEGATIVE, POSITIVE, accountDot, el } from "./dom.ts";
+import { FINE_PRINT, INK, INK_SOFT, accountDot, el } from "./dom.ts";
 import { attachSwipeDelete, confirmDeleteTransfer, transferDetail } from "./swipe-delete.ts";
 import { changeCommentKey, commentText, transferCommentKey } from "../domain/ledger.ts";
 import { formatSigned, formatTime, formatYen } from "./format.ts";
@@ -108,7 +108,8 @@ function transactionAmount(entry: TransactionEntry): HTMLElement {
   if (entry.kind === "transfer") {
     return el("span", AMOUNT, formatYen(entry.transfer.amount));
   }
-  const polarity = entry.change.externalDelta > 0 ? POSITIVE : NEGATIVE;
+  // 極性は符号とインクの濃淡で示す。色で意味を持つのは口座色だけ
+  const polarity = entry.change.externalDelta > 0 ? INK : INK_SOFT;
   return el("span", `${AMOUNT} ${polarity}`, formatSigned(entry.change.externalDelta));
 }
 

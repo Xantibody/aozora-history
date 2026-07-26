@@ -205,3 +205,8 @@ flake.nix の xpi URL とハッシュを署名済みのものへ自動更新す�
 
 リリース前に `manifest.firefox.json` と `package.json` の `version` を
 タグと同じ値に揃えること。
+
+## 謝辞
+
+ダッシュボードのアイコンは [Lucide](https://lucide.dev/)(ISC License)から
+必要なものだけを `src/dashboard/icons.ts` にインラインSVGとして写している。
