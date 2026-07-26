@@ -1386,6 +1386,41 @@ describe("記録にない口座間の移動(定額自動振替など)", () => {
     expect(root.querySelector(".detected-badge")!.textContent).toBe("定額自動振替");
   });
 
+  it("つかいわけ口座の明細があれば、外部への出金の相手を摘要で出す", () => {
+    // 支払い箱からの自動引落。相手になる口座がないので振替にはならない
+    const withDebit: BalanceSnapshot[] = [
+      autoTransferSnapshots[1],
+      {
+        ...autoTransferSnapshots[1],
+        takenAt: Date.UTC(2026, 6, 26, 14, 0),
+        accounts: [
+          { id: "133331", name: "01: お財布", balance: 420_000 },
+          { id: "133805", name: "03: 支払い箱", balance: 40_000 },
+        ],
+      },
+    ];
+
+    render(
+      root,
+      data({
+        snapshots: withDebit,
+        transfers: [],
+        statements: [
+          {
+            entryNumber: "0001",
+            valueDate: "2026-07-26",
+            amount: -50_000,
+            balance: 40_000,
+            remark: "カ）ジェーシービー",
+            accountId: "133805",
+          },
+        ],
+      }),
+    );
+
+    expect(logTitles()).toContain("03: 支払い箱 → カ）ジェーシービー");
+  });
+
   it("外部入出金には数えない(口座間で動いただけなので収支は増減しない)", () => {
     clickAccountsTab();
 

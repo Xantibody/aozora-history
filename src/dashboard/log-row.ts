@@ -1,11 +1,13 @@
+import type { BalanceChange, LogEntry, TransferRecord } from "../domain/ledger.ts";
 import { FINE_PRINT, NEGATIVE, POSITIVE, el } from "./dom.ts";
-import type { LogEntry, TransferRecord } from "../domain/ledger.ts";
 import { attachSwipeDelete, confirmDeleteTransfer, transferDetail } from "./swipe-delete.ts";
 import { changeCommentKey, commentText, transferCommentKey } from "../domain/ledger.ts";
-import { formatSigned, formatTime, formatYen } from "./format.ts";
+import { formatSigned, formatTime, formatYen, localDayKey } from "./format.ts";
 import type { RenderContext } from "./context.ts";
 import type { SwipeHandle } from "./swipe-delete.ts";
+import { accountStatements } from "../domain/statement.ts";
 import { commentInput } from "./comment-input.ts";
+import { dayStart } from "./period.ts";
 import { isDetected } from "../domain/reconcile.ts";
 import { matchesAutoTransfer } from "../domain/auto-transfer.ts";
 
@@ -35,6 +37,21 @@ function detectedBadge(ctx: RenderContext, transfer: TransferRecord): HTMLElemen
   );
 }
 
+/**
+ * 口座の外との入出金の相手。つかいわけ口座ごとの明細を取り込めていれば、
+ * 自動引落の引落先などが摘要で分かる。金額と日付で1件に絞れたときだけ言い切り、
+ * 絞れなければ「外部」のままにする
+ */
+function counterparty(ctx: RenderContext, change: BalanceChange): string {
+  const day = localDayKey(change.toTakenAt);
+  const matched = accountStatements(ctx.data.statements, change.accountId).filter(
+    (statement) =>
+      statement.amount === change.externalDelta &&
+      localDayKey(dayStart(statement.valueDate) ?? 0) === day,
+  );
+  return matched.length === 1 && matched[0].remark !== "" ? matched[0].remark : "外部";
+}
+
 function logTitle(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
   const title = el("div", "log-title text-[15px] leading-snug");
   if (entry.kind === "transfer") {
@@ -43,9 +60,9 @@ function logTitle(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
       title.append(detectedBadge(ctx, entry.transfer));
     }
   } else if (entry.change.externalDelta > 0) {
-    title.append("外部 → ", strongName(entry.change.accountName));
+    title.append(`${counterparty(ctx, entry.change)} → `, strongName(entry.change.accountName));
   } else {
-    title.append(strongName(entry.change.accountName), " → 外部");
+    title.append(strongName(entry.change.accountName), ` → ${counterparty(ctx, entry.change)}`);
   }
   return title;
 }
