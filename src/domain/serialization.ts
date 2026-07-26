@@ -77,6 +77,10 @@ function parseStatement(value: unknown): StatementEntry {
     amount: value.amount,
     balance: value.balance,
     remark: typeof value.remark === "string" ? value.remark : "",
+    // どの口座の明細かを落とすと代表口座の明細として扱われ、つかいわけ口座間の
+    // 移動が「普通預金 → 振替 03: 支払い箱」のような経由行に化ける。
+    // 口座別明細を取り込む前のファイル・R2オブジェクトには付いていない
+    ...(typeof value.accountId === "string" ? { accountId: value.accountId } : {}),
   };
 }
 
