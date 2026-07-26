@@ -1,4 +1,3 @@
-import { formatDateTime, formatYen, shortDate } from "./format.ts";
 import type { BalancePoint } from "../domain/ledger.ts";
 import { svgEl } from "./dom.ts";
 
@@ -7,8 +6,14 @@ export const MIN_CHART_POINTS = 2;
 
 const HALF = 2;
 
-// 折れ線グラフの寸法。右側は終端の金額ラベル分の余白
-export const CHART = { width: 640, height: 160, left: 8, right: 76, top: 16, bottom: 22 };
+/**
+ * 折れ線グラフの寸法。
+ *
+ * 図の中に文字を置かないため、ラベル用の余白は取らない。SVGは幅なりに
+ * 拡縮されるので、中に置いた文字は狭い画面で5px相当まで縮んで読めなくなり、
+ * 長い口座名や大きな金額では互いに重なる。値と日付はグラフの外にHTMLで出す
+ */
+export const CHART = { width: 640, height: 148, left: 8, right: 8, top: 16, bottom: 10 };
 export const PLOT_RIGHT = CHART.width - CHART.right;
 export const PLOT_BOTTOM = CHART.height - CHART.bottom;
 
@@ -95,9 +100,29 @@ export function appendSeries(svg: SVGElement, points: BalancePoint[], scale: Cha
   );
 }
 
+/**
+ * 途中のマーカーを置く最小の間隔。直径6に隙間を足した値。
+ * 記録が増えるとマーカーが重なって線が太い帯に潰れ、形が読めなくなる
+ */
+const POINT_MIN_GAP = 8;
+
+/** 間隔が空いている点だけを残す。終端は別に描くので候補から外す */
+function markerPoints(points: BalancePoint[], scale: ChartScale): BalancePoint[] {
+  const kept: BalancePoint[] = [];
+  let lastX = -Infinity;
+  for (const point of points.slice(0, -1)) {
+    const at = scale.xAt(point.takenAt);
+    if (at - lastX >= POINT_MIN_GAP) {
+      kept.push(point);
+      lastX = at;
+    }
+  }
+  return kept;
+}
+
 export function appendEndMarker(svg: SVGElement, points: BalancePoint[], scale: ChartScale): void {
   // 途中の点は白抜き、終端だけ塗る。どこが最新かを形で示す
-  for (const point of points.slice(0, -1)) {
+  for (const point of markerPoints(points, scale)) {
     const cx = String(scale.xAt(point.takenAt));
     const cy = String(scale.yAt(point.balance));
     svg.append(
@@ -119,120 +144,4 @@ export function appendEndMarker(svg: SVGElement, points: BalancePoint[], scale: 
       "chart-end stroke-white dark:stroke-[#121821]",
     ),
   );
-}
-
-// ラベルは系列色ではなくテキスト用のインクで描く
-export const LABEL_INK = "fill-[#5b6675] dark:fill-[#c3cedb]";
-const END_LABEL_OFFSET_X = 8;
-const END_LABEL_OFFSET_Y = 4;
-const X_LABEL_BASELINE_PAD = 6;
-
-export function chartLabel(text: string, attrs: Record<string, string>, cls: string): SVGElement {
-  const node = svgEl("text", { "font-size": "11", ...attrs }, cls);
-  node.textContent = text;
-  return node;
-}
-
-export function appendLabels(svg: SVGElement, points: BalancePoint[], scale: ChartScale): void {
-  const last = lastPoint(points);
-  const endX = String(scale.xAt(scale.tN) + END_LABEL_OFFSET_X);
-  const endY = String(scale.yAt(last.balance) + END_LABEL_OFFSET_Y);
-  const baseline = String(CHART.height - X_LABEL_BASELINE_PAD);
-  svg.append(
-    chartLabel(formatYen(last.balance), { x: endX, y: endY }, `chart-end-label ${LABEL_INK}`),
-    chartLabel(
-      shortDate(scale.t0),
-      { x: String(CHART.left), y: baseline },
-      `chart-x-label ${LABEL_INK}`,
-    ),
-    chartLabel(
-      shortDate(scale.tN),
-      { x: String(PLOT_RIGHT), y: baseline, "text-anchor": "end" },
-      `chart-x-label ${LABEL_INK}`,
-    ),
-  );
-}
-
-export function appendHoverTargets(
-  svg: SVGElement,
-  points: BalancePoint[],
-  scale: ChartScale,
-): void {
-  // ホバーで各点の日時と残高を読めるようにする(マークより広い当たり判定)
-  for (const point of points) {
-    const cx = String(scale.xAt(point.takenAt));
-    const cy = String(scale.yAt(point.balance));
-    const hit = svgEl("circle", { cx, cy, r: "14", fill: "transparent" }, "chart-hit");
-    const title = svgEl("title");
-    title.textContent = `${formatDateTime(point.takenAt)} ${formatYen(point.balance)}`;
-    hit.append(title);
-    svg.append(hit);
-  }
-}
-
-/**
- * 残高推移の折れ線。系列は1つなので凡例は置かずアクセント1色
- * (ライト・ダーク両面で検証済みのsky-600)で描く。各点の値はホバーの
- * <title>と推移タブのスナップショット一覧でも読めるため、直接ラベルは
- * 終端の1つに絞る
- */
-export function balanceChart(points: BalancePoint[]): SVGElement {
-  const scale = chartScale(points);
-  const svg = svgEl(
-    "svg",
-    { viewBox: `0 0 ${CHART.width} ${CHART.height}`, role: "img", "aria-label": "残高推移" },
-    "balance-chart mt-3 w-full text-[#0f172a] dark:text-[#e6ecf3]",
-  );
-  appendGrid(svg);
-  appendSeries(svg, points, scale);
-  appendEndMarker(svg, points, scale);
-  appendLabels(svg, points, scale);
-  appendHoverTargets(svg, points, scale);
-  return svg;
-}
-
-const SPARK = { width: 120, height: 36, pad: 5 };
-
-function sparkScale(points: BalancePoint[]): ChartScale {
-  const { width, height, pad } = SPARK;
-  const t0 = points[0].takenAt;
-  const tN = lastPoint(points).takenAt;
-  const balances = points.map((point) => point.balance);
-  const min = Math.min(...balances);
-  const max = Math.max(...balances);
-  const xAt = (time: number): number =>
-    tN === t0 ? pad : pad + ((time - t0) / (tN - t0)) * (width - pad - pad);
-  const yAt = (balance: number): number =>
-    max === min
-      ? height / HALF
-      : height - pad - ((balance - min) / (max - min)) * (height - pad - pad);
-  return { t0, tN, xAt, yAt };
-}
-
-/**
- * ヘッダーと口座カード用の小さな折れ線(120×36)。値はラベルにせず
- * 形だけ見せる(正確な値は推移タブ・口座カードの数字で読める)
- */
-export function sparkline(points: BalancePoint[], className: string): SVGElement {
-  const scale = sparkScale(points);
-  const svg = svgEl(
-    "svg",
-    { viewBox: `0 0 ${SPARK.width} ${SPARK.height}`, "aria-hidden": "true" },
-    `${className} h-9 w-[120px] shrink-0`,
-  );
-  const coords = seriesCoords(points, scale).join(" ");
-  const cx = String(scale.xAt(scale.tN));
-  const cy = String(scale.yAt(lastPoint(points).balance));
-  svg.append(
-    svgEl("polyline", {
-      points: coords,
-      fill: "none",
-      stroke: "currentColor",
-      "stroke-width": "2",
-      "stroke-linejoin": "round",
-      "stroke-linecap": "round",
-    }),
-    svgEl("circle", { cx, cy, r: "3", fill: "currentColor" }),
-  );
-  return svg;
 }
