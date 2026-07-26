@@ -1,8 +1,9 @@
-import type { BalanceSnapshot, Comments, TransferRecord } from "../domain/ledger.ts";
+import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
 import { applyBounds, monthOf } from "./period.ts";
 import type { AccountColor } from "./dom.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
+import type { Comments } from "../domain/comments.ts";
 import type { Paging } from "./paging.ts";
 import type { Reconciled } from "../domain/reconcile.ts";
 import type { StatementEntry } from "../domain/statement.ts";

@@ -1,4 +1,4 @@
-import { commentSuggestions, transferCommentKey } from "./domain/ledger.ts";
+import { commentSuggestions, transferCommentKey } from "./domain/comments.ts";
 import { parseAccountsPage, parseTransferForm } from "./domain/parser.ts";
 import type { HistoryStore } from "./infrastructure/storage.ts";
 import type { TransferInput } from "./domain/parser.ts";

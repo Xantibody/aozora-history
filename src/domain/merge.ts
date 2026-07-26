@@ -1,5 +1,6 @@
-import type { BalanceSnapshot, Comments, TransferRecord } from "./ledger.ts";
+import type { BalanceSnapshot, TransferRecord } from "./ledger.ts";
 import { appendSnapshot, transferKey } from "./ledger.ts";
+import type { Comments } from "./comments.ts";
 import type { StatementEntry } from "./statement.ts";
 import { mergeStatements } from "./statement.ts";
 

@@ -1,8 +1,10 @@
-import type { Comments, TransferRecord } from "../domain/ledger.ts";
-import { commentText, sortTransfersDesc, transferCommentKey } from "../domain/ledger.ts";
+import { commentText, transferCommentKey } from "../domain/comments.ts";
 import { sortStatementsDesc, statementCommentKey } from "../domain/statement.ts";
+import type { Comments } from "../domain/comments.ts";
 import type { StatementEntry } from "../domain/statement.ts";
+import type { TransferRecord } from "../domain/ledger.ts";
 import { formatDateTime } from "./format.ts";
+import { sortTransfersDesc } from "../domain/ledger.ts";
 
 function csvField(value: string): string {
   return /[",\n]/u.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
