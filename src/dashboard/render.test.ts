@@ -381,22 +381,28 @@ describe("renderDashboard", () => {
       ];
       expect(trailing).toHaveLength(rows.length);
       for (const element of trailing) {
-        expect(element.className).toContain("w-6");
+        expect(element.className).toContain("w-[18px]");
       }
-
-      // 日見出しの日計も金額列の右端に合わせる(モバイルはカードの余白と同じ)
-      const heading = root.querySelector<HTMLElement>(".log .day-heading")!;
-      expect(heading.className).toContain("pr-3");
-      expect(heading.className).toContain("sm:pr-12");
     });
 
-    it("種類ごとのアクセントバーを付ける", () => {
+    it("極性を色で分けず、符号とインクの濃淡で示す", () => {
       render(root);
 
-      const accents = [...root.querySelectorAll(".log .log-row .accent")];
-      expect(accents[0].className).toContain("bg-rose-700"); // 外部出金
-      expect(accents[1].className).toContain("bg-emerald-600"); // 外部入金
-      expect(accents[2].className).toContain("bg-sky-600"); // 振替
+      const amounts = [...root.querySelectorAll<HTMLElement>(".log .log-row .amount")];
+      // 外部出金 −5,000 / 外部入金 +272,469 / 振替
+      expect(amounts[0].className).toContain("text-[#5b6675]");
+      expect(amounts[1].className).toContain("text-[#0f172a]");
+      for (const amount of amounts) {
+        expect(amount.className).not.toContain("emerald");
+        expect(amount.className).not.toContain("rose");
+      }
+    });
+
+    it("1取引を1カードにし、残高記録は面を持たない従属行にする", () => {
+      render(root);
+
+      expect(root.querySelector(".log .log-row")!.className).toContain("rounded-[12px]");
+      expect(root.querySelector(".log .snapshot-row")!.className).not.toContain("rounded");
     });
 
     describe("フィルタ", () => {
@@ -485,16 +491,36 @@ describe("renderDashboard", () => {
       });
     });
 
-    describe("コメント", () => {
-      it("保存済みコメントをサブ行と入力欄に表示する", () => {
+    describe("メモ", () => {
+      it("保存済みのメモを2段目の本文として出す(入力欄は出さない)", () => {
         const key = `transfer:${transfers[0].transferredAt}`;
 
         render(root, data({ comments: { [key]: { text: "積立へ移動", updatedAt: 1 } } }));
 
         clickChip("振替");
         const row = root.querySelector(".log .log-row")!;
-        expect(row.querySelector(".subline")!.textContent).toContain("積立へ移動");
-        expect(row.querySelector<HTMLInputElement>("input.comment")!.value).toBe("積立へ移動");
+        expect(row.querySelector(".memo")!.textContent).toBe("積立へ移動");
+        expect(row.querySelector<HTMLInputElement>("input.comment")!.classList).toContain("hidden");
+      });
+
+      it("メモがなければ書き込める場所だと分かる誘い文を出す", () => {
+        render(root);
+
+        clickChip("振替");
+        expect(root.querySelector(".log .memo-add")!.textContent).toBe("メモを追加");
+      });
+
+      it("行をタップするとメモが入力欄に入れ替わる", () => {
+        render(root);
+
+        const row = root.querySelector<HTMLElement>(".log .log-row")!;
+        const input = row.querySelector<HTMLInputElement>("input.comment")!;
+        expect(input.classList).toContain("hidden");
+
+        row.querySelector<HTMLElement>(".log-title")!.click();
+
+        expect(input.classList).not.toContain("hidden");
+        expect(row.querySelector(".memo")!.firstElementChild!.classList).toContain("hidden");
       });
 
       it("振替のコメントを編集するとキー付きで通知する", () => {
@@ -522,27 +548,13 @@ describe("renderDashboard", () => {
         expect(onCommentChange).toHaveBeenCalledWith(expect.stringMatching(/^change:/u), "給料");
       });
 
-      it("行タップでモバイル用のコメント入力を開閉する", () => {
-        render(root);
-
-        const row = root.querySelector<HTMLElement>(".log .log-row")!;
-        const editor = row.querySelector(".comment-editor")!;
-        expect(editor.classList.contains("hidden")).toBe(true);
-
-        row.querySelector<HTMLElement>(".log-title")!.click();
-        expect(editor.classList.contains("hidden")).toBe(false);
-
-        row.querySelector<HTMLElement>(".log-title")!.click();
-        expect(editor.classList.contains("hidden")).toBe(true);
-      });
-
-      it("入力欄のタップでは開閉しない", () => {
+      it("入力欄のタップでは編集の開始を繰り返さない", () => {
         render(root);
 
         const row = root.querySelector<HTMLElement>(".log .log-row")!;
         row.querySelector<HTMLInputElement>("input.comment")!.click();
 
-        expect(row.querySelector(".comment-editor")!.classList.contains("hidden")).toBe(true);
+        expect(row.querySelector<HTMLInputElement>("input.comment")!.classList).toContain("hidden");
       });
 
       it("過去のコメントを入力候補として提示する", () => {
@@ -639,7 +651,7 @@ describe("renderDashboard", () => {
         expect(onDeleteTransfer).toHaveBeenCalledWith(transfers[0]);
       });
 
-      it("開いた状態の行タップはパネルを閉じるだけでコメント編集を開かない", () => {
+      it("開いた状態の行タップはパネルを閉じるだけでメモの編集を開かない", () => {
         render(root);
         const row = transferRow();
 
@@ -649,7 +661,7 @@ describe("renderDashboard", () => {
         expect(row.querySelector<HTMLElement>(".swipe-slider")!.style.transform).toBe(
           "translateX(0px)",
         );
-        expect(row.querySelector(".comment-editor")!.classList.contains("hidden")).toBe(true);
+        expect(row.querySelector<HTMLInputElement>("input.comment")!.classList).toContain("hidden");
       });
 
       it("外部入出金と残高記録の行にはスワイプ削除を付けない", () => {
