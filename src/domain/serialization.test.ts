@@ -35,6 +35,25 @@ describe("parseLedgerJson", () => {
     expect(parseLedgerJson(JSON.stringify(validLedger))).toStrictEqual(validLedger);
   });
 
+  it("つかいわけ口座の明細は口座IDを保って読み込む", () => {
+    // 落とすと代表口座の明細と混ざり、つかいわけ口座間の移動が
+    // 「普通預金 → 振替 03: 支払い箱」のような経由行に化ける
+    const json = JSON.stringify({
+      statements: [
+        {
+          entryNumber: "1",
+          valueDate: "2026-07-24",
+          amount: -10_000,
+          balance: 129_392,
+          remark: "振替 03: 支払い箱",
+          accountId: "133331",
+        },
+      ],
+    });
+
+    expect(parseLedgerJson(json).statements[0].accountId).toBe("133331");
+  });
+
   it("updatedAtがないスナップショットはnullとして読み込む", () => {
     const json = JSON.stringify({
       snapshots: [{ takenAt: 1, accounts: [] }],

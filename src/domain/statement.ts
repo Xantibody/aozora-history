@@ -86,6 +86,27 @@ export function statementsExplainBalance(statements: StatementEntry[], balance: 
   return latest !== undefined && latest.balance === balance;
 }
 
+/** 口座IDを除いた中身。同じ明細の写しかどうかを見分けるために使う */
+function contentKey(statement: StatementEntry): string {
+  const { valueDate, entryNumber, amount, balance, remark } = statement;
+  return `${valueDate}:${entryNumber}:${amount}:${balance}:${remark}`;
+}
+
+/**
+ * 口座IDを落として保存された、つかいわけ口座の明細の写しを取り除く。
+ *
+ * R2から読み戻すときに口座IDが落ちていた頃(v0.10.1以前)の記録が台帳に
+ * 残っており、そのままでは代表口座の明細として並ぶ。銀行の採番は口座ごとに
+ * 独立しているため、写しかどうかは中身が同じ口座別明細があるかどうかでしか
+ * 見分けられない。無いものは代表口座の明細として残す(消して失う方が痛い)
+ */
+function dropStrippedCopies(statements: StatementEntry[]): StatementEntry[] {
+  const scoped = new Set(
+    statements.filter((line) => line.accountId !== undefined).map((line) => contentKey(line)),
+  );
+  return statements.filter((line) => line.accountId !== undefined || !scoped.has(contentKey(line)));
+}
+
 /** 同じ明細は1件にまとめる。後から渡した方(取得が新しい方)を採用する */
 export function mergeStatements(
   existing: StatementEntry[],
@@ -95,5 +116,5 @@ export function mergeStatements(
   for (const statement of [...existing, ...incoming]) {
     byKey.set(statementKey(statement), statement);
   }
-  return [...byKey.values()].toSorted((left, right) => compareAsc(left, right));
+  return dropStrippedCopies([...byKey.values()]).toSorted((left, right) => compareAsc(left, right));
 }
