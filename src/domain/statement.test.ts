@@ -79,6 +79,22 @@ describe("mergeStatements", () => {
     expect(merged).toHaveLength(2);
   });
 
+  it("口座IDを落として保存された写しは取り除く", () => {
+    // 同期で口座IDが落ちていた頃の記録。代表口座の明細として並び、
+    // つかいわけ口座間の移動が経由行に化けていた
+    const stripped = { ...statement("2026-07-24", "1", -10_000), remark: "振替 03: 支払い箱" };
+    const scoped = inAccount("133331", stripped);
+
+    expect(mergeStatements([stripped], [scoped])).toStrictEqual([scoped]);
+  });
+
+  it("同じ内容のつかいわけ口座の明細がなければ、代表口座の明細として残す", () => {
+    const primary = statement("2026-07-24", "0001", -10_000);
+    const other = inAccount("133331", statement("2026-07-24", "1", -20_000));
+
+    expect(mergeStatements([primary], [other])).toStrictEqual([primary, other]);
+  });
+
   it("別の明細は両方残し、日付と明細番号の昇順に並べる", () => {
     const merged = mergeStatements(
       [statement("2026-07-24", "0002", 200)],
