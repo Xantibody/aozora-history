@@ -6,6 +6,7 @@ import { formatSigned, formatTime, formatYen } from "./format.ts";
 import type { RenderContext } from "./context.ts";
 import type { SwipeHandle } from "./swipe-delete.ts";
 import { commentInput } from "./comment-input.ts";
+import { isDetected } from "../domain/reconcile.ts";
 
 export type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" }>;
 
@@ -20,10 +21,25 @@ function strongName(name: string): HTMLElement {
   return el("strong", "font-semibold", name);
 }
 
-function logTitle(entry: TransactionEntry): HTMLElement {
+/**
+ * 定額自動振替など、この拡張が操作を検知できない口座間の移動。
+ * 残高の差額から組み直したもので銀行の記録ではないため、記録済みの振替と区別する
+ */
+function detectedBadge(): HTMLElement {
+  return el(
+    "span",
+    "detected-badge ml-1.5 rounded bg-slate-100 px-1.5 align-[2px] text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+    "自動",
+  );
+}
+
+function logTitle(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
   const title = el("div", "log-title text-[15px] leading-snug");
   if (entry.kind === "transfer") {
     title.append(strongName(entry.transfer.from.name), " → ", strongName(entry.transfer.to.name));
+    if (isDetected(ctx.ledger, entry.transfer)) {
+      title.append(detectedBadge());
+    }
   } else if (entry.change.externalDelta > 0) {
     title.append("外部 → ", strongName(entry.change.accountName));
   } else {
@@ -69,9 +85,12 @@ function transactionAmount(entry: TransactionEntry): HTMLElement {
   return el("span", `${AMOUNT} ${polarity}`, formatSigned(entry.change.externalDelta));
 }
 
-/** 行末の削除ボタン列。削除できない外部入出金行は同じ幅のスペーサーで右端を揃える */
+/**
+ * 行末の削除ボタン列。外部入出金と、差額から拾い直した振替は消しても
+ * 残高から作り直されるだけなので、同じ幅のスペーサーで右端を揃える
+ */
 function trailingColumn(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
-  if (entry.kind === "transfer") {
+  if (entry.kind === "transfer" && !isDetected(ctx.ledger, entry.transfer)) {
     return deleteButton(ctx, entry.transfer);
   }
   return el("span", "delete-spacer w-6 shrink-0 max-sm:hidden");
@@ -100,7 +119,7 @@ function transactionMain(ctx: RenderContext, key: string, entry: TransactionEntr
     ),
   );
   const body = el("div", "min-w-0 flex-1");
-  body.append(logTitle(entry), sublineEl(ctx, key, entry.at));
+  body.append(logTitle(ctx, entry), sublineEl(ctx, key, entry.at));
   // デスクトップは常時インラインで編集できる
   const inline = commentInput(ctx, key);
   inline.classList.add("max-sm:hidden", "sm:w-[220px]", "shrink-0");
@@ -169,7 +188,9 @@ export function transactionRow(ctx: RenderContext, entry: TransactionEntry): HTM
   const row = el("div", "log-row group relative overflow-hidden");
   row.append(slider);
   const swipe =
-    entry.kind === "transfer" ? attachSwipeDelete(ctx, { row, slider }, entry.transfer) : null;
+    entry.kind === "transfer" && !isDetected(ctx.ledger, entry.transfer)
+      ? attachSwipeDelete(ctx, { row, slider }, entry.transfer)
+      : null;
   attachRowToggle(row, { editor, input }, swipe);
   return row;
 }

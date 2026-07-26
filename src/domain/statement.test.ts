@@ -4,6 +4,7 @@ import {
   primaryStatements,
   sortStatementsDesc,
   statementKey,
+  statementsExplainBalance,
 } from "./statement.ts";
 import { describe, expect, it } from "vitest";
 import type { StatementEntry } from "./statement.ts";
@@ -14,6 +15,10 @@ function statement(valueDate: string, entryNumber: string, amount: number): Stat
 
 function inAccount(accountId: string, entry: StatementEntry): StatementEntry {
   return { ...entry, accountId };
+}
+
+function withBalance(entry: StatementEntry, balance: number): StatementEntry {
+  return { ...entry, balance };
 }
 
 describe("statementKey", () => {
@@ -85,6 +90,27 @@ describe("mergeStatements", () => {
       "2026-07-24:0001",
       "2026-07-24:0002",
     ]);
+  });
+});
+
+describe("statementsExplainBalance", () => {
+  it("最新の明細の残高が口座の残高と一致すれば取り込んでよい", () => {
+    const entries = [
+      withBalance(statement("2026-07-23", "0001", -100), 900),
+      withBalance(statement("2026-07-24", "0001", -100), 800),
+    ];
+
+    expect(statementsExplainBalance(entries, 800)).toBe(true);
+  });
+
+  it("残高が合わなければ別口座の明細が返っているとみなす", () => {
+    const entries = [withBalance(statement("2026-07-24", "0001", -100), 800)];
+
+    expect(statementsExplainBalance(entries, 129_392)).toBe(false);
+  });
+
+  it("明細が空なら検算できないので取り込まない", () => {
+    expect(statementsExplainBalance([], 0)).toBe(false);
   });
 });
 

@@ -1,4 +1,5 @@
 import type { BalanceSnapshot, Comments, TransferRecord } from "../domain/ledger.ts";
+import type { Reconciled } from "../domain/reconcile.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
 
@@ -69,6 +70,12 @@ export function initialUiState(): UiState {
 export interface RenderContext {
   root: HTMLElement;
   data: DashboardData;
+  /**
+   * 差額を拾い直した台帳。集計と表示はこちらを使う。
+   * dataは保存された記録そのもので、定額自動振替のように拡張が検知できない
+   * 口座間の移動が入っていないため、そのまま集計すると収支が合わない
+   */
+  ledger: Reconciled;
   handlers: DashboardHandlers;
   state: UiState;
   now: () => number;

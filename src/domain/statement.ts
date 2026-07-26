@@ -61,6 +61,17 @@ export function sortStatementsDesc(statements: StatementEntry[]): StatementEntry
   return statements.toSorted((left, right) => compareAsc(right, left));
 }
 
+/**
+ * 明細の最新の残高が、その口座の残高と一致するか。
+ * つかいわけ口座の明細APIは口座を指定するパラメータ名を銀行サイトのコードから
+ * 確定できていない。パラメータ名が違えば別口座や代表口座の明細が返ってくるため、
+ * 取り込む前にこの検算を通し、合わない明細は捨てて台帳を汚さないようにする
+ */
+export function statementsExplainBalance(statements: StatementEntry[], balance: number): boolean {
+  const [latest] = sortStatementsDesc(statements);
+  return latest !== undefined && latest.balance === balance;
+}
+
 /** 同じ明細は1件にまとめる。後から渡した方(取得が新しい方)を採用する */
 export function mergeStatements(
   existing: StatementEntry[],

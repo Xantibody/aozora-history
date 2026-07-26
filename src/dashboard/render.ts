@@ -5,6 +5,7 @@ import { header } from "./header.ts";
 import { initialUiState } from "./context.ts";
 import { latestRecordAt } from "../domain/ledger.ts";
 import { monthNav } from "./month-nav.ts";
+import { reconcile } from "../domain/reconcile.ts";
 import { settingsView } from "./settings.ts";
 import { suggestionList } from "./comment-input.ts";
 
@@ -67,6 +68,7 @@ class DashboardView {
     this.ctx = {
       root,
       data,
+      ledger: reconcile(data.snapshots, data.transfers),
       handlers: options.handlers,
       state: initialUiState(),
       now: options.now ?? Date.now,
@@ -78,6 +80,8 @@ class DashboardView {
 
   public draw(): void {
     const restoreFocus = captureFocus(this.ctx.root);
+    // dataは同期や銀行APIの取得で描画の合間に差し替わるため、毎回照合し直す
+    this.ctx.ledger = reconcile(this.ctx.data.snapshots, this.ctx.data.transfers);
     drawView(this.ctx);
     restoreFocus?.();
   }
