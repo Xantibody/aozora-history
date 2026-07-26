@@ -4,6 +4,7 @@ import { MUTED, accountColorAt, el } from "./dom.ts";
 import { accountRefs, latestRecordAt } from "../domain/ledger.ts";
 import type { AccountColor } from "./dom.ts";
 import { activeSection } from "./tabs.ts";
+import { bottomTabs } from "./bottom-tabs.ts";
 import { header } from "./header.ts";
 import { initialUiState } from "./context.ts";
 import { reconcile } from "../domain/reconcile.ts";
@@ -53,22 +54,27 @@ function colorResolver(
   return (accountId): AccountColor => accountColorAt(indexById.get(accountId) ?? 0);
 }
 
-function drawView(ctx: RenderContext): void {
-  ctx.root.replaceChildren();
-  if (ctx.state.view === "settings") {
-    ctx.root.append(settingsView(ctx));
-    return;
-  }
-  const main = el("main", "mx-auto max-w-[1040px] px-4 pt-4 pb-8 sm:px-7");
-  ctx.root.append(suggestionList(ctx.data.comments), header(ctx), main);
-  if (
+/** 記録も明細もまだ何もない状態 */
+function isEmpty(ctx: RenderContext): boolean {
+  return (
     latestRecordAt(ctx.data.snapshots, ctx.data.transfers) === null &&
     ctx.data.statements.length === 0
-  ) {
-    main.append(el("p", `empty pt-4 ${MUTED}`, "まだ記録がありません"));
-    return;
-  }
-  main.append(activeSection(ctx));
+  );
+}
+
+function dashboardView(ctx: RenderContext): HTMLElement[] {
+  // 下部バーに隠れないよう、狭い幅では余分に下を空ける
+  const main = el("main", "mx-auto max-w-[1040px] px-4 pt-4 pb-24 sm:px-7 sm:pb-8");
+  main.append(
+    isEmpty(ctx) ? el("p", `empty pt-4 ${MUTED}`, "まだ記録がありません") : activeSection(ctx),
+  );
+  return [suggestionList(ctx.data.comments), header(ctx), main];
+}
+
+function drawView(ctx: RenderContext): void {
+  ctx.root.replaceChildren();
+  const body = ctx.state.view === "settings" ? [settingsView(ctx)] : dashboardView(ctx);
+  ctx.root.append(...body, bottomTabs(ctx));
 }
 
 class DashboardView {

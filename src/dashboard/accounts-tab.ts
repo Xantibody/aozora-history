@@ -59,7 +59,11 @@ function shareBar(share: number, fillClass: string): HTMLElement {
 }
 
 function cardKpis(summary: WorkspaceSummary): HTMLElement {
-  const kpis = el("div", "kpis flex gap-7 border-t border-[#f1f3f7] pt-2.5 dark:border-[#1a222c]");
+  // 狭い幅では畳む。残高・増減・構成比まで読めれば口座の様子は掴める
+  const kpis = el(
+    "div",
+    "kpis flex gap-7 border-t border-[#f1f3f7] pt-2.5 max-sm:hidden dark:border-[#1a222c]",
+  );
   kpis.append(
     workspaceKpi("kpi-transfer", "振替", summary.transferNet),
     workspaceKpi("kpi-external", "外部入出金", summary.externalNet),

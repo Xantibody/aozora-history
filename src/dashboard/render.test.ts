@@ -1622,6 +1622,61 @@ describe("statementsCsv", () => {
   });
 });
 
+describe("狭い幅 (スマホ)", () => {
+  const root = document.createElement("div");
+
+  beforeEach(() => {
+    root.replaceChildren();
+    document.body.replaceChildren(root);
+    render(root, data({ statements }), () => Date.UTC(2026, 6, 27, 0, 0));
+  });
+
+  function bottomTab(label: string): HTMLButtonElement {
+    return [...root.querySelectorAll<HTMLButtonElement>(".bottom-tab")].find(
+      (tab) => tab.textContent === label,
+    )!;
+  }
+
+  it("ページ切り替えを下部バーに置く(親指の届く位置に主要な操作を集める)", () => {
+    expect([...root.querySelectorAll(".bottom-tab")].map((tab) => tab.textContent)).toStrictEqual([
+      "ログ",
+      "残高",
+      "設定",
+    ]);
+  });
+
+  it("下部バーから残高ページへ移れる", () => {
+    bottomTab("残高").click();
+
+    expect(root.querySelector(".accounts")).not.toBeNull();
+  });
+
+  it("下部バーから設定へ移れる(ヘッダーの歯車は狭い幅では隠す)", () => {
+    bottomTab("設定").click();
+
+    expect(root.querySelector(".settings-view")).not.toBeNull();
+    expect(root.querySelector(".bottom-tab.active")!.textContent).toBe("設定");
+  });
+
+  it("ヘッダーのタブと歯車は狭い幅で隠す(下部バーと二重にしない)", () => {
+    expect(root.querySelector(".view-tabs")!.className).toContain("max-sm:hidden");
+    expect(root.querySelector(".settings-button")!.className).toContain("max-sm:hidden");
+  });
+
+  it("時刻を左の固定列から2段目へ回し、口座名に幅を空ける", () => {
+    const row = root.querySelector(".log .log-row")!;
+    expect(row.querySelector(".time")!.className).toContain("max-sm:hidden");
+    expect(row.querySelector(".time-inline")!.className).toContain("sm:hidden");
+  });
+
+  it("口座カードのKPIは畳む(残高・増減・構成比まで読めれば足りる)", () => {
+    bottomTab("残高").click();
+
+    expect(root.querySelector(".workspace-card .kpis")!.className).toContain("max-sm:hidden");
+    expect(root.querySelector(".workspace-card .share")).not.toBeNull();
+  });
+});
+
 describe("設定画面 (整理)", () => {
   const root = document.createElement("div");
 

@@ -51,7 +51,7 @@ function totalLine(total: number, delta: number): HTMLElement {
   line.append(el("span", `text-[11.5px] ${INK_SOFT}`, "合計"));
   const amount = el(
     "span",
-    `total-balance text-2xl font-bold tracking-[-.01em] tabular-nums ${INK}`,
+    `total-balance text-[22px] font-bold tracking-[-.01em] tabular-nums sm:text-2xl ${INK}`,
     total.toLocaleString("ja-JP"),
   );
   amount.append(el("span", "text-[13px] font-medium", "円"));
@@ -85,7 +85,10 @@ export function accountStrip(ctx: RenderContext): HTMLElement {
   );
   const total = summaries.reduce((sum, summary) => sum + summary.balance, 0);
   const delta = summaries.reduce((sum, summary) => sum + summary.delta, 0);
-  const strip = el("div", "account-strip flex items-center gap-4 overflow-hidden pt-1 pb-3");
+  const strip = el(
+    "div",
+    "account-strip flex items-center gap-3 overflow-hidden pt-1 pb-3 sm:gap-4",
+  );
   strip.append(totalLine(total, delta), chipRail(ctx, summaries));
   return strip;
 }
