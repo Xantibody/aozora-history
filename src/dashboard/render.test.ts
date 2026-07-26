@@ -757,28 +757,28 @@ describe("renderDashboard", () => {
   });
 
   describe("残高ページ · 推移", () => {
-    it("スナップショットが2件以上あれば合計残高の折れ線を表示する", () => {
+    it("推移パネルに折れ線と出入りの目盛りを描く", () => {
       render(root);
       clickTab("残高");
 
-      const chart = root.querySelector(".history .total-chart svg.balance-chart");
+      const chart = root.querySelector(".history svg.balance-chart");
       expect(chart).not.toBeNull();
       // 最新の合計 129,392 + 82,520 + 272,469 = 484,381円 が終端ラベルに出る
       expect(chart!.textContent).toContain("484,381円");
     });
 
-    it("スナップショットが1件なら合計グラフは表示しない", () => {
+    it("記録が1件なら推移を描かない", () => {
       render(root, data({ snapshots: [snapshots[0]], transfers: [] }));
       clickTab("残高");
 
-      expect(root.querySelector(".history .total-chart")).toBeNull();
+      expect(root.querySelector(".history svg.balance-chart")).toBeNull();
     });
 
     it("スナップショットを新しい順に前回比付きで一覧する", () => {
       render(root);
       clickTab("残高");
 
-      const items = [...root.querySelectorAll(".history .snapshot-item")];
+      const items = [...root.querySelectorAll(".snapshots .snapshot-item")];
       expect(items).toHaveLength(2);
       expect(items[0].textContent).toContain(shortDateTime(snapshots[1].takenAt));
       expect(items[0].querySelector(".snapshot-total")!.textContent).toBe("484,381円");
@@ -794,7 +794,7 @@ describe("renderDashboard", () => {
       render(root);
       clickTab("残高");
 
-      const detail = root.querySelector(".history .snapshot-item .snapshot-detail")!;
+      const detail = root.querySelector(".snapshots .snapshot-item .snapshot-detail")!;
       expect(detail.textContent).toContain("01: お財布");
       expect(detail.textContent).toContain("129,392円");
       expect(detail.textContent).toContain("03: 支払い箱");
@@ -809,7 +809,77 @@ describe("renderDashboard", () => {
       input.value = "2026-07-09";
       input.dispatchEvent(new Event("change", { bubbles: true }));
 
-      expect(root.querySelectorAll(".history .snapshot-item")).toHaveLength(1);
+      expect(root.querySelectorAll(".snapshots .snapshot-item")).toHaveLength(1);
+    });
+  });
+
+  describe("推移とログの連動", () => {
+    function pickPoints(count: number): void {
+      const hits = [...root.querySelectorAll<SVGElement>(".history .chart-hit")];
+      for (const hit of hits.slice(0, count)) {
+        hit.dispatchEvent(new Event("click", { bubbles: true }));
+      }
+    }
+
+    it("点を2つ選ぶと区間になり、増減を出す", () => {
+      render(root);
+      clickTab("残高");
+
+      pickPoints(2);
+
+      expect(root.querySelector(".history .chart-span")).not.toBeNull();
+      expect(root.querySelector(".span-total")!.textContent).toContain("この区間");
+    });
+
+    it("選ぶ前は選び方を案内する", () => {
+      render(root);
+      clickTab("残高");
+
+      expect(root.querySelector(".span-summary")!.textContent).toContain("点を2つ選ぶ");
+    });
+
+    it("「この区間をログで見る」でログへ移り、区間チップを出す", () => {
+      render(root);
+      clickTab("残高");
+      pickPoints(2);
+
+      root.querySelector<HTMLButtonElement>(".span-open")!.click();
+
+      expect(root.querySelector(".log")).not.toBeNull();
+      expect(root.querySelector(".span-chip")!.textContent).toContain("区間で絞り込み中");
+    });
+
+    it("区間チップの×で絞り込みを解除する", () => {
+      render(root);
+      clickTab("残高");
+      pickPoints(2);
+      root.querySelector<HTMLButtonElement>(".span-open")!.click();
+
+      root.querySelector<HTMLButtonElement>(".span-clear")!.click();
+
+      expect(root.querySelector(".span-chip")).toBeNull();
+    });
+
+    it("区間チップ本体を押すと残高ページへ戻る", () => {
+      render(root);
+      clickTab("残高");
+      pickPoints(2);
+      root.querySelector<HTMLButtonElement>(".span-open")!.click();
+
+      root.querySelector<HTMLButtonElement>(".span-back")!.click();
+
+      expect(root.querySelector(".history")).not.toBeNull();
+    });
+
+    it("区間の外の記録はログに出さない", () => {
+      render(root);
+      clickTab("残高");
+      // 1点だけ選ぶと、その1点だけの区間になる
+      pickPoints(1);
+      const before = root.querySelectorAll(".log .log-row").length;
+      root.querySelector<HTMLButtonElement>(".view-tab")!.click();
+
+      expect(root.querySelectorAll(".log .log-row").length).toBeLessThan(before + 4);
     });
   });
 

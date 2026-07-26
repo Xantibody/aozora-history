@@ -1,11 +1,14 @@
-import { BORDER, INK_SOFT, MUTED, SELECTED, SURFACE, el, signedCell } from "./dom.ts";
+import { BORDER, INK_DECOR, INK_SOFT, MUTED, SELECTED, SURFACE, el, signedCell } from "./dom.ts";
 import type { BalanceChange, TransferRecord } from "../domain/ledger.ts";
 import type { LogFilter, RenderContext, UiState } from "./context.ts";
 import { dayStart, inPeriod } from "./period.ts";
-import { formatDayHeading, localDayKey } from "./format.ts";
+import { formatDayHeading, formatShortDateTime, localDayKey } from "./format.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
 import type { LogEntry } from "../domain/log.ts";
+import { icon } from "./icons.ts";
 import { logEntries } from "../domain/log.ts";
+
+const SPAN_ICON_SIZE = 14;
 
 const FILTERS: { key: LogFilter; label: string }[] = [
   { key: "all", label: "すべて" },
@@ -34,10 +37,53 @@ function filterChip(ctx: RenderContext, def: { key: LogFilter; label: string }):
   return chip;
 }
 
+/**
+ * 推移から渡ってきた区間の表示。チップ本体で残高ページへ戻り、×で解除する。
+ * 絞り込みが効いていることを、外した方法とセットで見せる
+ */
+function spanBackButton(ctx: RenderContext, span: { from: number; to: number }): HTMLElement {
+  const back = el(
+    "button",
+    "span-back flex cursor-pointer items-center gap-2 bg-transparent",
+    `${formatShortDateTime(span.from)} – ${formatShortDateTime(span.to)} の区間で絞り込み中`,
+  );
+  back.title = "残高ページへ戻る";
+  back.addEventListener("click", () => {
+    ctx.state.activeTab = "balance";
+    ctx.draw();
+  });
+  return back;
+}
+
+function spanClearButton(ctx: RenderContext): HTMLElement {
+  const clear = el("button", `span-clear flex cursor-pointer items-center ${INK_DECOR}`);
+  clear.append(icon("x", SPAN_ICON_SIZE));
+  clear.title = "区間の絞り込みを解除";
+  clear.setAttribute("aria-label", clear.title);
+  clear.addEventListener("click", () => {
+    ctx.state.selectedSpan = null;
+    ctx.draw();
+  });
+  return clear;
+}
+
+function spanChip(ctx: RenderContext, span: { from: number; to: number }): HTMLElement {
+  const chip = el(
+    "div",
+    "span-chip ml-auto flex shrink-0 items-center gap-2 rounded-full bg-[#eef2f6] px-3 " +
+      `py-1.5 text-[12.5px] ring-1 ring-[#dde4ec] dark:bg-[#1a2330] dark:ring-[#243040] ${INK_SOFT}`,
+  );
+  chip.append(spanBackButton(ctx, span), spanClearButton(ctx));
+  return chip;
+}
+
 function filterChips(ctx: RenderContext): HTMLElement {
-  const row = el("div", "log-filters flex gap-1.5 overflow-x-auto pb-3.5");
+  const row = el("div", "log-filters flex items-center gap-1.5 overflow-x-auto pb-3.5");
   for (const def of FILTERS) {
     row.append(filterChip(ctx, def));
+  }
+  if (ctx.state.selectedSpan !== null) {
+    row.append(spanChip(ctx, ctx.state.selectedSpan));
   }
   return row;
 }
@@ -80,8 +126,14 @@ function matchesStatement(state: UiState, amount: number): boolean {
   return state.logFilter === "out" ? amount < 0 : true;
 }
 
+/** 推移で選んだ区間。選んでいなければ素通りさせる */
+function inSelectedSpan(state: UiState, at: number): boolean {
+  const span = state.selectedSpan;
+  return span === null || (at >= span.from && at <= span.to);
+}
+
 function matchesLog(state: UiState, entry: LogEntry): boolean {
-  if (!inPeriod(state, entry.at)) {
+  if (!inPeriod(state, entry.at) || !inSelectedSpan(state, entry.at)) {
     return false;
   }
   if (entry.kind === "transfer") {

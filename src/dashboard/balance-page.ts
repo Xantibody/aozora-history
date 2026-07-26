@@ -1,6 +1,7 @@
 import type { RenderContext } from "./context.ts";
 import { el } from "./dom.ts";
-import { historySection } from "./history-tab.ts";
+import { snapshotSection } from "./history-tab.ts";
+import { trendPanel } from "./trend-panel.ts";
 import { workspaceGrid } from "./accounts-tab.ts";
 
 /**
@@ -10,6 +11,6 @@ import { workspaceGrid } from "./accounts-tab.ts";
  */
 export function balancePage(ctx: RenderContext): HTMLElement {
   const node = el("div", "balance flex flex-col gap-5 pt-1");
-  node.append(workspaceGrid(ctx), historySection(ctx));
+  node.append(workspaceGrid(ctx), trendPanel(ctx), snapshotSection(ctx));
   return node;
 }
