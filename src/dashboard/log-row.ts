@@ -1,90 +1,31 @@
-import { FINE_PRINT, INK, INK_SOFT, accountDot, el } from "./dom.ts";
+import { BORDER, INK, INK_DECOR, INK_SOFT, INK_WEAK, SURFACE, el } from "./dom.ts";
 import { attachSwipeDelete, confirmDeleteTransfer, transferDetail } from "./swipe-delete.ts";
-import { changeCommentKey, commentText, transferCommentKey } from "../domain/ledger.ts";
+import { commentKeyOf, memoField } from "./memo-field.ts";
 import { formatSigned, formatTime, formatYen } from "./format.ts";
 import type { LogEntry } from "../domain/log.ts";
+import type { MemoField } from "./memo-field.ts";
 import type { RenderContext } from "./context.ts";
 import type { SwipeHandle } from "./swipe-delete.ts";
 import type { TransferRecord } from "../domain/ledger.ts";
-import { commentInput } from "./comment-input.ts";
-import { counterparty } from "./counterparty.ts";
+import { icon } from "./icons.ts";
 import { isDetected } from "../domain/reconcile.ts";
-import { matchesAutoTransfer } from "../domain/auto-transfer.ts";
+import { logTitle } from "./log-title.ts";
 
-/** 振替の出金側・入金側と同じ形。口座の参照だけのためにモジュールを増やさない */
-type AccountRef = TransferRecord["from"];
+export type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" | "statement" }>;
 
-export type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" }>;
-
-// 左端のアクセントバー。種類が色以外でも読めるよう、本文の矢印表記が向きを担う
-const ACCENT = {
-  transfer: "bg-sky-600 dark:bg-sky-400",
-  in: "bg-emerald-600 dark:bg-emerald-400",
-  out: "bg-rose-700 dark:bg-rose-400",
-};
-
-function strongName(name: string): HTMLElement {
-  return el("strong", "font-semibold", name);
-}
-
-/**
- * 口座名。色は口座を見分ける手掛かりを増やすためのもので、それだけに
- * 意味を持たせない(名前は必ず文字で出す)。控えめな点にとどめる
- */
-function accountName(ctx: RenderContext, ref: AccountRef): HTMLElement {
-  const label = el("span", "account-name inline-flex items-baseline gap-1");
-  label.append(accountDot(ctx.colorOf(ref.id), "h-1.5 w-1.5 self-center"), strongName(ref.name));
-  return label;
-}
-
-/**
- * この拡張が操作を検知できない口座間の移動。残高の差額から組み直したもので
- * 銀行の記録ではないため、記録済みの振替と区別する。
- * 定額自動振替の設定と一致していれば、何が起きたのかまで言い切れる
- */
-function detectedBadge(ctx: RenderContext, transfer: TransferRecord): HTMLElement {
-  return el(
-    "span",
-    "detected-badge ml-1.5 rounded bg-slate-100 px-1.5 align-[2px] text-[11px] font-semibold " +
-      "whitespace-nowrap text-slate-500 dark:bg-slate-800 dark:text-slate-400",
-    matchesAutoTransfer(ctx.data.autoTransfers, transfer) ? "定額自動振替" : "自動",
-  );
-}
-
-function transferTitle(ctx: RenderContext, transfer: TransferRecord): (HTMLElement | string)[] {
-  const parts = [accountName(ctx, transfer.from), " → ", accountName(ctx, transfer.to)];
-  return isDetected(ctx.ledger, transfer) ? [...parts, detectedBadge(ctx, transfer)] : parts;
-}
-
-function externalTitle(
-  ctx: RenderContext,
-  change: Extract<LogEntry, { kind: "external" }>["change"],
-): (HTMLElement | string)[] {
-  const account = accountName(ctx, { id: change.accountId, name: change.accountName });
-  const other = counterparty(ctx, change);
-  return change.externalDelta > 0 ? [`${other} → `, account] : [account, ` → ${other}`];
-}
-
-function logTitle(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
-  const title = el("div", "log-title text-[15px] leading-snug");
-  title.append(
-    ...(entry.kind === "transfer"
-      ? transferTitle(ctx, entry.transfer)
-      : externalTitle(ctx, entry.change)),
-  );
-  return title;
-}
+/** 行の文字より一回り小さくして、主役である取引の内容に譲る */
+const DELETE_ICON_SIZE = 15;
 
 /** 誤記録(確認後のキャンセルなど)を取り除くための削除ボタン(デスクトップはホバーで表示) */
 function deleteButton(ctx: RenderContext, transfer: TransferRecord): HTMLElement {
   const button = el(
     "button",
-    "delete-transfer w-6 shrink-0 cursor-pointer rounded text-slate-400 opacity-0 transition-opacity " +
-      "group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-700 " +
-      "focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 " +
-      "max-sm:hidden dark:hover:bg-rose-950 dark:hover:text-rose-400",
-    "×",
+    `delete-transfer flex w-[18px] shrink-0 cursor-pointer items-center justify-center rounded ${INK_DECOR} ` +
+      "opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 " +
+      "hover:text-[#0f172a] focus-visible:opacity-100 focus-visible:outline-2 " +
+      "focus-visible:outline-offset-2 focus-visible:outline-sky-500 max-sm:hidden dark:hover:text-[#e6ecf3]",
   );
+  button.append(icon("x", DELETE_ICON_SIZE));
   const detail = transferDetail(transfer);
   button.title = "この振替を削除";
   button.setAttribute("aria-label", `振替を削除: ${detail}`);
@@ -94,23 +35,22 @@ function deleteButton(ctx: RenderContext, transfer: TransferRecord): HTMLElement
   return button;
 }
 
-function transactionAccent(entry: TransactionEntry): string {
-  if (entry.kind === "transfer") {
-    return ACCENT.transfer;
-  }
-  return entry.change.externalDelta > 0 ? ACCENT.in : ACCENT.out;
-}
+// 可変幅だと桁数で右端がずれるため、固定幅で右揃えにする
+const AMOUNT =
+  "amount w-[104px] shrink-0 text-right text-base font-bold tabular-nums sm:w-[120px] sm:text-[17px]";
 
-// 可変幅だと後続のコメント欄の位置が桁数分ずれるため、固定幅で右揃えにする
-const AMOUNT = "amount w-[120px] shrink-0 text-right text-base font-bold tabular-nums";
+/** 極性は符号とインクの濃淡で示す。色で意味を持つのは口座色だけ */
+function signedAmount(amount: number): HTMLElement {
+  return el("span", `${AMOUNT} ${amount > 0 ? INK : INK_SOFT}`, formatSigned(amount));
+}
 
 function transactionAmount(entry: TransactionEntry): HTMLElement {
   if (entry.kind === "transfer") {
-    return el("span", AMOUNT, formatYen(entry.transfer.amount));
+    return el("span", `${AMOUNT} ${INK}`, formatYen(entry.transfer.amount));
   }
-  // 極性は符号とインクの濃淡で示す。色で意味を持つのは口座色だけ
-  const polarity = entry.change.externalDelta > 0 ? INK : INK_SOFT;
-  return el("span", `${AMOUNT} ${polarity}`, formatSigned(entry.change.externalDelta));
+  return signedAmount(
+    entry.kind === "statement" ? entry.statement.amount : entry.change.externalDelta,
+  );
 }
 
 /**
@@ -121,63 +61,50 @@ function trailingColumn(ctx: RenderContext, entry: TransactionEntry): HTMLElemen
   if (entry.kind === "transfer" && !isDetected(ctx.ledger, entry.transfer)) {
     return deleteButton(ctx, entry.transfer);
   }
-  return el("span", "delete-spacer w-6 shrink-0 max-sm:hidden");
+  return el("span", "delete-spacer w-[18px] shrink-0 max-sm:hidden");
 }
 
-function sublineEl(ctx: RenderContext, key: string, at: number): HTMLElement {
-  const comment = commentText(ctx.data.comments, key);
-  return el(
-    "div",
-    "subline truncate text-xs text-slate-500 sm:hidden dark:text-slate-400",
-    comment === "" ? formatTime(at) : `${formatTime(at)} · ${comment}`,
+/**
+ * 2段目。狭い幅では時刻を左の固定列から外してここへ回す。
+ * 44pxの列を空けるだけで口座名に使える幅がはっきり増える
+ */
+function memoRow(memo: MemoField, at: number): HTMLElement {
+  const row = el("div", "flex items-baseline justify-between gap-3");
+  row.append(
+    memo.field,
+    el("span", `time-inline shrink-0 text-xs tabular-nums sm:hidden ${INK_WEAK}`, formatTime(at)),
   );
+  return row;
 }
 
-function transactionMain(ctx: RenderContext, key: string, entry: TransactionEntry): HTMLElement {
+function transactionMain(
+  ctx: RenderContext,
+  entry: TransactionEntry,
+  memo: MemoField,
+): HTMLElement {
   const main = el(
     "div",
-    "flex min-h-14 items-center gap-3 py-2 pr-3 pl-3.5 sm:min-h-[52px] sm:pl-3",
+    "flex items-center gap-3 px-3.5 py-3 sm:gap-[18px] sm:px-[18px] sm:py-[15px]",
   );
-  // デスクトップは時刻を左の列に出す(モバイルはサブ行)
+  const body = el("div", "flex min-w-0 flex-1 flex-col gap-[5px]");
+  body.append(logTitle(ctx, entry), memoRow(memo, entry.at));
   main.append(
     el(
       "span",
-      "time w-[38px] shrink-0 text-xs tabular-nums text-slate-400 max-sm:hidden",
+      `time w-11 shrink-0 text-xs tabular-nums max-sm:hidden ${INK_WEAK}`,
       formatTime(entry.at),
     ),
+    body,
+    transactionAmount(entry),
+    trailingColumn(ctx, entry),
   );
-  const body = el("div", "min-w-0 flex-1");
-  body.append(logTitle(ctx, entry), sublineEl(ctx, key, entry.at));
-  // デスクトップは常時インラインで編集できる
-  const inline = commentInput(ctx, key);
-  inline.classList.add("max-sm:hidden", "sm:w-[220px]", "shrink-0");
-  main.append(body, inline, transactionAmount(entry), trailingColumn(ctx, entry));
   return main;
 }
 
-interface MobileEditor {
-  editor: HTMLElement;
-  input: HTMLInputElement;
-}
-
-// モバイル: 行タップでコメント入力を展開。空で確定すると削除になる(onCommentChange側の仕様)
-function mobileCommentEditor(ctx: RenderContext, key: string): MobileEditor {
-  const editor = el("div", "comment-editor hidden pr-3 pb-2.5 pl-3.5 sm:hidden");
-  const input = commentInput(ctx, key);
-  input.classList.add(
-    "min-h-10",
-    "bg-white",
-    "ring-slate-300",
-    "dark:bg-slate-800",
-    "dark:ring-slate-600",
-  );
-  editor.append(input);
-  return { editor, input };
-}
-
-function attachRowToggle(row: HTMLElement, parts: MobileEditor, swipe: SwipeHandle | null): void {
+/** 行のどこを叩いてもメモを書き始められるようにする。削除やスワイプとは競合させない */
+function attachMemoOpen(row: HTMLElement, memo: MemoField, swipe: SwipeHandle | null): void {
   row.addEventListener("click", (event) => {
-    // スワイプで開いた行のタップは閉じる操作。編集の展開と混ざらないようにする
+    // スワイプで開いた行のタップは閉じる操作。編集の開始と混ざらないようにする
     if (swipe?.settle() === true) {
       return;
     }
@@ -185,66 +112,45 @@ function attachRowToggle(row: HTMLElement, parts: MobileEditor, swipe: SwipeHand
     if (target instanceof Element && target.closest("input,button,a,select") !== null) {
       return;
     }
-    parts.editor.classList.toggle("hidden");
-    if (!parts.editor.classList.contains("hidden")) {
-      parts.input.focus();
-    }
+    memo.open();
   });
 }
 
-function transactionColumn(
-  ctx: RenderContext,
-  entry: TransactionEntry,
-): { col: HTMLElement } & MobileEditor {
-  const key =
-    entry.kind === "transfer" ? transferCommentKey(entry.transfer) : changeCommentKey(entry.change);
-  const { editor, input } = mobileCommentEditor(ctx, key);
-  const col = el("div", "min-w-0 flex-1");
-  col.append(transactionMain(ctx, key, entry), editor);
-  return { col, editor, input };
-}
-
-/** 振替・外部入出金の1行。モバイルは行タップでコメント入力を展開する */
+/** 振替・外部入出金・明細の1件。1取引=1カードにして、行の切れ目を面で示す */
 export function transactionRow(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
-  const { col, editor, input } = transactionColumn(ctx, entry);
+  const memo = memoField(ctx, commentKeyOf(entry));
   // スワイプ削除のパネルを覆えるよう、行の中身はカードと同じ面に載せて滑らせる
-  const slider = el(
+  const slider = el("div", `swipe-slider relative transition-transform duration-150 ${SURFACE}`);
+  slider.append(transactionMain(ctx, entry, memo));
+  const row = el(
     "div",
-    "swipe-slider relative flex items-stretch bg-white transition-transform duration-150 dark:bg-slate-950",
+    `log-row group relative overflow-hidden rounded-[12px] ${SURFACE} ${BORDER}`,
   );
-  slider.append(el("span", `accent w-1 shrink-0 ${transactionAccent(entry)}`), col);
-  const row = el("div", "log-row group relative overflow-hidden");
   row.append(slider);
   const swipe =
     entry.kind === "transfer" && !isDetected(ctx.ledger, entry.transfer)
       ? attachSwipeDelete(ctx, { row, slider }, entry.transfer)
       : null;
-  attachRowToggle(row, { editor, input }, swipe);
+  attachMemoOpen(row, memo, swipe);
   return row;
 }
 
-/** 残高記録の従属行。取引ではないので背景をわずかに沈めて区別する */
+/**
+ * 残高記録の従属行。取引ではないのでカードにせず、素の1行として
+ * カードの間に置く。面を持たないことで従属関係が伝わる
+ */
 export function snapshotRow(entry: Extract<LogEntry, { kind: "snapshot" }>): HTMLElement {
-  const row = el(
-    "div",
-    "snapshot-row flex items-center gap-2.5 bg-[#fcfdfe] py-2 pr-3.5 pl-[18px] dark:bg-transparent",
-  );
+  const row = el("div", "snapshot-row flex items-center gap-2.5 px-1 py-1.5");
   row.append(
     el(
       "span",
-      "badge rounded bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+      `badge rounded-[5px] bg-[#dfe4ea] px-[7px] text-[11px] font-bold dark:bg-[#1e2733] ${INK_SOFT}`,
       "記録",
     ),
   );
-  const text = el("span", FINE_PRINT);
+  const text = el("span", `text-xs ${INK_SOFT}`);
   text.append(`${formatTime(entry.at)} · 残高スナップショット · 合計 `);
-  text.append(
-    el(
-      "strong",
-      "font-semibold text-slate-700 tabular-nums dark:text-slate-300",
-      formatYen(entry.total),
-    ),
-  );
+  text.append(el("strong", "font-bold tabular-nums", formatYen(entry.total)));
   row.append(text);
   return row;
 }

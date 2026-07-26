@@ -1,12 +1,14 @@
+import { BORDER, INK_DECOR, INK_SOFT, MUTED, SELECTED, SURFACE, el, signedCell } from "./dom.ts";
 import type { BalanceChange, TransferRecord } from "../domain/ledger.ts";
-import { CARD, MUTED, el, signedCell } from "./dom.ts";
 import type { LogFilter, RenderContext, UiState } from "./context.ts";
-import { formatDayHeading, localDayKey } from "./format.ts";
+import { dayStart, inPeriod } from "./period.ts";
+import { formatDayHeading, formatShortDateTime, localDayKey } from "./format.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
 import type { LogEntry } from "../domain/log.ts";
-import { accountRefs } from "../domain/ledger.ts";
-import { inPeriod } from "./period.ts";
+import { icon } from "./icons.ts";
 import { logEntries } from "../domain/log.ts";
+
+const SPAN_ICON_SIZE = 14;
 
 const FILTERS: { key: LogFilter; label: string }[] = [
   { key: "all", label: "すべて" },
@@ -17,9 +19,8 @@ const FILTERS: { key: LogFilter; label: string }[] = [
 
 const CHIP_BASE =
   "min-h-9 shrink-0 cursor-pointer rounded-full px-3.5 text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500";
-const CHIP_ON = "bg-slate-900 font-semibold text-white dark:bg-sky-400 dark:text-slate-950";
-const CHIP_OFF =
-  "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100 dark:bg-slate-950 dark:text-slate-300 dark:ring-slate-800 dark:hover:bg-slate-800";
+const CHIP_ON = `font-bold ${SELECTED}`;
+const CHIP_OFF = `${SURFACE} ${BORDER} ${INK_SOFT} hover:bg-[#f6f7f9] dark:hover:bg-[#1a222c]`;
 
 function filterChip(ctx: RenderContext, def: { key: LogFilter; label: string }): HTMLElement {
   const active = ctx.state.logFilter === def.key;
@@ -36,32 +37,54 @@ function filterChip(ctx: RenderContext, def: { key: LogFilter; label: string }):
   return chip;
 }
 
-// 口座での絞り込み。チップ列の見た目に合わせたセレクト
-function accountFilterSelect(ctx: RenderContext): HTMLSelectElement {
-  const select = document.createElement("select");
-  select.className = `account-filter ${CHIP_BASE} appearance-none ${
-    ctx.state.filterAccountId === null ? CHIP_OFF : `active ${CHIP_ON}`
-  }`;
-  select.name = "account-filter";
-  select.setAttribute("aria-label", "口座で絞り込み");
-  select.append(new Option("口座 ▾", ""));
-  for (const account of accountRefs(ctx.data.snapshots, ctx.ledger.transfers)) {
-    select.append(new Option(account.name, account.id));
-  }
-  select.value = ctx.state.filterAccountId ?? "";
-  select.addEventListener("change", () => {
-    ctx.state.filterAccountId = select.value === "" ? null : select.value;
+/**
+ * 推移から渡ってきた区間の表示。チップ本体で残高ページへ戻り、×で解除する。
+ * 絞り込みが効いていることを、外した方法とセットで見せる
+ */
+function spanBackButton(ctx: RenderContext, span: { from: number; to: number }): HTMLElement {
+  const back = el(
+    "button",
+    "span-back flex cursor-pointer items-center gap-2 bg-transparent",
+    `${formatShortDateTime(span.from)} – ${formatShortDateTime(span.to)} の区間で絞り込み中`,
+  );
+  back.title = "残高ページへ戻る";
+  back.addEventListener("click", () => {
+    ctx.state.activeTab = "balance";
     ctx.draw();
   });
-  return select;
+  return back;
+}
+
+function spanClearButton(ctx: RenderContext): HTMLElement {
+  const clear = el("button", `span-clear flex cursor-pointer items-center ${INK_DECOR}`);
+  clear.append(icon("x", SPAN_ICON_SIZE));
+  clear.title = "区間の絞り込みを解除";
+  clear.setAttribute("aria-label", clear.title);
+  clear.addEventListener("click", () => {
+    ctx.state.selectedSpan = null;
+    ctx.draw();
+  });
+  return clear;
+}
+
+function spanChip(ctx: RenderContext, span: { from: number; to: number }): HTMLElement {
+  const chip = el(
+    "div",
+    "span-chip ml-auto flex shrink-0 items-center gap-2 rounded-full bg-[#eef2f6] px-3 " +
+      `py-1.5 text-[12.5px] ring-1 ring-[#dde4ec] dark:bg-[#1a2330] dark:ring-[#243040] ${INK_SOFT}`,
+  );
+  chip.append(spanBackButton(ctx, span), spanClearButton(ctx));
+  return chip;
 }
 
 function filterChips(ctx: RenderContext): HTMLElement {
-  const row = el("div", "log-filters flex gap-1.5 overflow-x-auto pb-2");
+  const row = el("div", "log-filters flex items-center gap-1.5 overflow-x-auto pb-3.5");
   for (const def of FILTERS) {
     row.append(filterChip(ctx, def));
   }
-  row.append(accountFilterSelect(ctx));
+  if (ctx.state.selectedSpan !== null) {
+    row.append(spanChip(ctx, ctx.state.selectedSpan));
+  }
   return row;
 }
 
@@ -89,12 +112,35 @@ function matchesExternal(state: UiState, change: BalanceChange): boolean {
   return state.filterAccountId === null || change.accountId === state.filterAccountId;
 }
 
+/**
+ * 代表口座の明細。つかいわけ口座ではないので、口座で絞っている間は出さない。
+ * 入金・出金の絞り込みは符号で判断する
+ */
+function matchesStatement(state: UiState, amount: number): boolean {
+  if (state.logFilter === "transfer" || state.filterAccountId !== null) {
+    return false;
+  }
+  if (state.logFilter === "in") {
+    return amount > 0;
+  }
+  return state.logFilter === "out" ? amount < 0 : true;
+}
+
+/** 推移で選んだ区間。選んでいなければ素通りさせる */
+function inSelectedSpan(state: UiState, at: number): boolean {
+  const span = state.selectedSpan;
+  return span === null || (at >= span.from && at <= span.to);
+}
+
 function matchesLog(state: UiState, entry: LogEntry): boolean {
-  if (!inPeriod(state, entry.at)) {
+  if (!inPeriod(state, entry.at) || !inSelectedSpan(state, entry.at)) {
     return false;
   }
   if (entry.kind === "transfer") {
     return matchesTransfer(state, entry.transfer);
+  }
+  if (entry.kind === "statement") {
+    return matchesStatement(state, entry.statement.amount);
   }
   if (entry.kind === "external") {
     return matchesExternal(state, entry.change);
@@ -103,15 +149,22 @@ function matchesLog(state: UiState, entry: LogEntry): boolean {
   return state.logFilter === "all" && state.filterAccountId === null;
 }
 
-// 日計は外部入出金の合計のみ(振替は口座間移動なので合計に含めない)
+/** 口座の外と出入りした額だけ。振替は口座間の移動なので日計に含めない */
+function dayFlow(entry: LogEntry): number {
+  if (entry.kind === "external") {
+    return entry.change.externalDelta;
+  }
+  return entry.kind === "statement" ? entry.statement.amount : 0;
+}
+
 function externalDayTotals(entries: LogEntry[]): Map<string, number> {
   const totals = new Map<string, number>();
   for (const entry of entries) {
-    if (entry.kind !== "external") {
-      continue;
+    const flow = dayFlow(entry);
+    if (flow !== 0) {
+      const key = localDayKey(entry.at);
+      totals.set(key, (totals.get(key) ?? 0) + flow);
     }
-    const key = localDayKey(entry.at);
-    totals.set(key, (totals.get(key) ?? 0) + entry.change.externalDelta);
   }
   return totals;
 }
@@ -136,41 +189,38 @@ function groupByDay(entries: LogEntry[]): DayGroup[] {
   return groups;
 }
 
+/** 日の見出し。カードの外に置き、その日の取引がどこからどこまでかを示す */
 function dayHeadingEl(group: DayGroup, total: number | undefined): HTMLElement {
-  // 右余白はカード内の金額列の右端に合わせる(モバイル: pr-3、デスクトップ:
-  // pr-3 + 削除ボタン列 w-6 + gap-3 = pr-12)
-  const heading = el(
-    "div",
-    "day-heading flex items-baseline justify-between pt-1.5 pb-1 pr-3 pl-0.5 sm:pr-12",
-  );
+  const heading = el("div", "day-heading flex items-baseline justify-between px-1 pb-2.5");
   heading.append(
-    el("span", "text-xs font-bold text-slate-500 dark:text-slate-400", formatDayHeading(group.at)),
+    el("span", `text-xs font-bold tracking-[.03em] ${INK_SOFT}`, formatDayHeading(group.at)),
   );
   if (total !== undefined) {
     const cell = signedCell(total);
-    cell.classList.add("day-total", "text-xs", "font-semibold", "tabular-nums");
+    cell.classList.add("day-total", "text-xs", "font-bold");
     heading.append(cell);
   }
   return heading;
 }
 
+/** 1取引=1カード。カードの切れ目が取引の切れ目になり、行の境目を罫線で探さずに済む */
 function dayCard(ctx: RenderContext, entries: LogEntry[]): HTMLElement {
-  const card = el(
-    "div",
-    `day-card mb-2 divide-y divide-slate-100 overflow-hidden ${CARD} dark:divide-slate-800`,
-  );
+  const list = el("div", "day-card mb-4 flex flex-col gap-2");
   for (const entry of entries) {
-    card.append(entry.kind === "snapshot" ? snapshotRow(entry) : transactionRow(ctx, entry));
+    list.append(entry.kind === "snapshot" ? snapshotRow(entry) : transactionRow(ctx, entry));
   }
-  return card;
+  return list;
 }
 
 export function logSection(ctx: RenderContext): HTMLElement {
   const node = el("section", "log");
   node.append(filterChips(ctx));
-  const entries = logEntries(ctx.data.snapshots, ctx.ledger.transfers).filter((entry) =>
-    matchesLog(ctx.state, entry),
-  );
+  const entries = logEntries({
+    snapshots: ctx.data.snapshots,
+    transfers: ctx.ledger.transfers,
+    statements: ctx.data.statements,
+    dayStart,
+  }).filter((entry) => matchesLog(ctx.state, entry));
   if (entries.length === 0) {
     node.append(el("p", `empty mt-2 ${MUTED}`, "まだ記録がありません"));
     return node;

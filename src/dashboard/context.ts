@@ -40,7 +40,11 @@ export interface DashboardOptions {
   now?: () => number;
 }
 
-export type ViewTab = "log" | "accounts" | "history" | "statements";
+/**
+ * 「ログ」は毎日開いて取引を読むページ、「残高」は週に数回、口座の配分と
+ * 推移を見るページ。1画面に全部載せると情報量が多すぎるため役割で分けている
+ */
+export type ViewTab = "log" | "balance";
 export type LogFilter = "all" | "transfer" | "in" | "out";
 export type StatementFilter = "all" | "in" | "out";
 
@@ -52,6 +56,11 @@ export interface UiState {
   statementFilter: StatementFilter;
   filterAccountId: string | null;
   detailOpen: boolean;
+  /**
+   * 推移で選んだ区間。残高ページで選び、ログページで絞り込みとして効く。
+   * ページをまたいで保つことで「この山は何だったのか」を辿れる
+   */
+  selectedSpan: { from: number; to: number } | null;
   periodFrom: number | null;
   periodToExclusive: number | null;
   periodFromValue: string;
@@ -73,6 +82,7 @@ export function initialUiState(now: () => number = Date.now): UiState {
     statementFilter: "all",
     filterAccountId: null,
     detailOpen: false,
+    selectedSpan: null,
     periodFrom: null,
     periodToExclusive: null,
     periodFromValue: "",
@@ -83,6 +93,14 @@ export function initialUiState(now: () => number = Date.now): UiState {
   };
   applyBounds(state);
   return state;
+}
+
+/**
+ * 狭い幅かどうか。ホバーが使えず縦も横も足りないため、行の組み方と
+ * タブの置き場所を変える。判定は描画のたびに読み直す(回転や分割表示で変わる)
+ */
+export function isNarrow(): boolean {
+  return globalThis.matchMedia?.("(max-width: 639px)").matches === true;
 }
 
 /** 各セクションの描画関数に渡す描画コンテキスト */

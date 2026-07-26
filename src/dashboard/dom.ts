@@ -94,12 +94,36 @@ export function svgEl(
  * 色だけに意味を持たせず、口座名は必ず文字でも出す
  */
 const ACCOUNT_COLORS = [
-  { dot: "bg-[#0072B2] dark:bg-[#56B4E9]", line: "text-[#0072B2] dark:text-[#56B4E9]" },
-  { dot: "bg-[#D55E00] dark:bg-[#E69F00]", line: "text-[#D55E00] dark:text-[#E69F00]" },
-  { dot: "bg-[#009E73] dark:bg-[#3FC7A1]", line: "text-[#009E73] dark:text-[#3FC7A1]" },
-  { dot: "bg-[#AA5A87] dark:bg-[#CC79A7]", line: "text-[#AA5A87] dark:text-[#CC79A7]" },
-  { dot: "bg-[#5B5EA6] dark:bg-[#9A9CE0]", line: "text-[#5B5EA6] dark:text-[#9A9CE0]" },
-  { dot: "bg-[#8C6D1F] dark:bg-[#D9C55A]", line: "text-[#8C6D1F] dark:text-[#D9C55A]" },
+  {
+    dot: "bg-[#0072B2] dark:bg-[#56B4E9]",
+    line: "text-[#0072B2] dark:text-[#56B4E9]",
+    border: "border-[#0072B2] dark:border-[#56B4E9]",
+  },
+  {
+    dot: "bg-[#D55E00] dark:bg-[#E69F00]",
+    line: "text-[#D55E00] dark:text-[#E69F00]",
+    border: "border-[#D55E00] dark:border-[#E69F00]",
+  },
+  {
+    dot: "bg-[#009E73] dark:bg-[#3FC7A1]",
+    line: "text-[#009E73] dark:text-[#3FC7A1]",
+    border: "border-[#009E73] dark:border-[#3FC7A1]",
+  },
+  {
+    dot: "bg-[#AA5A87] dark:bg-[#CC79A7]",
+    line: "text-[#AA5A87] dark:text-[#CC79A7]",
+    border: "border-[#AA5A87] dark:border-[#CC79A7]",
+  },
+  {
+    dot: "bg-[#5B5EA6] dark:bg-[#9A9CE0]",
+    line: "text-[#5B5EA6] dark:text-[#9A9CE0]",
+    border: "border-[#5B5EA6] dark:border-[#9A9CE0]",
+  },
+  {
+    dot: "bg-[#8C6D1F] dark:bg-[#D9C55A]",
+    line: "text-[#8C6D1F] dark:text-[#D9C55A]",
+    border: "border-[#8C6D1F] dark:border-[#D9C55A]",
+  },
 ];
 
 export type AccountColor = (typeof ACCOUNT_COLORS)[number];

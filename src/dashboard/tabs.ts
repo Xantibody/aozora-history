@@ -1,19 +1,8 @@
 import type { RenderContext } from "./context.ts";
-import { accountsSection } from "./accounts-tab.ts";
-import { historySection } from "./history-tab.ts";
+import { balancePage } from "./balance-page.ts";
 import { logSection } from "./log-tab.ts";
-import { statementsSection } from "./statements-tab.ts";
 
-/** 選択中のタブに対応するセクションを描く */
+/** 選択中のページを描く */
 export function activeSection(ctx: RenderContext): HTMLElement {
-  if (ctx.state.activeTab === "log") {
-    return logSection(ctx);
-  }
-  if (ctx.state.activeTab === "accounts") {
-    return accountsSection(ctx);
-  }
-  if (ctx.state.activeTab === "statements") {
-    return statementsSection(ctx);
-  }
-  return historySection(ctx);
+  return ctx.state.activeTab === "log" ? logSection(ctx) : balancePage(ctx);
 }
