@@ -29,6 +29,8 @@ const SYNC_CONFIG_KEY = "syncConfig";
 export const AUTO_TRANSFERS_KEY = "autoTransferSettings";
 /** 設定画面にデバッグ欄を出すかどうか。既定は出さない */
 export const DEBUG_MODE_KEY = "debugMode";
+/** 画面の明暗。端末ごとの見え方の設定なのでLEDGER_KEYSに含めない(同期しない) */
+export const THEME_KEY = "themePreference";
 /** 最後の取り込みの結果。記録ではなく診断用なのでLEDGER_KEYSに含めない */
 export const LAST_COLLECT_KEY = "lastCollectReport";
 /** 最後にR2と同期できた時刻。台帳ではないためLEDGER_KEYSに含めない(自動同期のループ防止) */
@@ -137,6 +139,20 @@ export class HistoryStore {
 
   public async saveDebugMode(enabled: boolean): Promise<void> {
     await this.storage.set({ [DEBUG_MODE_KEY]: enabled });
+  }
+
+  /**
+   * 保存された明暗の設定。読める値かどうかの判断は画面側(theme.ts)に任せ、
+   * ここは文字列として出し入れするだけにする(storageが画面の都合を知らずに済む)
+   */
+  public async loadTheme(): Promise<string | null> {
+    const items = await this.storage.get(THEME_KEY);
+    const stored = items[THEME_KEY];
+    return typeof stored === "string" ? stored : null;
+  }
+
+  public async saveTheme(preference: string): Promise<void> {
+    await this.storage.set({ [THEME_KEY]: preference });
   }
 
   public async loadLastCollect(): Promise<CollectReport | null> {
