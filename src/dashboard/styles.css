@@ -1,7 +1,28 @@
 @import "tailwindcss";
 
-/* ダーク対応はTailwindのdark:バリアント(prefers-color-scheme)で行う。
-   フォームコントロールのネイティブ描画のためcolor-schemeだけ宣言する */
+/* テーマは html の data-theme で決める。属性が無い状態を「システムに従う」に
+   充てているため、拡張のスクリプトが走る前でもOSの設定どおりに描ける
+   (属性が付くのを待つと、ダークの利用者に白い画面が一瞬見えてしまう) */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme]), :root:not([data-theme]) *) {
+      @slot;
+    }
+  }
+}
+
+/* フォームコントロールのネイティブ描画に効かせる */
 :root {
   color-scheme: light dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }

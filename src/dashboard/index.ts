@@ -7,6 +7,7 @@ import {
 } from "../infrastructure/storage.ts";
 import type { DashboardData, DashboardHandlers } from "./render.ts";
 import { R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
+import { applyTheme, toThemePreference } from "./theme.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
 import type { FetchLike } from "../infrastructure/r2sync.ts";
@@ -31,6 +32,7 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     syncConfig,
     lastSyncedAt,
     debugMode,
+    theme,
     lastCollect,
   ] = await Promise.all([
     store.loadSnapshots(),
@@ -42,6 +44,7 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     store.loadSyncConfig(),
     store.loadLastSyncedAt(),
     store.loadDebugMode(),
+    store.loadTheme(),
     store.loadLastCollect(),
   ]);
   return {
@@ -54,6 +57,7 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     syncConfig,
     lastSyncedAt,
     debugMode,
+    theme: toThemePreference(theme),
     lastCollect,
   };
 }
@@ -144,6 +148,12 @@ function createHandlers(store: HistoryStore, data: DashboardData): DashboardHand
     onToggleDebug: (enabled) => {
       data.debugMode = enabled;
       void store.saveDebugMode(enabled);
+    },
+
+    onChangeTheme: (preference) => {
+      data.theme = preference;
+      applyTheme(document.documentElement, preference);
+      void store.saveTheme(preference);
     },
 
     onRequestCollect: () => {
@@ -245,6 +255,7 @@ async function main(): Promise<void> {
   }
   const store = new HistoryStore(browser.storage.local);
   const data = await loadDashboardData(store);
+  applyTheme(document.documentElement, data.theme);
   const redraw = renderDashboard(root, data, {
     handlers: createHandlers(store, data),
   });

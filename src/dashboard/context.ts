@@ -23,6 +23,8 @@ export interface DashboardData {
   lastSyncedAt: number | null;
   /** 設定画面にデバッグ欄を出すか */
   debugMode: boolean;
+  /** 画面の明暗。端末ごとの見え方の設定なので、他端末とは同期しない */
+  theme: ThemePreference;
   /** 最後に銀行APIを取り込んだ結果。まだ一度も走っていなければnull */
   lastCollect: CollectReport | null;
 }
@@ -34,6 +36,7 @@ export interface DashboardHandlers {
   onSyncNow: () => Promise<string>;
   onImportFile: (text: string) => Promise<string>;
   onToggleDebug: (enabled: boolean) => void;
+  onChangeTheme: (preference: ThemePreference) => void;
   /** 次に銀行サイトを開いたときの取り込みを、間隔を待たずに走らせる */
   onRequestCollect: () => void;
 }
@@ -48,6 +51,14 @@ export interface DashboardOptions {
  * 推移を見るページ。1画面に全部載せると情報量が多すぎるため役割で分けている
  */
 export type ViewTab = "log" | "balance";
+
+/**
+ * 画面の明暗。OSの設定に従うのを既定にしつつ、明示的に固定もできる。
+ * 家計を見る画面は昼にも夜にも開くため、端末の自動切り替えと
+ * 見たい明るさが一致しないことがある
+ */
+export type ThemePreference = "system" | "light" | "dark";
+
 export type LogFilter = "all" | "transfer" | "in" | "out";
 export type StatementFilter = "all" | "in" | "out";
 

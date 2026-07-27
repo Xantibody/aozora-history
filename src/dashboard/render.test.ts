@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
-import type { DashboardData, DashboardHandlers } from "./render.ts";
+import type { DashboardData, DashboardHandlers, ThemePreference } from "./render.ts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   formatDateTime,
@@ -104,6 +104,7 @@ function data(overrides: Partial<DashboardData> = {}): DashboardData {
     syncConfig: null,
     lastSyncedAt: null,
     debugMode: false,
+    theme: "system",
     lastCollect: null,
     ...overrides,
   };
@@ -121,6 +122,7 @@ function render(root: HTMLElement, dashboardData = data(), now?: () => number): 
     onSyncNow: vi.fn<() => Promise<string>>(() => Promise.resolve("同期しました")),
     onImportFile: vi.fn<(text: string) => Promise<string>>(() => Promise.resolve("読み込みました")),
     onToggleDebug: vi.fn<(enabled: boolean) => void>(),
+    onChangeTheme: vi.fn<(preference: ThemePreference) => void>(),
     onRequestCollect: vi.fn<() => void>(),
   };
   const redraw = renderDashboard(root, dashboardData, { handlers, now });
@@ -232,6 +234,32 @@ describe("renderDashboard", () => {
       expect(summary.textContent).toContain("合計残高 · 7月");
       expect(summary.querySelector(".total-delta")!.textContent).toBe("+267,469円");
       expect(summary.querySelector(".total-balance")!.textContent).toBe("484,381円");
+    });
+
+    describe("テーマ切り替え", () => {
+      function themeButton(): HTMLButtonElement {
+        return root.querySelector<HTMLButtonElement>("button.theme-button")!;
+      }
+
+      it("いま選んでいるテーマを文字で示す(アイコンだけにしない)", () => {
+        render(root, data({ theme: "dark" }));
+
+        expect(themeButton().getAttribute("aria-label")).toBe("テーマ: ダーク");
+      });
+
+      it("押すたびに システム → ライト → ダーク と巡る", () => {
+        const { onChangeTheme } = render(root, data({ theme: "system" }));
+
+        themeButton().click();
+
+        expect(onChangeTheme).toHaveBeenCalledWith("light");
+      });
+
+      it("狭い幅でも隠さない(下部バーに他の入口がない)", () => {
+        render(root);
+
+        expect(themeButton().className).not.toContain("max-sm:hidden");
+      });
     });
 
     it("開いたときは当月を表示する", () => {

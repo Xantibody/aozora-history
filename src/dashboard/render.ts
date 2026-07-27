@@ -13,7 +13,12 @@ import { suggestionList } from "./comment-input.ts";
 
 export { statementsCsv, transfersCsv } from "./csv.ts";
 export { formatDateTime, formatSigned, formatYen } from "./format.ts";
-export type { DashboardData, DashboardHandlers, DashboardOptions } from "./context.ts";
+export type {
+  DashboardData,
+  DashboardHandlers,
+  DashboardOptions,
+  ThemePreference,
+} from "./context.ts";
 
 /**
  * 再描画でフォーカスが失われないよう、描画前の位置を覚えて復元する関数を返す。
