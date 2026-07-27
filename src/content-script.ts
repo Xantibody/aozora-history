@@ -167,11 +167,20 @@ function cancelVerify(state: TrackerState): void {
   state.verifyTimer = undefined;
 }
 
+/**
+ * 検証に通らなかった完了表示は、実行の失敗とは限らない。
+ *
+ * 実サイトはモーダルを閉じた300ms後にステップを確認へ戻すため、閉じてすぐ
+ * 開き直すと前回の完了ブロックが見えたまま挿入される。これを実行の失敗とみて
+ * 保留を捨てると、そのあと本当に実行しても記録する材料が残らない
+ * (2回続けて振替をするとコメント欄が出なくなっていた)。
+ *
+ * 成立していない振替を後から拾ってしまわないための番人は、この検証ではなく
+ * 1秒の待ち時間とセッション切れの検知が務める。保留はそのまま残す
+ */
 function commitIfStillCompleted(state: TrackerState): void {
   state.verifyTimer = undefined;
   const parsed = state.pendingTransfer;
-  // 検証に通らなければその実行は失敗しているので、保留も捨てる
-  state.pendingTransfer = null;
   if (
     parsed === null ||
     !hasVisibleMessage(state.doc, COMPLETION_MESSAGE) ||
@@ -179,6 +188,8 @@ function commitIfStillCompleted(state: TrackerState): void {
   ) {
     return;
   }
+  // 同じ完了表示で二重に記録しないよう、使った保留は捨てる
+  state.pendingTransfer = null;
   void recordTransferAndPrompt(state.doc, state.store, {
     transferredAt: state.now(),
     ...parsed,

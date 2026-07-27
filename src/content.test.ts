@@ -232,6 +232,43 @@ describe("setupContentScript", () => {
     await expect(store!.loadTransfers()).resolves.toHaveLength(2);
   });
 
+  // 実サイトの closeConfirmModal はモーダルを閉じたあと300ms経ってから
+  // ステップを確認へ戻す。その前に開き直すと、完了ブロックが見えたまま
+  // モーダルが挿入される(前回の振替の名残であって、新しい完了ではない)
+  const STEP_RESET_DELAY_MS = 300;
+
+  async function reopenBeforeStepReset(): Promise<void> {
+    document.querySelector<HTMLElement>("#sp-account-account-to-account-close")!.click();
+    document.querySelector(".modal")!.remove();
+    await vi.advanceTimersByTimeAsync(100);
+
+    document.querySelector<HTMLElement>("#sp-account-account-to-account-confirm")!.click();
+    document.body.insertAdjacentHTML("beforeend", confirmModalHtml);
+    const [confirmStep, completeStep] =
+      document.querySelectorAll<HTMLElement>(".modal .confirm-info");
+    confirmStep.style.display = "none";
+    completeStep.style.display = "";
+    await vi.advanceTimersByTimeAsync(STEP_RESET_DELAY_MS - 100);
+
+    // サイトがステップを確認へ戻す
+    confirmStep.style.display = "";
+    completeStep.style.display = "none";
+    await vi.runAllTimersAsync();
+  }
+
+  it("完了モーダルを閉じてすぐ開き直しても2回目の振替を記録する", async () => {
+    document.body.innerHTML = transferHtml;
+    await openConfirmModal();
+    await executeTransfer();
+    document.querySelector<HTMLButtonElement>("#aozora-history-comment button.close")!.click();
+
+    await reopenBeforeStepReset();
+    await executeTransfer();
+
+    await expect(store!.loadTransfers()).resolves.toHaveLength(2);
+    expect(document.querySelector("#aozora-history-comment")).not.toBeNull();
+  });
+
   describe("振替直後のコメント入力", () => {
     async function confirmTransfer(): Promise<void> {
       document.body.innerHTML = transferHtml;
