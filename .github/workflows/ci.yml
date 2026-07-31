@@ -5,20 +5,51 @@ on:
     branches: [main]
   pull_request:
 
+# 直列に並べると、いちばん遅い1つ(Firefoxのテスト)の後ろに他が全部つながる。
+# 独立したジョブに分ければ待ち時間はいちばん遅いジョブの分だけになる
 jobs:
-  check:
+  static:
+    name: Format / Lint / Types
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+      - run: pnpm run fmt:check
+      - run: pnpm run lint
+      - run: pnpm run typecheck
 
-      - name: Format check
-        run: pnpm run fmt:check
-      - name: Lint
-        run: pnpm run lint
-      - name: Type check
-        run: pnpm run typecheck
-      - name: Test
-        run: pnpm run test
-      - name: Build
-        run: pnpm run build
+  test-logic:
+    name: Test (node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm run test:logic
+
+  test-dom:
+    name: Test (Firefox)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          browsers: "true"
+      - run: pnpm run test:dom
+
+      # 落ちた画面だけが残る。緑のときは何も上がらない
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: firefox-failure-screenshots
+          path: |
+            src/__screenshots__/
+            .vitest-attachments/
+          if-no-files-found: ignore
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm run build

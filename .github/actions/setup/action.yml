@@ -1,6 +1,11 @@
 name: "Setup"
 description: "Install Nix tools and project dependencies"
 
+inputs:
+  browsers:
+    description: "Hand Playwright the nixpkgs browsers (only the Firefox test job needs them)"
+    default: "false"
+
 runs:
   using: "composite"
   steps:
@@ -14,6 +19,19 @@ runs:
         nix profile install --inputs-from . nixpkgs#typescript-go
         nix profile install --inputs-from . nixpkgs#oxfmt
         nix profile install --inputs-from . nixpkgs#oxlint
+
+    # playwrightのダウンローダは使わない。落ちてくるビルドは共有ライブラリを
+    # FHSの場所から探すため、nixで組んだ環境では動かない。nixpkgs側は
+    # そこを解決済みのFirefoxを置いてくれる(revisionはflake.lockが決める)
+    - name: Take the browsers from nixpkgs
+      if: inputs.browsers == 'true'
+      shell: bash
+      run: |
+        browsers=$(nix build --inputs-from . nixpkgs#playwright-driver.browsers \
+          --no-link --print-out-paths)
+        echo "PLAYWRIGHT_BROWSERS_PATH=$browsers" >> "$GITHUB_ENV"
+        echo "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1" >> "$GITHUB_ENV"
+        echo "PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1" >> "$GITHUB_ENV"
 
     - name: Install dependencies
       shell: bash
