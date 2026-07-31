@@ -17,11 +17,7 @@
     "dev:css": "tailwindcss -i src/dashboard/styles.css -o .preview/dashboard.css --watch=always",
     "dev:js": "esbuild src/dev/main.ts --bundle --outfile=.preview/dashboard.js --format=iife --define:BUILD_STAMP=\"'dev'\" --watch=forever --servedir=.preview",
     "dev": "pnpm run dev:assets && { trap 'kill 0' EXIT; pnpm run dev:css & pnpm run dev:js; }",
-    "build:content": "esbuild src/content.ts --bundle --outfile=dist/content.js --format=iife --define:BUILD_STAMP=\"'$(date +%Y-%m-%d\\ %H:%M:%S)'\"",
-    "build:background": "esbuild src/background.ts --bundle --outfile=dist/background.js --format=iife",
-    "build:dashboard": "esbuild src/dashboard/index.ts --bundle --outfile=dist/dashboard.js --format=iife --define:BUILD_STAMP=\"'$(date +%Y-%m-%d\\ %H:%M:%S)'\" && tailwindcss -i src/dashboard/styles.css -o dist/dashboard.css",
-    "build:assets": "cp manifest.firefox.json dist/manifest.json && cp src/dashboard/dashboard.html src/icon.svg dist/",
-    "build": "pnpm run build:content && pnpm run build:background && pnpm run build:dashboard && pnpm run build:assets",
+    "build": "node build.js",
     "package:local": "pnpm run build && rm -f aozora-history-local.xpi && cd dist && zip -r ../aozora-history-local.xpi .",
     "package:firefox": "pnpm run build && rm -f aozora-history-v${VERSION:?}.xpi && cd dist && zip -r ../aozora-history-v${VERSION:?}.xpi .",
     "package:source": "git archive -o aozora-history-source-v${VERSION:?}.zip HEAD"

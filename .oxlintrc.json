@@ -122,6 +122,13 @@
       }
     },
     {
+      "files": ["build.js"],
+      "rules": {
+        // 拡張の中身はブラウザで動くが、これを組み立てる側はnodeで動く
+        "import/no-nodejs-modules": "off"
+      }
+    },
+    {
       "files": ["**/*.d.ts"],
       "rules": {
         // ambient型宣言ファイルはimport/exportを持たないのが正
