@@ -48,14 +48,17 @@ export function memoField(ctx: RenderContext, key: string): MemoField {
   const field = el("div", "memo min-w-0 text-[12.5px] leading-snug");
   const view = memoText(ctx, key);
   const input = commentInput(ctx, key);
-  input.classList.add("hidden");
+  // hiddenクラスではなくhidden属性で隠す。誘い文はinline-flexを持っており、
+  // 生成されるCSSでは .hidden が .inline-flex より前に来るため同じ詳細度で負け、
+  // クラスでは消えない(属性側は preflight が !important で当てている)
+  input.hidden = true;
   field.append(view, input);
   return {
     field,
     input,
     open: (): void => {
-      view.classList.add("hidden");
-      input.classList.remove("hidden");
+      view.hidden = true;
+      input.hidden = false;
       input.focus();
     },
   };

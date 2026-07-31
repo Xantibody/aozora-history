@@ -1,16 +1,23 @@
-import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ACHROMATIC_LIMIT,
+  chroma,
   data,
   dotColor,
+  ink,
+  lightness,
   minGap,
   render,
+  rightEdge,
   shortDateTime,
   snapshots,
   statements,
   swipe,
   transfers,
+  visible,
 } from "./render.fixture.ts";
+import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { usePhone, useWideScreen } from "./screen.fixture.ts";
 import type { DashboardData } from "./render.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
 
@@ -70,6 +77,8 @@ describe("renderDashboard", () => {
     });
 
     describe("テーマ切り替え", () => {
+      afterEach(useWideScreen);
+
       function themeButton(): HTMLButtonElement {
         return root.querySelector<HTMLButtonElement>("button.theme-button")!;
       }
@@ -88,10 +97,11 @@ describe("renderDashboard", () => {
         expect(onChangeTheme).toHaveBeenCalledWith("light");
       });
 
-      it("狭い幅でも隠さない(下部バーに他の入口がない)", () => {
+      it("狭い幅でも隠さない(下部バーに他の入口がない)", async () => {
+        await usePhone();
         render(root);
 
-        expect(themeButton().className).not.toContain("max-sm:hidden");
+        expect(visible(themeButton())).toBe(true);
       });
     });
 
@@ -242,49 +252,41 @@ describe("renderDashboard", () => {
       expect(headings[2].querySelector(".day-total")).toBeNull();
     });
 
-    it("金額の列を固定幅・右揃えにし、行の種類によらず右端を揃える", () => {
+    it("金額の列は桁数によらず同じ幅で、行の種類によらず右端が揃う", () => {
       render(root);
 
-      // 金額セルが可変幅だと、後続のコメント欄の位置が桁数分ずれてガタガタに見える
+      // 金額セルが可変幅だと、後続のコメント欄の位置が桁数分ずれてガタガタに見える。
+      // 削除ボタンは振替行にしかないため、外部入出金行に同じ幅のスペーサーが無いと
+      // 金額の右端が振替行より右へはみ出す
       const amounts = [...root.querySelectorAll<HTMLElement>(".log .log-row .amount")];
-      expect(amounts.length).toBeGreaterThan(0);
-      for (const amount of amounts) {
-        expect(amount.className).toContain("w-[120px]");
-        expect(amount.className).toContain("text-right");
-      }
-
-      // 削除ボタンは振替行にしかないため、外部入出金行には同じ幅のスペーサーを
-      // 置かないと金額の右端が振替行より右にはみ出す
-      const rows = [...root.querySelectorAll<HTMLElement>(".log .log-row")];
-      const trailing = [
-        ...root.querySelectorAll<HTMLElement>(
-          ".log .log-row .delete-transfer, .log .log-row .delete-spacer",
-        ),
-      ];
-      expect(trailing).toHaveLength(rows.length);
-      for (const element of trailing) {
-        expect(element.className).toContain("w-[18px]");
-      }
+      expect(amounts.length).toBeGreaterThan(1);
+      expect(new Set(amounts.map((amount) => rightEdge(amount)))).toHaveLength(1);
+      expect(
+        new Set(amounts.map((amount) => Math.round(amount.getBoundingClientRect().width))),
+      ).toHaveLength(1);
+      expect(getComputedStyle(amounts[0]).textAlign).toBe("right");
     });
 
     it("極性を色で分けず、符号とインクの濃淡で示す", () => {
       render(root);
 
       const amounts = [...root.querySelectorAll<HTMLElement>(".log .log-row .amount")];
-      // 外部出金 −5,000 / 外部入金 +272,469 / 振替
-      expect(amounts[0].className).toContain("text-[#5b6675]");
-      expect(amounts[1].className).toContain("text-[#0f172a]");
+      // 外部出金 −5,000 は控えめに、外部入金 +272,469 は濃く
+      expect(ink(amounts[0])).not.toBe(ink(amounts[1]));
+      expect(lightness(amounts[0])).toBeGreaterThan(lightness(amounts[1]));
+      // 緑と赤で極性を語らない。無彩色に近いことを彩度で確かめる
       for (const amount of amounts) {
-        expect(amount.className).not.toContain("emerald");
-        expect(amount.className).not.toContain("rose");
+        expect(chroma(amount)).toBeLessThan(ACHROMATIC_LIMIT);
       }
     });
 
     it("1取引を1カードにし、残高記録は面を持たない従属行にする", () => {
       render(root);
 
-      expect(root.querySelector(".log .log-row")!.className).toContain("rounded-[12px]");
-      expect(root.querySelector(".log .snapshot-row")!.className).not.toContain("rounded");
+      const card = root.querySelector<HTMLElement>(".log .log-row")!;
+      const subordinate = root.querySelector<HTMLElement>(".log .snapshot-row")!;
+      expect(getComputedStyle(card).borderTopLeftRadius).toBe("12px");
+      expect(getComputedStyle(subordinate).borderTopLeftRadius).toBe("0px");
     });
 
     describe("記録が多いとき", () => {
@@ -448,7 +450,7 @@ describe("renderDashboard", () => {
         clickChip("振替");
         const row = root.querySelector(".log .log-row")!;
         expect(row.querySelector(".memo")!.textContent).toBe("積立へ移動");
-        expect(row.querySelector<HTMLInputElement>("input.comment")!.classList).toContain("hidden");
+        expect(visible(row.querySelector("input.comment")!)).toBe(false);
       });
 
       it("メモがなければ書き込める場所だと分かる誘い文を出す", () => {
@@ -463,12 +465,12 @@ describe("renderDashboard", () => {
 
         const row = root.querySelector<HTMLElement>(".log .log-row")!;
         const input = row.querySelector<HTMLInputElement>("input.comment")!;
-        expect(input.classList).toContain("hidden");
+        expect(visible(input)).toBe(false);
 
         row.querySelector<HTMLElement>(".log-title")!.click();
 
-        expect(input.classList).not.toContain("hidden");
-        expect(row.querySelector(".memo")!.firstElementChild!.classList).toContain("hidden");
+        expect(visible(input)).toBe(true);
+        expect(visible(row.querySelector(".memo")!.firstElementChild!)).toBe(false);
       });
 
       it("振替のコメントを編集するとキー付きで通知する", () => {
@@ -502,7 +504,7 @@ describe("renderDashboard", () => {
         const row = root.querySelector<HTMLElement>(".log .log-row")!;
         row.querySelector<HTMLInputElement>("input.comment")!.click();
 
-        expect(row.querySelector<HTMLInputElement>("input.comment")!.classList).toContain("hidden");
+        expect(visible(row.querySelector("input.comment")!)).toBe(false);
       });
 
       it("過去のコメントを入力候補として提示する", () => {
@@ -609,7 +611,7 @@ describe("renderDashboard", () => {
         expect(row.querySelector<HTMLElement>(".swipe-slider")!.style.transform).toBe(
           "translateX(0px)",
         );
-        expect(row.querySelector<HTMLInputElement>("input.comment")!.classList).toContain("hidden");
+        expect(visible(row.querySelector("input.comment")!)).toBe(false);
       });
 
       it("外部入出金と残高記録の行にはスワイプ削除を付けない", () => {
@@ -1515,7 +1517,8 @@ describe("代表口座の明細をログに統合する", () => {
     const row = [...root.querySelectorAll(".log .log-row")].find((node) =>
       node.textContent?.includes("給与"),
     )!;
-    expect(row.querySelector(".dot")!.className).toContain("bg-[#94a3b8]");
+    // つかいわけ口座に配る色とは違う灰色。SVGやbg-*の指定漏れは塗りに現れる
+    expect(getComputedStyle(row.querySelector(".dot")!).backgroundColor).toBe("rgb(148, 163, 184)");
   });
 
   it("その日の合計に明細の出入りを含める", () => {
@@ -1722,11 +1725,15 @@ describe("記録にない口座間の移動(定額自動振替など)", () => {
 describe("狭い幅 (スマホ)", () => {
   const root = document.createElement("div");
 
-  beforeEach(() => {
+  // 幅で変わる見た目を確かめる場所なので、実際に画面を狭めてから描く
+  beforeEach(async () => {
+    await usePhone();
     root.replaceChildren();
     document.body.replaceChildren(root);
     render(root, data({ statements }), () => Date.UTC(2026, 6, 27, 0, 0));
   });
+
+  afterEach(useWideScreen);
 
   function bottomTab(label: string): HTMLButtonElement {
     return [...root.querySelectorAll<HTMLButtonElement>(".bottom-tab")].find(
@@ -1756,21 +1763,31 @@ describe("狭い幅 (スマホ)", () => {
   });
 
   it("ヘッダーのタブと歯車は狭い幅で隠す(下部バーと二重にしない)", () => {
-    expect(root.querySelector(".view-tabs")!.className).toContain("max-sm:hidden");
-    expect(root.querySelector(".settings-button")!.className).toContain("max-sm:hidden");
+    expect(visible(root.querySelector(".view-tabs")!)).toBe(false);
+    expect(visible(root.querySelector(".settings-button")!)).toBe(false);
   });
 
   it("時刻を左の固定列から2段目へ回し、口座名に幅を空ける", () => {
     const row = root.querySelector(".log .log-row")!;
-    expect(row.querySelector(".time")!.className).toContain("max-sm:hidden");
-    expect(row.querySelector(".time-inline")!.className).toContain("sm:hidden");
+    expect(visible(row.querySelector(".time")!)).toBe(false);
+    expect(visible(row.querySelector(".time-inline")!)).toBe(true);
   });
 
   it("口座カードのKPIは畳む(残高・増減・構成比まで読めれば足りる)", () => {
     bottomTab("残高").click();
 
-    expect(root.querySelector(".workspace-card .kpis")!.className).toContain("max-sm:hidden");
-    expect(root.querySelector(".workspace-card .share")).not.toBeNull();
+    expect(visible(root.querySelector(".workspace-card .kpis")!)).toBe(false);
+    expect(visible(root.querySelector(".workspace-card .share")!)).toBe(true);
+  });
+
+  it("下部バーは広い幅では出さない(ヘッダーのタブと二重にしない)", async () => {
+    await useWideScreen();
+    root.replaceChildren();
+    render(root, data({ statements }), () => Date.UTC(2026, 6, 27, 0, 0));
+
+    expect(root.querySelectorAll(".bottom-tab")).not.toHaveLength(0);
+    expect(visible(root.querySelector(".bottom-tab")!)).toBe(false);
+    expect(visible(root.querySelector(".view-tabs")!)).toBe(true);
   });
 });
 
@@ -1831,7 +1848,10 @@ describe("設定画面 (整理)", () => {
 
     const row = root.querySelector(".import-row")!;
     expect(row.textContent).toContain("ドロップ");
-    expect(row.querySelector('input[name="import-file"]')!.className).toContain("sr-only");
+    // 目には出さないが、支援技術からは触れる場所に残す(display:noneにはしない)
+    const input = row.querySelector<HTMLInputElement>('input[name="import-file"]')!;
+    expect(input.getBoundingClientRect().width).toBeLessThan(2);
+    expect(getComputedStyle(input).display).not.toBe("none");
   });
 
   it("保存されている記録の件数を出す(書き出す前に量が分かる)", () => {
