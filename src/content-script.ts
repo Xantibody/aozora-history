@@ -50,11 +50,13 @@ async function recordTransferAndPrompt(
   record: TransferRecord,
 ): Promise<void> {
   await store.recordTransfer(record);
-  const comments = await store.loadComments();
+  // パネルはダッシュボードと同じ明暗で出す。設定は端末ごとの見え方なのでstorageから読む
+  const [comments, theme] = await Promise.all([store.loadComments(), store.loadTheme()]);
   showCommentPrompt(doc, store, {
     key: transferCommentKey(record),
     suggestions: commentSuggestions(comments),
     record,
+    theme,
   });
 }
 

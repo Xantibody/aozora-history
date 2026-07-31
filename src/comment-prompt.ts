@@ -5,7 +5,7 @@ const PANEL_ID = "aozora-history-comment";
 
 // ダッシュボードと同じ視覚言語(slate/skyのデザイントークン)。銀行サイトには
 // TailwindがないためHEX値をインラインで当てる
-const PROMPT_THEMES = {
+const PROMPT_PALETTES = {
   light: {
     surface: "#fff",
     border: "#e2e8f0", // slate-200
@@ -33,49 +33,64 @@ const PROMPT_THEMES = {
 /** 候補チップとして見せる件数。残りはdatalist(対応環境のみ)で補う */
 const MAX_SUGGESTION_CHIPS = 5;
 
-type PromptTheme = typeof PROMPT_THEMES.light;
-interface PromptContext {
-  doc: Document;
-  store: HistoryStore;
+type PromptPalette = typeof PROMPT_PALETTES.light;
+
+export interface CommentPrompt {
   key: string;
   suggestions: string[];
   record: TransferRecord;
-  theme: PromptTheme;
+  /**
+   * 拡張機能に保存された明暗の設定。ダッシュボードと同じ見え方で出すために渡す。
+   * 読める値かどうかの判断はここ(画面側)が持つため、文字列のまま受け取る
+   */
+  theme: string | null;
+}
+
+interface PromptContext extends CommentPrompt {
+  doc: Document;
+  store: HistoryStore;
+  palette: PromptPalette;
   panel: HTMLDivElement;
   input: HTMLInputElement;
 }
-export type CommentPrompt = Pick<PromptContext, "key" | "suggestions" | "record">;
 
-function resolveTheme(doc: Document): PromptTheme {
+/**
+ * 明暗を固定している人にはその通りに描く。「システムに合わせる」(既定)と
+ * 未設定・知らない値のときだけOSの設定を見る
+ */
+function resolvePalette(doc: Document, theme: string | null): PromptPalette {
+  if (theme === "light" || theme === "dark") {
+    return PROMPT_PALETTES[theme];
+  }
   const dark = doc.defaultView?.matchMedia?.("(prefers-color-scheme: dark)").matches === true;
-  return dark ? PROMPT_THEMES.dark : PROMPT_THEMES.light;
+  return dark ? PROMPT_PALETTES.dark : PROMPT_PALETTES.light;
 }
 
-function buildPanel(doc: Document, theme: PromptTheme): HTMLDivElement {
+function buildPanel(doc: Document, palette: PromptPalette): HTMLDivElement {
   const panel = doc.createElement("div");
   panel.id = PANEL_ID;
   panel.style.cssText =
     "position:fixed;right:16px;bottom:16px;z-index:2147483647;display:flex;flex-direction:column;gap:10px;" +
-    `width:min(360px,calc(100vw - 32px));box-sizing:border-box;background:${theme.surface};color:${theme.text};` +
-    `border:1px solid ${theme.border};border-radius:14px;padding:12px 14px;` +
+    `width:min(360px,calc(100vw - 32px));box-sizing:border-box;background:${palette.surface};color:${palette.text};` +
+    `border:1px solid ${palette.border};border-radius:14px;padding:12px 14px;` +
     "box-shadow:0 4px 24px rgba(15,23,42,.18);font:14px -apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans','Noto Sans JP',system-ui,sans-serif;";
   return panel;
 }
 
-function buildInput(doc: Document, theme: PromptTheme): HTMLInputElement {
+function buildInput(doc: Document, palette: PromptPalette): HTMLInputElement {
   const input = doc.createElement("input");
   input.type = "text";
   input.placeholder = "コメント";
   input.style.cssText =
     `flex:1;min-width:0;box-sizing:border-box;font:inherit;color:inherit;background:transparent;` +
-    `border:1px solid ${theme.inputBorder};border-radius:8px;padding:8px 12px;min-height:40px;outline:none;`;
+    `border:1px solid ${palette.inputBorder};border-radius:8px;padding:8px 12px;min-height:40px;outline:none;`;
   // 銀行サイトに:focusのCSSを足せないため、リングはイベントで当てる
   input.addEventListener("focus", () => {
-    input.style.borderColor = theme.focusRing;
-    input.style.boxShadow = `0 0 0 1px ${theme.focusRing}`;
+    input.style.borderColor = palette.focusRing;
+    input.style.boxShadow = `0 0 0 1px ${palette.focusRing}`;
   });
   input.addEventListener("blur", () => {
-    input.style.borderColor = theme.inputBorder;
+    input.style.borderColor = palette.inputBorder;
     input.style.boxShadow = "none";
   });
   return input;
@@ -92,7 +107,7 @@ function buildSaveButton(context: PromptContext): HTMLButtonElement {
   save.className = "save";
   save.textContent = "保存";
   save.style.cssText =
-    `font:inherit;font-weight:600;background:${context.theme.accent};color:${context.theme.accentText};` +
+    `font:inherit;font-weight:600;background:${context.palette.accent};color:${context.palette.accentText};` +
     "border:none;border-radius:8px;padding:8px 16px;min-height:40px;cursor:pointer;";
   save.addEventListener("click", () => {
     void saveComment(context);
@@ -120,7 +135,7 @@ function buildCloseButton(context: PromptContext): HTMLButtonElement {
   close.textContent = "×";
   close.setAttribute("aria-label", "閉じる");
   close.style.cssText =
-    `font:inherit;font-size:16px;background:none;color:${context.theme.subtle};border:none;cursor:pointer;` +
+    `font:inherit;font-size:16px;background:none;color:${context.palette.subtle};border:none;cursor:pointer;` +
     "width:36px;height:36px;margin:-8px -10px -8px 0;border-radius:9999px;";
   close.addEventListener("click", () => context.panel.remove());
   return close;
@@ -158,8 +173,8 @@ function buildSuggestionChip(
   chip.className = "suggestion";
   chip.textContent = text;
   chip.style.cssText =
-    `font:inherit;font-size:13px;background:transparent;color:${context.theme.subtle};` +
-    `border:1px solid ${context.theme.border};border-radius:9999px;padding:6px 14px;min-height:36px;cursor:pointer;`;
+    `font:inherit;font-size:13px;background:transparent;color:${context.palette.subtle};` +
+    `border:1px solid ${context.palette.border};border-radius:9999px;padding:6px 14px;min-height:36px;cursor:pointer;`;
   chip.addEventListener("click", () => {
     context.input.value = text;
     context.input.focus();
@@ -206,7 +221,7 @@ function buildUndoButton(context: PromptContext): HTMLButtonElement {
   undo.className = "undo";
   undo.textContent = "誤記録なら取り消す";
   undo.style.cssText =
-    `font:inherit;font-size:13px;background:transparent;color:${context.theme.danger};` +
+    `font:inherit;font-size:13px;background:transparent;color:${context.palette.danger};` +
     "border:none;border-radius:8px;padding:6px 0;min-height:36px;cursor:pointer;align-self:flex-start;";
   undo.addEventListener("click", () => {
     void undoRecord(context);
@@ -217,10 +232,10 @@ function buildUndoButton(context: PromptContext): HTMLButtonElement {
 /** 銀行サイトのCSSに影響されないよう、スタイルはすべてインラインで当てる */
 export function showCommentPrompt(doc: Document, store: HistoryStore, prompt: CommentPrompt): void {
   doc.querySelector(`#${PANEL_ID}`)?.remove();
-  const theme = resolveTheme(doc);
-  const panel = buildPanel(doc, theme);
-  const input = buildInput(doc, theme);
-  const context: PromptContext = { doc, store, theme, panel, input, ...prompt };
+  const palette = resolvePalette(doc, prompt.theme);
+  const panel = buildPanel(doc, palette);
+  const input = buildInput(doc, palette);
+  const context: PromptContext = { doc, store, palette, panel, input, ...prompt };
   panel.append(buildHeader(context), buildInputRow(context), buildSuggestionList(context));
   appendSuggestionChips(context);
   panel.append(buildUndoButton(context));
