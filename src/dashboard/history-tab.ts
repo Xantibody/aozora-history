@@ -3,6 +3,7 @@ import { CARD, FINE_PRINT, MUTED, accountDot, el, signedCell } from "./dom.ts";
 import { PAGE_SIZE, moreButton, pageLimit } from "./paging.ts";
 import type { RenderContext, UiState } from "./context.ts";
 import { formatShortDateTime, formatYen } from "./format.ts";
+import { emptyMessage } from "./empty-state.ts";
 import { inPeriod } from "./period.ts";
 import { totalBalancePoints } from "../domain/ledger.ts";
 
@@ -111,7 +112,7 @@ export function snapshotSection(ctx: RenderContext): HTMLElement {
   const node = el("section", "snapshots");
   const visible = ctx.data.snapshots.filter((snapshot) => inPeriod(ctx.state, snapshot.takenAt));
   if (visible.length === 0) {
-    node.append(el("p", `empty ${MUTED}`, "まだ記録がありません"));
+    node.append(el("p", `empty ${MUTED}`, emptyMessage(ctx)));
     return node;
   }
   node.append(snapshotList(ctx, visible, totalBalancePoints(visible)));

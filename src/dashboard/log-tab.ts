@@ -6,6 +6,7 @@ import { dayStart, inPeriod } from "./period.ts";
 import { formatDayHeading, formatShortDateTime, localDayKey } from "./format.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
 import type { LogEntry } from "../domain/log.ts";
+import { emptyMessage } from "./empty-state.ts";
 import { icon } from "./icons.ts";
 import { logEntries } from "../domain/log.ts";
 
@@ -261,7 +262,7 @@ export function logSection(ctx: RenderContext): HTMLElement {
   const entries = visibleEntries(ctx);
   node.append(
     ...(entries.length === 0
-      ? [el("p", `empty mt-2 ${MUTED}`, "まだ記録がありません")]
+      ? [el("p", `empty mt-2 ${MUTED}`, emptyMessage(ctx))]
       : dayCards(ctx, entries)),
   );
   return node;

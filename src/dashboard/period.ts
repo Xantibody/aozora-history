@@ -31,6 +31,12 @@ export function shiftMonth(value: string, delta: number): string {
   return `${shifted.getFullYear()}-${pad(shifted.getMonth() + 1)}`;
 }
 
+/** "YYYY-MM" を「7月」にする。年は月ナビの入力欄が持っているので添えない */
+export function monthLabel(value: string): string {
+  const [, month] = value.split("-").map(Number);
+  return `${month}月`;
+}
+
 /** エポックミリ秒をローカル時刻の "YYYY-MM" にする */
 export function monthOf(epochMs: number): string {
   const date = new Date(epochMs);

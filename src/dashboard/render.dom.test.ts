@@ -59,6 +59,63 @@ describe("renderDashboard", () => {
     expect(root.querySelector("button.settings-button")).not.toBeNull();
   });
 
+  describe("空の理由を言い分ける", () => {
+    function setMonth(value: string): void {
+      const input = root.querySelector<HTMLInputElement>('input[name="period-month"]')!;
+      input.value = value;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    // 記録があるのに「まだ記録がありません」と出すと、取り込みが止まったと読める。
+    // 既定が当月なので、毎月1日はどのページもこの状態になる
+    it("選んだ月に記録が無いだけなら、月を名指しする", () => {
+      render(root);
+
+      setMonth("2026-06");
+
+      expect(root.querySelector(".log .empty")!.textContent).toBe("6月の記録はありません");
+    });
+
+    it("日付で絞ったときは期間が理由だと分かる", () => {
+      render(root);
+      root.querySelector<HTMLButtonElement>(".period-detail-toggle")!.click();
+      const from = root.querySelector<HTMLInputElement>('input[name="period-from"]')!;
+      from.value = "2026-09-01";
+      from.dispatchEvent(new Event("change", { bubbles: true }));
+
+      expect(root.querySelector(".log .empty")!.textContent).toBe("この期間の記録はありません");
+    });
+
+    it("絞り込みで0件になったときは絞り込みが理由だと分かる", () => {
+      render(root, data({ transfers: [] }));
+
+      clearPeriod();
+      clickChip("振替");
+
+      expect(root.querySelector(".log .empty")!.textContent).toBe(
+        "この絞り込みに合う記録はありません",
+      );
+    });
+
+    it("残高ページの口座カードも同じように言い分ける", () => {
+      render(root);
+      clickTab("残高");
+
+      setMonth("2026-06");
+
+      expect(root.querySelector(".accounts .empty")!.textContent).toBe("6月の記録はありません");
+    });
+
+    it("残高スナップショットの一覧も同じように言い分ける", () => {
+      render(root);
+      clickTab("残高");
+
+      setMonth("2026-06");
+
+      expect(root.querySelector(".snapshots .empty")!.textContent).toBe("6月の記録はありません");
+    });
+  });
+
   describe("ヘッダー", () => {
     it("ログでは合計を文脈として1行に圧縮する(面を持たせない)", () => {
       render(root);
@@ -425,7 +482,7 @@ describe("renderDashboard", () => {
 
         clickChip("振替");
 
-        expect(root.querySelector(".log .empty")!.textContent).toContain("まだ記録がありません");
+        expect(root.querySelector(".log .empty")).not.toBeNull();
       });
 
       it("フィルタを切り替えてもフォーカスは選んだチップに残る", () => {
@@ -1073,7 +1130,7 @@ describe("renderDashboard", () => {
 
       setMonth("2026-06");
       expect(root.querySelectorAll(".log .log-row")).toHaveLength(0);
-      expect(root.querySelector(".log")!.textContent).toContain("まだ記録がありません");
+      expect(root.querySelector(".log .empty")!.textContent).toBe("6月の記録はありません");
     });
 
     it("前の月・次の月ボタンで月を移動する", () => {
