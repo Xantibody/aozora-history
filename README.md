@@ -158,9 +158,10 @@ pnpm verify
 | `pnpm verify`                      | fmt:check → lint → typecheck → test           |
 | `pnpm fmt` / `fmt:check`           | oxfmt でフォーマット / チェックのみ           |
 | `pnpm lint` / `typecheck`          | oxlint で静的解析 / tsgo で型チェック         |
-| `pnpm test` / `test:watch`         | vitest でテスト / ウォッチ                    |
+| `pnpm test` / `test:watch`         | vitest で全テスト / ウォッチ                  |
+| `pnpm test:logic` / `test:dom`     | node で走る分だけ / Firefox で走る分だけ      |
 | `pnpm dev`                         | ダミーデータのダッシュボードをブラウザで開く  |
-| `pnpm build`                       | esbuild で dist/ にビルド                     |
+| `pnpm build`                       | esbuild と tailwind で dist/ にビルド         |
 | `pnpm package:local`               | ローカル用 xpi を作成                         |
 | `pnpm package:firefox` / `:source` | `VERSION` 付きの xpi / ソースアーカイブ(CI用) |
 
@@ -193,8 +194,32 @@ pnpm dev   # http://localhost:8000/dashboard.html
 `about:debugging#/runtime/this-firefox` → 「一時的なアドオンを読み込む」で
 `dist/manifest.json` を選ぶ。
 
-CI(`.github/workflows/ci.yml`)は push / PR ごとに verify 一式と build を実行する。
-ツールは CI でも nix (`.github/actions/setup`) から取るため、環境差異が出ない。
+CI(`.github/workflows/ci.yml`)は push / PR ごとに、静的解析・node のテスト・
+Firefox のテスト・build を独立したジョブで並列に実行する。ツールは CI でも
+nix (`.github/actions/setup`) から取るため、環境差異が出ない。
+
+### テストの置き場所
+
+走る場所で2つに分かれる。ファイル名で決まる。
+
+| ファイル        | 環境               | 中身                                 |
+| --------------- | ------------------ | ------------------------------------ |
+| `*.test.ts`     | node               | DOMを触らない計算・入出力・書式・CSV |
+| `*.dom.test.ts` | Firefox (headless) | 画面を組んで読むもの全部             |
+
+jsdom は使わない。緑になっても Firefox で動く保証がなく、`matchMedia` や
+`location` をスタブで埋める手間だけが残る。実際、`hidden` クラスが
+`inline-flex` に負けてメモの誘い文が消えない不具合は、jsdom では緑のまま
+すり抜けていた(`42cb8bd`)。
+
+見た目の検証はクラス名の文字列ではなく、`getComputedStyle` と
+`getBoundingClientRect` と `checkVisibility()` で実際の結果を問う。土台が
+崩れていないかは `src/dashboard/styles.dom.test.ts` が見張っている。
+
+ブラウザは playwright のダウンローダではなく nixpkgs から渡す
+(`flake.nix` の `PLAYWRIGHT_BROWSERS_PATH`)。**`package.json` の
+`playwright` は flake の `playwright-driver` と同じ版に固定すること。**
+ずれると `firefox-<revision>` が見つからず起動できない。
 
 ### リリース
 
