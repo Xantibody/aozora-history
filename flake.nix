@@ -22,8 +22,39 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+
+        # 検査に使う道具立て。devShell と CI の両方がこれ一つを読む。
+        # 一覧をCIのワークフロー側にも書くと、片方だけ足して片方で落ちる
+        toolchain = pkgs.buildEnv {
+          name = "aozora-history-toolchain";
+          paths = with pkgs; [
+            nodejs_24
+            pnpm
+            typescript-go
+            oxfmt
+            oxlint
+          ];
+        };
+
+        # DOMのテストは製品と同じFirefoxで走らせる。ブラウザはnixから渡し、
+        # playwrightに落とさせない(ダウンロード版はrevisionが別で、
+        # nix管理下のCIでは共有ライブラリも解決できない)。
+        # 使わないchromium/webkit/ffmpegまで入れると1.1GiB、Firefoxだけなら271MiB
+        #
+        # NOTE: package.jsonのplaywrightは、ここのdriverと同じ版に揃えること。
+        # ずれるとfirefox-<revision>が見つからず起動できない
+        # (現在: playwright-driver ${pkgs.playwright-driver.version})
+        playwrightBrowsers = pkgs.playwright-driver.selectBrowsers {
+          withChromium = false;
+          withChromiumHeadlessShell = false;
+          withWebkit = false;
+          withFfmpeg = false;
+        };
       in
       {
+        packages.toolchain = toolchain;
+        packages.playwright-browsers = playwrightBrowsers;
+
         packages.default = pkgs.stdenv.mkDerivation {
           name = "aozora-history-firefox-xpi";
 
@@ -45,23 +76,13 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            nodejs_24
-            pnpm
-            typescript-go
-            oxfmt
-            oxlint
-            agent-browser
+          # agent-browserは手で画面を触るとき用。CIでは使わないので toolchain の外
+          packages = [
+            toolchain
+            pkgs.agent-browser
           ];
 
-          # DOMのテストは製品と同じFirefoxで走らせる。ブラウザはnixから渡し、
-          # playwrightに落とさせない(ダウンロード版はrevisionが別で、
-          # nix管理下のCIでは共有ライブラリも解決できない)
-          #
-          # NOTE: package.jsonのplaywrightは、ここのdriverと同じ版に揃えること。
-          # ずれるとfirefox-<revision>が見つからず起動できない
-          # (現在: playwright-driver ${pkgs.playwright-driver.version})
-          PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_BROWSERS_PATH = "${playwrightBrowsers}";
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
           PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "1";
         };

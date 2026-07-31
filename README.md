@@ -216,10 +216,16 @@ jsdom は使わない。緑になっても Firefox で動く保証がなく、`m
 `getBoundingClientRect` と `checkVisibility()` で実際の結果を問う。土台が
 崩れていないかは `src/dashboard/styles.dom.test.ts` が見張っている。
 
-ブラウザは playwright のダウンローダではなく nixpkgs から渡す
-(`flake.nix` の `PLAYWRIGHT_BROWSERS_PATH`)。**`package.json` の
-`playwright` は flake の `playwright-driver` と同じ版に固定すること。**
-ずれると `firefox-<revision>` が見つからず起動できない。
+ブラウザは playwright のダウンローダではなく nixpkgs から渡す。
+Firefox だけを選んだ導出(`.#playwright-browsers`、271MiB。既定の
+`playwright-driver.browsers` は chromium/webkit まで含めて 1.1GiB)を、
+devShell と CI が同じものとして参照する。**`package.json` の `playwright` は
+flake の `playwright-driver` と同じ版に固定すること。** ずれると
+`firefox-<revision>` が見つからず起動できない。
+
+検査に使う道具立ては `flake.nix` の `.#toolchain` が持つ。devShell も CI も
+これ一つを読むので(CI は `nix profile install .#toolchain`)、一覧を
+ワークフロー側に書き写す必要がない。
 
 ### リリース
 
