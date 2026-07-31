@@ -1,4 +1,8 @@
-import { accountStatements, statementsExplainBalance } from "../domain/statement.ts";
+import {
+  accountStatements,
+  primaryStatements,
+  statementsExplainBalance,
+} from "../domain/statement.ts";
 import { describe, expect, it } from "vitest";
 import { dummyData, toScenario } from "./dummy-data.ts";
 import { latestSnapshot } from "../domain/ledger.ts";
@@ -17,6 +21,42 @@ describe("dummyData", () => {
 
       expect(latest.takenAt).toBeGreaterThan(NOW - 24 * 60 * 60 * 1000);
       expect(latest.takenAt).toBeLessThanOrEqual(NOW);
+    });
+
+    it("代表口座の明細の残高が、つかいわけ口座の合計と一致する", () => {
+      // 代表口座は傘で、その残高はつかいわけ口座の合計。ここが崩れていると
+      // ダミーは実際の口座構造と違うものを描き、二重表示の再現も検証もできない
+      const lines = primaryStatements(data.ledger.statements);
+      const latest = lines.at(-1)!;
+      const total = latestSnapshot(snapshots)!.accounts.reduce(
+        (sum, account) => sum + account.balance,
+        0,
+      );
+
+      expect(lines.length).toBeGreaterThan(0);
+      expect(latest.balance).toBe(total);
+    });
+
+    it("外部との出入りは、代表口座とつかいわけ口座の両方の明細に出る", () => {
+      // 給与・引落・デビットは銀行の外との出入りなので両方に現れる。
+      // 振替は合計を変えないので代表口座には現れない
+      const salary = primaryStatements(data.ledger.statements).filter((line) =>
+        line.remark.includes("ｷﾕｳﾖ"),
+      );
+      const onWallet = accountStatements(data.ledger.statements, "133331").filter((line) =>
+        line.remark.includes("ｷﾕｳﾖ"),
+      );
+
+      expect(salary.length).toBeGreaterThan(0);
+      expect(onWallet.map((line) => line.amount)).toStrictEqual(salary.map((line) => line.amount));
+    });
+
+    it("振替は代表口座の明細に載らない", () => {
+      const transfers = primaryStatements(data.ledger.statements).filter((line) =>
+        line.remark.startsWith("ﾌﾘｶｴ"),
+      );
+
+      expect(transfers).toStrictEqual([]);
     });
 
     it("口座別明細の最新残高が、その口座の残高と一致する", () => {

@@ -53,8 +53,6 @@ const ACCOUNTS: { ref: AccountRef; opening: number }[] = [
   { ref: SPARE, opening: 210_000 },
 ];
 
-const PRIMARY_OPENING = 1_240_000;
-
 /** 銀行サイトで登録した定額自動振替。拡張は実行を検知できず、差額から拾い直す */
 const AUTO_TRANSFER: AutoTransferSetting = {
   id: "auto-1",
@@ -87,7 +85,6 @@ const DEBIT_EVERY = 6;
 
 interface World {
   balances: Map<string, number>;
-  primaryBalance: number;
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
   statements: StatementEntry[];
@@ -120,31 +117,50 @@ function nextEntryNumber(world: World, scope: string, valueDate: string): string
 
 interface Move {
   at: Date;
-  /** null なら代表口座(普通預金)。つかいわけ口座の明細だけが口座IDを持つ */
-  accountId: string | null;
+  accountId: string;
   amount: number;
   remark: string;
 }
 
-/** 口座のお金を動かし、対応する明細を1件残す */
-function move(world: World, entry: Move): StatementEntry {
+/** 代表口座(円普通預金)の残高。つかいわけ口座の合計と必ず一致する */
+function primaryTotal(world: World): number {
+  return [...world.balances.values()].reduce((sum, balance) => sum + balance, 0);
+}
+
+/** つかいわけ口座のお金を動かし、その口座の明細を1件残す */
+function moveAccount(world: World, entry: Move): StatementEntry {
   const { at, accountId, amount, remark } = entry;
-  const balance =
-    accountId === null
-      ? world.primaryBalance + amount
-      : (world.balances.get(accountId) ?? 0) + amount;
-  if (accountId === null) {
-    world.primaryBalance = balance;
-  } else {
-    world.balances.set(accountId, balance);
-  }
+  const balance = (world.balances.get(accountId) ?? 0) + amount;
+  world.balances.set(accountId, balance);
   const statement: StatementEntry = {
-    entryNumber: nextEntryNumber(world, accountId ?? "", valueDateOf(at)),
+    entryNumber: nextEntryNumber(world, accountId, valueDateOf(at)),
     valueDate: valueDateOf(at),
     amount,
     balance,
     remark,
-    ...(accountId === null ? {} : { accountId }),
+    accountId,
+  };
+  world.statements.push(statement);
+  return statement;
+}
+
+/**
+ * 銀行の外との出入り。給与・引落・デビットなど。
+ *
+ * 代表口座の残高はつかいわけ口座の合計なので、外から入った金は必ずどれかの
+ * つかいわけ口座に入り、出る金もどれかから出る。同じ1件が代表口座の明細としても
+ * つかいわけ口座の明細としても記録される(残高スナップショットの差分にも現れる)。
+ * 戻すのは代表口座側の明細。コメントを紐付けるのはそちらのキーだった
+ */
+function external(world: World, entry: Move): StatementEntry {
+  moveAccount(world, entry);
+  const { at, amount, remark } = entry;
+  const statement: StatementEntry = {
+    entryNumber: nextEntryNumber(world, "", valueDateOf(at)),
+    valueDate: valueDateOf(at),
+    amount,
+    balance: primaryTotal(world),
+    remark,
   };
   world.statements.push(statement);
   return statement;
@@ -162,8 +178,9 @@ interface Transfer {
 
 function transfer(world: World, plan: Transfer): void {
   const { at, from, to, amount } = plan;
-  move(world, { at, accountId: from.id, amount: -amount, remark: `ﾌﾘｶｴ ${to.name}` });
-  move(world, { at, accountId: to.id, amount, remark: `ﾌﾘｶｴ ${from.name}` });
+  // つかいわけ口座間の移動は合計を変えないので、代表口座の明細には載らない
+  moveAccount(world, { at, accountId: from.id, amount: -amount, remark: `ﾌﾘｶｴ ${to.name}` });
+  moveAccount(world, { at, accountId: to.id, amount, remark: `ﾌﾘｶｴ ${from.name}` });
   if (!plan.recorded) {
     return;
   }
@@ -190,9 +207,7 @@ function paydayEvents(world: World, day: Date): Event[] {
     {
       at,
       apply: (): void => {
-        move(world, { at, accountId: null, amount: 425_000, remark: "ｷﾕｳﾖ ｱｵｿﾞﾗｼﾖｳｼﾞ" });
-        move(world, { at, accountId: null, amount: -280_000, remark: "ﾂｶｲﾜｹｺｳｻﾞ ﾍ" });
-        move(world, { at, accountId: WALLET.id, amount: 280_000, remark: "ﾀｲﾋﾖｳｺｳｻﾞ ﾖﾘ" });
+        external(world, { at, accountId: WALLET.id, amount: 425_000, remark: "ｷﾕｳﾖ ｱｵｿﾞﾗｼﾖｳｼﾞ" });
         world.pendingMemos.push({ accountId: WALLET.id, text: "給料" });
       },
     },
@@ -262,7 +277,7 @@ function monthlyEvents(world: World, day: Date): Event[] {
       {
         at,
         apply: (): void => {
-          move(world, { at, accountId: SPECIAL.id, amount: -12_400, remark: "ﾃﾞﾝｷﾘﾖｳｷﾝ" });
+          external(world, { at, accountId: SPECIAL.id, amount: -12_400, remark: "ﾃﾞﾝｷﾘﾖｳｷﾝ" });
         },
       },
     ];
@@ -273,9 +288,9 @@ function monthlyEvents(world: World, day: Date): Event[] {
       {
         at,
         apply: (): void => {
-          const statement = move(world, {
+          const statement = external(world, {
             at,
-            accountId: null,
+            accountId: LIVING.id,
             amount: -87_543,
             remark: "ｸﾚｼﾞﾂﾄｶ-ﾄﾞ",
           });
@@ -299,7 +314,7 @@ function monthlyEvents(world: World, day: Date): Event[] {
       {
         at,
         apply: (): void => {
-          move(world, { at, accountId: LIVING.id, amount: -95_000, remark: "ﾔﾁﾝ ｱｵｿﾞﾗﾌﾄﾞｳｻﾝ" });
+          external(world, { at, accountId: LIVING.id, amount: -95_000, remark: "ﾔﾁﾝ ｱｵｿﾞﾗﾌﾄﾞｳｻﾝ" });
           world.pendingMemos.push({ accountId: LIVING.id, text: "家賃" });
         },
       },
@@ -359,7 +374,7 @@ function debitEvents(world: World, day: Date, index: number): Event[] {
     {
       at,
       apply: (): void => {
-        move(world, {
+        external(world, {
           at,
           accountId: LIVING.id,
           amount: -(2400 + (index % 7) * 640),
@@ -416,7 +431,6 @@ function limitStatements(statements: StatementEntry[]): StatementEntry[] {
 function simulate(days: number, now: number): World {
   const world: World = {
     balances: new Map(ACCOUNTS.map((account) => [account.ref.id, account.opening])),
-    primaryBalance: PRIMARY_OPENING,
     snapshots: [],
     transfers: [],
     statements: [],
