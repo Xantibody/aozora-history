@@ -9,7 +9,7 @@ import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import { describeJson } from "../domain/diagnostics.ts";
 
-export const BANK_ORIGIN = "https://bank.gmo-aozora.com";
+const BANK_ORIGIN = "https://bank.gmo-aozora.com";
 
 /** 銀行サイトのSPAが叩いているAPIのベースパス */
 const API_BASE = "/v1/";
@@ -27,7 +27,7 @@ const SORT_BY_REGISTERED_DATE = "1";
 const BODY_EXCERPT = 120;
 
 /** APIが1回に返せる明細の上限。銀行サイトの表示件数の選択肢に合わせている */
-export const MAX_STATEMENT_LIMIT = 100;
+const MAX_STATEMENT_LIMIT = 100;
 
 export interface BankRequest {
   url: string;
@@ -36,7 +36,7 @@ export interface BankRequest {
   credentials: "include";
 }
 
-export interface BankFetchResponse {
+interface BankFetchResponse {
   ok: boolean;
   status: number;
   /**

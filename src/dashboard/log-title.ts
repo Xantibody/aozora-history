@@ -74,7 +74,7 @@ function externalTitle(
   return change.externalDelta > 0 ? [other, arrow(), account] : [account, arrow(), other];
 }
 
-export /**
+/**
  * 代表口座(普通預金)。つかいわけ口座と同じ形で並べつつ、口座色は割り当てず
  * 灰色にする。色は「つかいわけ口座のどれか」を見分けるための手掛かりなので、
  * 別の口座に同じ意味を持たせない

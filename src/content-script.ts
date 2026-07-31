@@ -112,7 +112,7 @@ function createSnapshotScheduler(
 const SIGNED_IN_PATH = "/bank";
 
 /** 銀行APIからの取り込み。取得間隔の制御は呼ばれた側(collectFromBank)が持つ */
-export type Collect = () => Promise<unknown>;
+type Collect = () => Promise<unknown>;
 
 interface ApiCollector {
   collectOnNavigation: () => void;

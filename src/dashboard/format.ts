@@ -42,8 +42,3 @@ export function localDayKey(epochMs: number): string {
   const date = new Date(epochMs);
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
-
-export function shortDate(epochMs: number): string {
-  const date = new Date(epochMs);
-  return `${date.getMonth() + 1}/${date.getDate()}`;
-}

@@ -14,7 +14,7 @@ const HALF = 2;
  * 長い口座名や大きな金額では互いに重なる。値と日付はグラフの外にHTMLで出す
  */
 export const CHART = { width: 640, height: 148, left: 8, right: 8, top: 16, bottom: 10 };
-export const PLOT_RIGHT = CHART.width - CHART.right;
+const PLOT_RIGHT = CHART.width - CHART.right;
 export const PLOT_BOTTOM = CHART.height - CHART.bottom;
 
 export interface ChartScale {

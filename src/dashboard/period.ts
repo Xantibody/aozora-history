@@ -17,7 +17,7 @@ export function dayStart(value: string): number | null {
 }
 
 /** "YYYY-MM" をその月の[開始, 翌月開始)に変換する */
-export function monthBounds(value: string): [number, number] | null {
+function monthBounds(value: string): [number, number] | null {
   const [year, month] = value.split("-").map(Number);
   if (!year || !month) {
     return null;
