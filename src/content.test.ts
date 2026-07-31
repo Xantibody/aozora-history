@@ -87,6 +87,17 @@ async function executeTransfer(): Promise<void> {
   await vi.runAllTimersAsync();
 }
 
+// パネルは銀行サイトの上に出すため色をインラインで当てている。OSの設定だけを
+// 見ていると、明暗を固定している人にダッシュボードと違う見え方で出てしまう
+function panelBackground(): string {
+  return document.querySelector<HTMLElement>("#aozora-history-comment")!.style.backgroundColor;
+}
+
+// jsdomはmatchMediaを持たないため、OSの設定は丸ごと差し替えて模す
+function stubSystemDark(dark: boolean): void {
+  vi.stubGlobal("matchMedia", () => ({ matches: dark }) as MediaQueryList);
+}
+
 describe("setupContentScript", () => {
   let store: HistoryStore | null = null;
   let teardown: (() => void) | null = null;
@@ -106,6 +117,7 @@ describe("setupContentScript", () => {
     teardown!();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("口座一覧が描画されたらスナップショットを保存する", async () => {
@@ -465,6 +477,32 @@ describe("setupContentScript", () => {
 
       await expect(store!.loadTransfers()).resolves.toHaveLength(1);
       expect(document.querySelector("#aozora-history-comment")).not.toBeNull();
+    });
+
+    it("拡張機能の設定がダークならダークで描く", async () => {
+      stubSystemDark(false);
+      await store!.saveTheme("dark");
+
+      await confirmTransfer();
+
+      expect(panelBackground()).toBe("rgb(2, 6, 23)");
+    });
+
+    it("拡張機能の設定がライトならOSがダークでもライトで描く", async () => {
+      stubSystemDark(true);
+      await store!.saveTheme("light");
+
+      await confirmTransfer();
+
+      expect(panelBackground()).toBe("rgb(255, 255, 255)");
+    });
+
+    it("システムに合わせる設定ならOSの明暗に従う", async () => {
+      stubSystemDark(true);
+
+      await confirmTransfer();
+
+      expect(panelBackground()).toBe("rgb(2, 6, 23)");
     });
 
     it("記録に失敗した場合はパネルを出さない", async () => {
