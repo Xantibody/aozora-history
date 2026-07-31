@@ -5,7 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 // テストは走らせる場所で2つに分かれる。
 //   logic: DOMを触らない計算と入出力。node で走らせるので起動がほぼ無い
 //   dom:   画面を組んで読むもの全部。製品と同じ Firefox で走らせる
-// jsdom は使わない。緑になってもFirefoxで動く保証がなく、matchMediaやlocationを
+// jsdom は使わない。緑になってもFirefoxで動く保証がなく、実物が無いものを
 // スタブで埋める手間だけが残るため(実測でもDOM操作がテスト時間の6割を占めていた)
 export default defineConfig({
   test: {
@@ -28,7 +28,9 @@ export default defineConfig({
           browser: {
             enabled: true,
             headless: true,
-            provider: playwright(),
+            // OSの明暗は light に固定する。既定だと開発者のOS設定がそのまま
+            // iframe に伝わり、同じテストがマシンによって別の意味になる
+            provider: playwright({ contextOptions: { colorScheme: "light" } }),
             // 既定は広い画面。狭い幅の検証はテスト側で page.viewport() を呼ぶ。
             // 既定値まかせだと「なぜか104px」のような幅依存の結果を読み違える
             viewport: { width: 1280, height: 800 },
