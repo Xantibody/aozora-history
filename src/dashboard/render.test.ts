@@ -112,7 +112,13 @@ function data(overrides: Partial<DashboardData> = {}): DashboardData {
 
 type RenderResult = DashboardHandlers & { redraw: () => void };
 
-function render(root: HTMLElement, dashboardData = data(), now?: () => number): RenderResult {
+/**
+ * 記録は2026年7月に置いてあるので、既定の「いま」も同じ月に固定する。
+ * 実時刻を使うと当月フィルタが月替わりで空振りし、月が変わった日にまとめて赤くなる。
+ */
+const defaultNow = (): number => Date.UTC(2026, 6, 27, 0, 0);
+
+function render(root: HTMLElement, dashboardData = data(), now = defaultNow): RenderResult {
   const handlers = {
     onCommentChange: vi.fn<(key: string, text: string) => void>(),
     onDeleteTransfer: vi.fn<(transfer: TransferRecord) => void>(),
