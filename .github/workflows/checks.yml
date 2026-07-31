@@ -17,6 +17,8 @@ jobs:
       - run: pnpm run fmt:check
       - run: pnpm run lint
       - run: pnpm run typecheck
+      # 使われていないexport・ファイル・依存。oxlintは1ファイルしか見ないので拾えない
+      - run: pnpm run knip
 
   test-logic:
     name: Test (node)

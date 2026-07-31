@@ -155,9 +155,10 @@ pnpm verify
 
 | コマンド                           | 内容                                          |
 | ---------------------------------- | --------------------------------------------- |
-| `pnpm verify`                      | fmt:check → lint → typecheck → test           |
+| `pnpm verify`                      | fmt:check → lint → typecheck → knip → test    |
 | `pnpm fmt` / `fmt:check`           | oxfmt でフォーマット / チェックのみ           |
 | `pnpm lint` / `typecheck`          | oxlint で静的解析 / tsgo で型チェック         |
+| `pnpm knip`                        | 使われていない export・ファイル・依存を探す   |
 | `pnpm test` / `test:watch`         | vitest で全テスト / ウォッチ                  |
 | `pnpm test:logic` / `test:dom`     | node で走る分だけ / Firefox で走る分だけ      |
 | `pnpm dev`                         | ダミーデータのダッシュボードをブラウザで開く  |
@@ -193,6 +194,11 @@ pnpm dev   # http://localhost:8000/dashboard.html
 拡張として通しで確かめるときは `pnpm build` のあと、Firefox の
 `about:debugging#/runtime/this-firefox` → 「一時的なアドオンを読み込む」で
 `dist/manifest.json` を選ぶ。
+
+未使用の export は oxlint も tsgo も拾えない。どちらも「未使用」を1ファイルの中でしか
+見ず、`export` が付いた宣言は外から使われる可能性があるものとして扱うため
+(oxlint 1.71 に `import/no-unused-modules` は無い)。プロジェクト全体の
+import グラフを見る `pnpm knip` がその役を持つ。理由は `knip.config.ts` にも書いてある。
 
 検査は `.github/workflows/checks.yml`(静的解析・node のテスト・Firefox のテスト・
 build を独立したジョブで並列実行)に書いてあり、`ci.yml`(push / PR)と

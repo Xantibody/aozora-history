@@ -115,9 +115,9 @@
       }
     },
     {
-      "files": ["vitest.config.ts"],
+      "files": ["vitest.config.ts", "knip.config.ts"],
       "rules": {
-        // vitestの設定ファイルはdefault exportが必須
+        // vitest・knipの設定ファイルはdefault exportが必須
         "import/no-default-export": "off"
       }
     },
