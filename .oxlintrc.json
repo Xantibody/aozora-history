@@ -103,6 +103,18 @@
       }
     },
     {
+      "files": ["src/dev/**"],
+      "rules": {
+        // プレビュー用のダミーは金額・日付そのものが本体。テストと同じ理由
+        "eslint/no-magic-numbers": "off",
+        "eslint/max-lines": "off",
+        "eslint/max-lines-per-function": "off",
+        "eslint/max-statements": "off",
+        // どのダミーで開いているかは画面に足さず、コンソールに出す
+        "eslint/no-console": "off"
+      }
+    },
+    {
       "files": ["vitest.config.ts"],
       "rules": {
         // vitestの設定ファイルはdefault exportが必須

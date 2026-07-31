@@ -159,12 +159,39 @@ pnpm verify
 | `pnpm fmt` / `fmt:check`           | oxfmt でフォーマット / チェックのみ           |
 | `pnpm lint` / `typecheck`          | oxlint で静的解析 / tsgo で型チェック         |
 | `pnpm test` / `test:watch`         | vitest でテスト / ウォッチ                    |
+| `pnpm dev`                         | ダミーデータのダッシュボードをブラウザで開く  |
 | `pnpm build`                       | esbuild で dist/ にビルド                     |
 | `pnpm package:local`               | ローカル用 xpi を作成                         |
 | `pnpm package:firefox` / `:source` | `VERSION` 付きの xpi / ソースアーカイブ(CI用) |
 
-動作確認は `pnpm build` のあと、Firefox の `about:debugging#/runtime/this-firefox` →
-「一時的なアドオンを読み込む」で `dist/manifest.json` を選ぶ。
+### ダミーデータで動かす
+
+画面を直すあいだは `pnpm dev` が速い。拡張として読み込む代わりに `browser.storage` と
+`fetch` をメモリ上のフェイクに差し替え(`src/dev/`)、ダミーの記録を入れてから
+同じダッシュボードを起動する。保存すると再ビルドされるので、拡張を入れ直さなくてよい。
+
+```sh
+pnpm dev   # http://localhost:8000/dashboard.html
+```
+
+ダミーは `?data=` で切り替える。
+
+| `?data=`     | 中身                                                      |
+| ------------ | --------------------------------------------------------- |
+| `rich`(既定) | 120日ぶん。給与・家賃・定額自動振替・メモ・同期設定を含む |
+| `empty`      | 記録なし。空状態の確認用                                  |
+| `dense`      | 420日ぶん。ページングとグラフの間引きの確認用             |
+
+給与や家賃の額を並べただけでは、画面の作りは確かめられない。記録に残らない
+定額自動振替を差額から拾い直す、口座別明細から外部入出金の摘要を当てる、といった
+噛み合わせが要る。ダミーは月の流れを組み立てて、そこから残高・明細・記録を導いている
+(`src/dev/dummy-data.ts`)。R2同期もメモリ上の置き場に向くので、外へは何も出ない。
+
+記録は開くたびに作り直すため、消しても壊しても構わない。
+
+拡張として通しで確かめるときは `pnpm build` のあと、Firefox の
+`about:debugging#/runtime/this-firefox` → 「一時的なアドオンを読み込む」で
+`dist/manifest.json` を選ぶ。
 
 CI(`.github/workflows/ci.yml`)は push / PR ごとに verify 一式と build を実行する。
 ツールは CI でも nix (`.github/actions/setup`) から取るため、環境差異が出ない。
