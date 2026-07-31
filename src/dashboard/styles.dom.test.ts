@@ -15,21 +15,22 @@ describe("テストページのスタイルシート", () => {
     expect(getComputedStyle(amount).width).toBe("120px");
   });
 
-  it("隠す指定が表示指定に負けない", () => {
+  it("hidden属性は表示指定のユーティリティに勝つ", () => {
     const root = document.createElement("div");
     document.body.replaceChildren(root);
 
     render(root);
 
-    // 生成CSSでは .hidden が .flex 系より前に出るため、両方を持つ要素は
-    // クラスでは隠れない。隠す側は hidden 属性で当てる約束にしている
+    // 隠すときは hidden 属性を使う(memo-field.ts)。クラスの .hidden は
+    // 生成CSSで .inline-flex より前に出るため同詳細度で負けて効かない。
+    // 属性が効くのは preflight が !important で当てているからで、
+    // ブラウザ既定の [hidden] だけなら著者スタイルに負ける
+    // (preflightを外した素のページで実測すると inline-flex のまま残る)
     const probe = document.createElement("span");
-    probe.className = "inline-flex hidden";
-    root.append(probe);
-    expect(probe.checkVisibility()).toBe(true);
-
     probe.className = "inline-flex";
     probe.hidden = true;
-    expect(probe.checkVisibility()).toBe(false);
+    root.append(probe);
+
+    expect(getComputedStyle(probe).display).toBe("none");
   });
 });
