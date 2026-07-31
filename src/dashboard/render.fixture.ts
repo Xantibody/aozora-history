@@ -169,13 +169,13 @@ export function data(overrides: Partial<DashboardData> = {}): DashboardData {
   };
 }
 
-export type RenderResult = DashboardHandlers & { redraw: () => void };
+type RenderResult = DashboardHandlers & { redraw: () => void };
 
 /**
  * 記録は2026年7月に置いてあるので、既定の「いま」も同じ月に固定する。
  * 実時刻を使うと当月フィルタが月替わりで空振りし、月が変わった日にまとめて赤くなる。
  */
-export const defaultNow = (): number => Date.UTC(2026, 6, 27, 0, 0);
+const defaultNow = (): number => Date.UTC(2026, 6, 27, 0, 0);
 
 export function render(root: HTMLElement, dashboardData = data(), now = defaultNow): RenderResult {
   const handlers = {

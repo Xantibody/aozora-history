@@ -67,7 +67,7 @@ describe("renderDashboard", () => {
     });
 
     it("残高では合計を大きく出し、期間と増減を添える", () => {
-      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      render(root, data());
       clickTab("残高");
 
       const summary = root.querySelector(".total-summary")!;
@@ -106,7 +106,7 @@ describe("renderDashboard", () => {
     });
 
     it("開いたときは当月を表示する", () => {
-      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      render(root, data());
 
       expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe(
         "2026-07",
@@ -121,7 +121,7 @@ describe("renderDashboard", () => {
     });
 
     it("月を空にすると全期間に戻る", () => {
-      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      render(root, data());
       clickTab("残高");
 
       const input = root.querySelector<HTMLInputElement>('input[name="period-month"]')!;
@@ -146,7 +146,7 @@ describe("renderDashboard", () => {
     }
 
     it("口座ごとに違う色を割り当てる(並び順で決めるのでぶつからない)", () => {
-      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      render(root, data());
 
       const byName = coloredNames();
       expect(byName.size).toBeGreaterThan(1);
@@ -154,7 +154,7 @@ describe("renderDashboard", () => {
     });
 
     it("同じ口座には残高ページでも同じ色を使う", () => {
-      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      render(root, data());
       const wallet = coloredNames().get("01: お財布");
       clickTab("残高");
 
@@ -1490,7 +1490,7 @@ describe("代表口座の明細をログに統合する", () => {
   });
 
   function open(): void {
-    render(root, data({ statements }), () => Date.UTC(2026, 6, 27, 0, 0));
+    render(root, data({ statements }));
   }
 
   function titles(): string[] {
@@ -1547,17 +1547,13 @@ describe("代表口座の明細をログに統合する", () => {
   });
 
   it("摘要が空でも行として読める", () => {
-    render(root, data({ statements: [{ ...statements[0], remark: "" }] }), () =>
-      Date.UTC(2026, 6, 27, 0, 0),
-    );
+    render(root, data({ statements: [{ ...statements[0], remark: "" }] }));
 
     expect(titles()).toContain("普通預金 → (摘要なし)");
   });
 
   it("明細にもメモを付けられる", () => {
-    const { onCommentChange } = render(root, data({ statements }), () =>
-      Date.UTC(2026, 6, 27, 0, 0),
-    );
+    const { onCommentChange } = render(root, data({ statements }));
 
     const row = [...root.querySelectorAll<HTMLElement>(".log .log-row")].find((node) =>
       node.textContent?.includes("給与"),
@@ -1730,7 +1726,7 @@ describe("狭い幅 (スマホ)", () => {
     await usePhone();
     root.replaceChildren();
     document.body.replaceChildren(root);
-    render(root, data({ statements }), () => Date.UTC(2026, 6, 27, 0, 0));
+    render(root, data({ statements }));
   });
 
   afterEach(useWideScreen);
@@ -1783,7 +1779,7 @@ describe("狭い幅 (スマホ)", () => {
   it("下部バーは広い幅では出さない(ヘッダーのタブと二重にしない)", async () => {
     await useWideScreen();
     root.replaceChildren();
-    render(root, data({ statements }), () => Date.UTC(2026, 6, 27, 0, 0));
+    render(root, data({ statements }));
 
     expect(root.querySelectorAll(".bottom-tab")).not.toHaveLength(0);
     expect(visible(root.querySelector(".bottom-tab")!)).toBe(false);
