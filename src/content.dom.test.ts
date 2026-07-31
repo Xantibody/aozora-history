@@ -92,9 +92,26 @@ function panelBackground(): string {
   return document.querySelector<HTMLElement>("#aozora-history-comment")!.style.backgroundColor;
 }
 
-// jsdomはmatchMediaを持たないため、OSの設定は丸ごと差し替えて模す
+/**
+ * OSの明暗。prefers-color-scheme の答えだけを差し替え、他のメディア特性は
+ * 本物に委ねる。以前は問い合わせ内容を無視して常に同じ答えを返していたので、
+ * 本番が別の特性を尋ねるようになっても気づけなかった。
+ *
+ * ブラウザに本物として模させる手は使えない。page.emulateMedia はテストが走る
+ * iframe まで届かず(実測: ページ側 true でも iframe は false のまま)、
+ * 届くのは context 生成時の指定だけで、テストごとには切り替えられない。
+ * 明暗ごとにインスタンスを分ければ本物にできるが、dom層の実行が
+ * 4.1s から 5.9s に伸びるため1件のために払う額ではないと判断した
+ */
 function stubSystemDark(dark: boolean): void {
-  vi.stubGlobal("matchMedia", () => ({ matches: dark }) as MediaQueryList);
+  const real = globalThis.matchMedia.bind(globalThis);
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string): MediaQueryList =>
+      query.includes("prefers-color-scheme: dark")
+        ? ({ matches: dark } as MediaQueryList)
+        : real(query),
+  );
 }
 
 describe("setupContentScript", () => {
