@@ -37,10 +37,6 @@ export function monthOf(epochMs: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
 }
 
-export function currentMonth(): string {
-  return monthOf(Date.now());
-}
-
 export function inPeriod(state: UiState, ms: number): boolean {
   if (state.periodFrom !== null && ms < state.periodFrom) {
     return false;

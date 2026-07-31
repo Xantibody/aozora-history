@@ -1277,6 +1277,17 @@ describe("renderDashboard", () => {
       );
     });
 
+    it("全期間から月を送るときも、渡された時計の月を基準にする", () => {
+      render(root);
+      clearPeriod();
+
+      root.querySelector<HTMLButtonElement>(".period .month-next")!.click();
+
+      expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe(
+        "2026-08",
+      );
+    });
+
     it("月送りボタンで再描画してもフォーカスを保つ", () => {
       render(root);
 
