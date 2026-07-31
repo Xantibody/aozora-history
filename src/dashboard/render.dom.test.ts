@@ -1568,6 +1568,40 @@ describe("代表口座の明細をログに統合する", () => {
     expect(root.querySelector(".statements")).toBeNull();
   });
 
+  it("つかいわけ口座の残高変動と突き合わせが付けば、その口座名と色で出す", () => {
+    // 代表口座の残高はつかいわけ口座の合計なので、ATM出金は明細としても
+    // つかいわけ口座の残高減としても現れる。二重に並べず、口座を補って1行にする
+    const atm: BalanceSnapshot[] = [
+      {
+        takenAt: Date.UTC(2026, 6, 16, 0, 0),
+        updatedAt: null,
+        accounts: [{ id: "133331", name: "01: お財布", balance: 120_000 }],
+      },
+      {
+        takenAt: Date.UTC(2026, 6, 16, 12, 0),
+        updatedAt: null,
+        accounts: [{ id: "133331", name: "01: お財布", balance: 100_000 }],
+      },
+    ];
+    const withdrawal = {
+      entryNumber: "0001",
+      valueDate: "2026-07-16",
+      amount: -20_000,
+      balance: 100_000,
+      remark: "ATM セブン銀行",
+    };
+
+    render(root, data({ snapshots: atm, transfers: [], statements: [withdrawal] }));
+
+    const rows = [...root.querySelectorAll(".log .log-row")];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].querySelector(".log-title")!.textContent).toBe("01: お財布 → ATM セブン銀行");
+    // 灰色ではなく、その口座に配られた色で出す
+    expect(getComputedStyle(rows[0].querySelector(".dot")!).backgroundColor).not.toBe(
+      "rgb(148, 163, 184)",
+    );
+  });
+
   it("代表口座は口座色を割り当てず灰色で示す", () => {
     open();
 
