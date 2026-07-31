@@ -122,6 +122,13 @@
       }
     },
     {
+      "files": ["src/dashboard/dom-test.setup.ts"],
+      "rules": {
+        // スタイルシートの読み込みは副作用そのものが目的
+        "import/no-unassigned-import": "off"
+      }
+    },
+    {
       "files": ["build.js"],
       "rules": {
         // 拡張の中身はブラウザで動くが、これを組み立てる側はnodeで動く

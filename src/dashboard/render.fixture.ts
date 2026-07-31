@@ -1,6 +1,6 @@
-// ダッシュボードの描画テストが共有する台帳と操作。
-// 1ファイルに全部を書くと1ワーカーで直列に走り、そこがテスト全体の
-// クリティカルパスになるため、観点ごとにファイルを分けて並列に走らせる。
+// ダッシュボードの描画テストが共有する台帳と、見た目を読むための道具。
+// Firefoxで走る *.dom.test.ts と、DOMを使わない node 側の両方から読む。
+// getComputedStyle を呼ぶ関数はあるが、呼ぶのはブラウザ側のテストだけ。
 import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
 import type { DashboardData, DashboardHandlers, ThemePreference } from "./render.ts";
 import type { StatementEntry } from "../domain/statement.ts";
@@ -100,6 +100,46 @@ export function swipe(target: Element, dx: number, dy = 0): void {
 /** 大きさの指定を除いた、色を表すクラスだけ */
 export function dotColor(dot: Element): string {
   return [...dot.classList].filter((name) => name.includes("#")).join(" ");
+}
+
+/** 実際に描かれた文字色。クラス名ではなく計算結果を見る */
+export function ink(node: Element): string {
+  return getComputedStyle(node).color;
+}
+
+function channels(color: string): [number, number, number] {
+  const [red = 0, green = 0, blue = 0] = [...color.matchAll(/\d+/gu)].map((match) =>
+    Number(match[0]),
+  );
+  return [red, green, blue];
+}
+
+/** 明るいほど大きい。濃淡で語っているかを比べるために使う */
+export function lightness(node: Element): number {
+  const [red, green, blue] = channels(ink(node));
+  return red + green + blue;
+}
+
+/** 彩度の代わり。0に近いほど無彩色。emerald/roseなら大きく出る */
+export function chroma(node: Element): number {
+  const rgb = channels(ink(node));
+  return Math.max(...rgb) - Math.min(...rgb);
+}
+
+/**
+ * 無彩色と見なす上限。使っているインク(#5b6675 で27、#0f172a で27)は下回り、
+ * 極性を色で語る emerald(#10b981 で169)や rose は上回る
+ */
+export const ACHROMATIC_LIMIT = 60;
+
+/** 右端の位置。列が揃っているかは座標で確かめる */
+export function rightEdge(node: Element): number {
+  return Math.round(node.getBoundingClientRect().right);
+}
+
+/** 場所を取っていて、実際に見えているか(display:none や幅0を弾く) */
+export function visible(node: Element): boolean {
+  return node.checkVisibility({ contentVisibilityAuto: true, opacityProperty: true });
 }
 
 /** 並べ替えたうえでの最小間隔。マーカーが重なっていないことの確認に使う */

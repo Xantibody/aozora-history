@@ -42,7 +42,7 @@ jobs:
         with:
           name: firefox-failure-screenshots
           path: |
-            src/__screenshots__/
+            src/**/__screenshots__/
             .vitest-attachments/
           if-no-files-found: ignore
 
