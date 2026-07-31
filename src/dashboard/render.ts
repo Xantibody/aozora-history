@@ -1,10 +1,11 @@
 import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
 import type { DashboardData, DashboardOptions, RenderContext } from "./context.ts";
 import { MUTED, accountColorAt, el } from "./dom.ts";
-import { accountRefs, latestRecordAt } from "../domain/ledger.ts";
 import type { AccountColor } from "./dom.ts";
+import { accountRefs } from "../domain/ledger.ts";
 import { activeSection } from "./tabs.ts";
 import { bottomTabs } from "./bottom-tabs.ts";
+import { hasNoRecord } from "./empty-state.ts";
 import { header } from "./header.ts";
 import { initialUiState } from "./context.ts";
 import { reconcile } from "../domain/reconcile.ts";
@@ -59,19 +60,11 @@ function colorResolver(
   return (accountId): AccountColor => accountColorAt(indexById.get(accountId) ?? 0);
 }
 
-/** 記録も明細もまだ何もない状態 */
-function isEmpty(ctx: RenderContext): boolean {
-  return (
-    latestRecordAt(ctx.data.snapshots, ctx.data.transfers) === null &&
-    ctx.data.statements.length === 0
-  );
-}
-
 function dashboardView(ctx: RenderContext): HTMLElement[] {
   // 下部バーに隠れないよう、狭い幅では余分に下を空ける
   const main = el("main", "mx-auto max-w-[1040px] px-4 pt-4 pb-24 sm:px-7 sm:pb-8");
   main.append(
-    isEmpty(ctx) ? el("p", `empty pt-4 ${MUTED}`, "まだ記録がありません") : activeSection(ctx),
+    hasNoRecord(ctx) ? el("p", `empty pt-4 ${MUTED}`, "まだ記録がありません") : activeSection(ctx),
   );
   return [suggestionList(ctx.data.comments), header(ctx), main];
 }

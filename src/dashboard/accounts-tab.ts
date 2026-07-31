@@ -1,6 +1,7 @@
 import { CARD, INK, INK_SOFT, MUTED, accountDot, el, signedCell } from "./dom.ts";
 import type { RenderContext } from "./context.ts";
 import type { WorkspaceSummary } from "../domain/ledger.ts";
+import { emptyMessage } from "./empty-state.ts";
 import { formatYen } from "./format.ts";
 import { inPeriod } from "./period.ts";
 import { workspaceSummaries } from "../domain/ledger.ts";
@@ -113,7 +114,7 @@ export function workspaceGrid(ctx: RenderContext): HTMLElement {
   );
   node.append(
     summaries.length === 0
-      ? el("p", `empty ${MUTED}`, "まだ記録がありません")
+      ? el("p", `empty ${MUTED}`, emptyMessage(ctx))
       : cardGrid(ctx, summaries),
   );
   return node;
