@@ -17,7 +17,7 @@ export function dayStart(value: string): number | null {
 }
 
 /** "YYYY-MM" をその月の[開始, 翌月開始)に変換する */
-export function monthBounds(value: string): [number, number] | null {
+function monthBounds(value: string): [number, number] | null {
   const [year, month] = value.split("-").map(Number);
   if (!year || !month) {
     return null;
@@ -35,10 +35,6 @@ export function shiftMonth(value: string, delta: number): string {
 export function monthOf(epochMs: number): string {
   const date = new Date(epochMs);
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
-}
-
-export function currentMonth(): string {
-  return monthOf(Date.now());
 }
 
 export function inPeriod(state: UiState, ms: number): boolean {

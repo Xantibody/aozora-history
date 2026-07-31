@@ -60,7 +60,7 @@ export type ViewTab = "log" | "balance";
 export type ThemePreference = "system" | "light" | "dark";
 
 export type LogFilter = "all" | "transfer" | "in" | "out";
-export type StatementFilter = "all" | "in" | "out";
+type StatementFilter = "all" | "in" | "out";
 
 /** 再描画をまたいで保持するUI状態(選択中のタブ・期間・フィルタなど) */
 export interface UiState {
@@ -112,14 +112,6 @@ export function initialUiState(now: () => number = Date.now): UiState {
   };
   applyBounds(state);
   return state;
-}
-
-/**
- * 狭い幅かどうか。ホバーが使えず縦も横も足りないため、行の組み方と
- * タブの置き場所を変える。判定は描画のたびに読み直す(回転や分割表示で変わる)
- */
-export function isNarrow(): boolean {
-  return globalThis.matchMedia?.("(max-width: 639px)").matches === true;
 }
 
 /** 各セクションの描画関数に渡す描画コンテキスト */

@@ -85,7 +85,7 @@
   },
   "overrides": [
     {
-      "files": ["**/*.test.ts"],
+      "files": ["**/*.test.ts", "**/*.fixture.ts"],
       "rules": {
         // テストはデータ(金額・日時・件数)そのものを扱うため数値リテラルが本体
         "eslint/no-magic-numbers": "off",
@@ -115,10 +115,24 @@
       }
     },
     {
-      "files": ["vitest.config.ts"],
+      "files": ["vitest.config.ts", "knip.config.ts"],
       "rules": {
-        // vitestの設定ファイルはdefault exportが必須
+        // vitest・knipの設定ファイルはdefault exportが必須
         "import/no-default-export": "off"
+      }
+    },
+    {
+      "files": ["src/dashboard/dom-test.setup.ts"],
+      "rules": {
+        // スタイルシートの読み込みは副作用そのものが目的
+        "import/no-unassigned-import": "off"
+      }
+    },
+    {
+      "files": ["build.js"],
+      "rules": {
+        // 拡張の中身はブラウザで動くが、これを組み立てる側はnodeで動く
+        "import/no-nodejs-modules": "off"
       }
     },
     {

@@ -1,7 +1,7 @@
-// @vitest-environment jsdom
-import { applyTheme, nextTheme, themeAttribute, themeLabel, toThemePreference } from "./theme.ts";
 import { describe, expect, it } from "vitest";
+import { nextTheme, themeAttribute, themeLabel, toThemePreference } from "./theme.ts";
 
+// 文書を触らない判定だけ。属性を実際に置く applyTheme は theme.dom.test.ts
 describe("nextTheme", () => {
   it("システム → ライト → ダーク → システム と巡回する", () => {
     expect(nextTheme("system")).toBe("light");
@@ -38,24 +38,5 @@ describe("themeLabel", () => {
     expect(themeLabel("system")).toContain("システム");
     expect(themeLabel("light")).toContain("ライト");
     expect(themeLabel("dark")).toContain("ダーク");
-  });
-});
-
-describe("applyTheme", () => {
-  it("固定したテーマを属性に置く", () => {
-    const root = document.createElement("html");
-
-    applyTheme(root, "dark");
-
-    expect(root.dataset.theme).toBe("dark");
-  });
-
-  it("システムに戻したら属性を消す", () => {
-    const root = document.createElement("html");
-    applyTheme(root, "dark");
-
-    applyTheme(root, "system");
-
-    expect(root.dataset.theme).toBeUndefined();
   });
 });

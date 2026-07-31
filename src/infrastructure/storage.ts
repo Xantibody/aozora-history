@@ -28,9 +28,9 @@ const SYNC_CONFIG_KEY = "syncConfig";
  */
 export const AUTO_TRANSFERS_KEY = "autoTransferSettings";
 /** 設定画面にデバッグ欄を出すかどうか。既定は出さない */
-export const DEBUG_MODE_KEY = "debugMode";
+const DEBUG_MODE_KEY = "debugMode";
 /** 画面の明暗。端末ごとの見え方の設定なのでLEDGER_KEYSに含めない(同期しない) */
-export const THEME_KEY = "themePreference";
+const THEME_KEY = "themePreference";
 /** 最後の取り込みの結果。記録ではなく診断用なのでLEDGER_KEYSに含めない */
 export const LAST_COLLECT_KEY = "lastCollectReport";
 /** 最後にR2と同期できた時刻。台帳ではないためLEDGER_KEYSに含めない(自動同期のループ防止) */

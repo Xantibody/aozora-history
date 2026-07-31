@@ -155,12 +155,14 @@ pnpm verify
 
 | コマンド                           | 内容                                          |
 | ---------------------------------- | --------------------------------------------- |
-| `pnpm verify`                      | fmt:check → lint → typecheck → test           |
+| `pnpm verify`                      | fmt:check → lint → typecheck → knip → test    |
 | `pnpm fmt` / `fmt:check`           | oxfmt でフォーマット / チェックのみ           |
 | `pnpm lint` / `typecheck`          | oxlint で静的解析 / tsgo で型チェック         |
-| `pnpm test` / `test:watch`         | vitest でテスト / ウォッチ                    |
+| `pnpm knip`                        | 使われていない export・ファイル・依存を探す   |
+| `pnpm test` / `test:watch`         | vitest で全テスト / ウォッチ                  |
+| `pnpm test:logic` / `test:dom`     | node で走る分だけ / Firefox で走る分だけ      |
 | `pnpm dev`                         | ダミーデータのダッシュボードをブラウザで開く  |
-| `pnpm build`                       | esbuild で dist/ にビルド                     |
+| `pnpm build`                       | esbuild と tailwind で dist/ にビルド         |
 | `pnpm package:local`               | ローカル用 xpi を作成                         |
 | `pnpm package:firefox` / `:source` | `VERSION` 付きの xpi / ソースアーカイブ(CI用) |
 
@@ -193,15 +195,52 @@ pnpm dev   # http://localhost:8000/dashboard.html
 `about:debugging#/runtime/this-firefox` → 「一時的なアドオンを読み込む」で
 `dist/manifest.json` を選ぶ。
 
-CI(`.github/workflows/ci.yml`)は push / PR ごとに verify 一式と build を実行する。
-ツールは CI でも nix (`.github/actions/setup`) から取るため、環境差異が出ない。
+未使用の export は oxlint も tsgo も拾えない。どちらも「未使用」を1ファイルの中でしか
+見ず、`export` が付いた宣言は外から使われる可能性があるものとして扱うため
+(oxlint 1.71 に `import/no-unused-modules` は無い)。プロジェクト全体の
+import グラフを見る `pnpm knip` がその役を持つ。理由は `knip.config.ts` にも書いてある。
+
+検査は `.github/workflows/checks.yml`(静的解析・node のテスト・Firefox のテスト・
+build を独立したジョブで並列実行)に書いてあり、`ci.yml`(push / PR)と
+`release.yml` の両方がこれを呼ぶ。リリースは検査に `needs` で続くので、
+同じ検査を通ってからしか成果物が出ない。ツールは CI でも nix
+(`.github/actions/setup`)から取るため、環境差異が出ない。
+
+### テストの置き場所
+
+走る場所で2つに分かれる。ファイル名で決まる。
+
+| ファイル        | 環境               | 中身                                 |
+| --------------- | ------------------ | ------------------------------------ |
+| `*.test.ts`     | node               | DOMを触らない計算・入出力・書式・CSV |
+| `*.dom.test.ts` | Firefox (headless) | 画面を組んで読むもの全部             |
+
+jsdom は使わない。緑になっても Firefox で動く保証がなく、`matchMedia` や
+`location` をスタブで埋める手間だけが残る。実際、`hidden` クラスが
+`inline-flex` に負けてメモの誘い文が消えない不具合は、jsdom では緑のまま
+すり抜けていた(`42cb8bd`)。
+
+見た目の検証はクラス名の文字列ではなく、`getComputedStyle` と
+`getBoundingClientRect` と `checkVisibility()` で実際の結果を問う。土台が
+崩れていないかは `src/dashboard/styles.dom.test.ts` が見張っている。
+
+ブラウザは playwright のダウンローダではなく nixpkgs から渡す。
+Firefox だけを選んだ導出(`.#playwright-browsers`、271MiB。既定の
+`playwright-driver.browsers` は chromium/webkit まで含めて 1.1GiB)を、
+devShell と CI が同じものとして参照する。**`package.json` の `playwright` は
+flake の `playwright-driver` と同じ版に固定すること。** ずれると
+`firefox-<revision>` が見つからず起動できない。
+
+検査に使う道具立ては `flake.nix` の `.#toolchain` が持つ。devShell も CI も
+これ一つを読むので(CI は `nix profile install .#toolchain`)、一覧を
+ワークフロー側に書き写す必要がない。
 
 ### リリース
 
 `manifest.firefox.json` と `package.json` の `version` をタグに揃えてから `v*` タグを push すると、
 `.github/workflows/release.yml` が動く。
 
-1. verify 一式を実行して xpi をビルド
+1. `checks.yml` の検査を並列で通してから xpi をビルド
 2. GitHub Release を作成(xpi を添付)
 3. AMO へ提出(要 `AMO_JWT_ISSUER` / `AMO_JWT_SECRET`)
 

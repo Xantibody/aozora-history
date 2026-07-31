@@ -6,6 +6,7 @@ import type { CollectReport } from "../domain/diagnostics.ts";
 import type { Comments } from "../domain/comments.ts";
 import { DEFAULT_OBJECT_KEY } from "../infrastructure/r2sync.ts";
 import type { LedgerData } from "../domain/merge.ts";
+import { STATEMENT_LIMIT } from "../infrastructure/collector.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
 import { buildStamp } from "../build.ts";
@@ -70,9 +71,6 @@ const SNAPSHOT_HOUR = 22;
 const SNAPSHOT_MINUTE = 30;
 /** 最新の記録を「たった今」にはしない。銀行から取り込むまでの間が空くのが普通 */
 const LATEST_GAP_MS = 20 * MINUTE_MS;
-
-/** 銀行APIが1口座あたりに返す明細の上限 */
-const STATEMENT_LIMIT = 100;
 
 const SCENARIO_DAYS: Record<Scenario, number> = { rich: 120, empty: 0, dense: 420 };
 

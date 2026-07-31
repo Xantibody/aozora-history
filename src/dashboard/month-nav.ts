@@ -1,5 +1,5 @@
 import { FINE_PRINT, INK, INK_SOFT, INPUT, LINK_BUTTON, el } from "./dom.ts";
-import { applyBounds, currentMonth, shiftMonth } from "./period.ts";
+import { applyBounds, monthOf, shiftMonth } from "./period.ts";
 import type { RenderContext } from "./context.ts";
 import { icon } from "./icons.ts";
 
@@ -26,7 +26,7 @@ function monthStepButton(ctx: RenderContext, delta: number): HTMLElement {
   button.title = forward ? "次の月" : "前の月";
   button.setAttribute("aria-label", button.title);
   button.addEventListener("click", () => {
-    const base = ctx.state.monthValue === "" ? currentMonth() : ctx.state.monthValue;
+    const base = ctx.state.monthValue === "" ? monthOf(ctx.now()) : ctx.state.monthValue;
     selectMonth(ctx, shiftMonth(base, delta));
   });
   return button;

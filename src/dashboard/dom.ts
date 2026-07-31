@@ -31,15 +31,10 @@ export const FINE_PRINT = `text-xs ${INK_WEAK}`;
 export const SURFACE = "bg-white dark:bg-[#121821]";
 export const BORDER = "ring-1 ring-[#e8ebf0] dark:ring-[#1e2733]";
 export const CARD = `rounded-[14px] ${SURFACE} ${BORDER}`;
-/** カードの中を区切る罫。外周より一段薄い */
-export const DIVIDER = "border-[#f1f3f7] dark:border-[#1a222c]";
-
 /** 選択中のチップ・主ボタン。面を反転させて示す */
 export const SELECTED = "bg-[#0f172a] text-white dark:bg-[#1c2733] dark:text-[#e6ecf3]";
 /** バッジの地色。この上でも本文の濃さが 4.5:1 を満たす */
 export const BADGE = `rounded-[5px] bg-[#eef1f5] px-[7px] dark:bg-[#1e2733] ${INK_SOFT}`;
-/** 推移で選んだ区間の帯 */
-export const SPAN_HIGHLIGHT = "bg-[#eef2f6] dark:bg-[#1a2330]";
 /** 同期済みの合図。必ずテキストと併記する */
 export const SUCCESS = "text-[#2f8f5b] dark:text-[#3fa66f]";
 /** 記録が止まっているときの警告。同上 */

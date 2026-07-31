@@ -28,7 +28,7 @@ export function shouldCollect(
 }
 
 /** 定額自動振替の設定は多くても口座数程度。1回で取り切れる件数にしておく */
-export const AUTO_TRANSFER_LIMIT = 100;
+const AUTO_TRANSFER_LIMIT = 100;
 
 /**
  * 1つのAPIの結果。savedだけでは「取れたが記録に変化がなかった」と

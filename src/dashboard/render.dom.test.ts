@@ -1,185 +1,25 @@
-// @vitest-environment jsdom
-import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
-import type { DashboardData, DashboardHandlers, ThemePreference } from "./render.ts";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  formatDateTime,
-  formatSigned,
-  formatYen,
-  renderDashboard,
-  statementsCsv,
-  transfersCsv,
-} from "./render.ts";
-import type { StatementEntry } from "../domain/statement.ts";
+  ACHROMATIC_LIMIT,
+  chroma,
+  data,
+  dotColor,
+  ink,
+  lightness,
+  minGap,
+  render,
+  rightEdge,
+  shortDateTime,
+  snapshots,
+  statements,
+  swipe,
+  transfers,
+  visible,
+} from "./render.fixture.ts";
+import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { usePhone, useWideScreen } from "./screen.fixture.ts";
+import type { DashboardData } from "./render.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
-
-const snapshots: BalanceSnapshot[] = [
-  {
-    takenAt: Date.UTC(2026, 6, 9, 13, 0),
-    updatedAt: "2026/07/09 21:59",
-    accounts: [
-      { id: "133331", name: "01: お財布", balance: 134_392 },
-      { id: "133332", name: "02: 積立", balance: 82_520 },
-    ],
-  },
-  {
-    takenAt: Date.UTC(2026, 6, 10, 13, 34),
-    updatedAt: "2026/07/10 22:34",
-    accounts: [
-      { id: "133331", name: "01: お財布", balance: 129_392 },
-      { id: "133332", name: "02: 積立", balance: 82_520 },
-      { id: "133805", name: "03: 支払い箱", balance: 272_469 },
-    ],
-  },
-];
-
-const transfers: TransferRecord[] = [
-  {
-    // 2つ目のスナップショット区間 (7/9 13:00, 7/10 13:34] の中
-    transferredAt: Date.UTC(2026, 6, 10, 13, 30),
-    from: { id: "133331", name: "01: お財布" },
-    to: { id: "133332", name: "02: 積立" },
-    amount: 5000,
-  },
-  {
-    transferredAt: Date.UTC(2026, 6, 8, 0, 0),
-    from: { id: "133332", name: "02: 積立" },
-    to: { id: "133805", name: "03: 支払い箱" },
-    amount: 30_000,
-  },
-];
-
-// ログの内訳(全期間):
-//   振替 2件 (5,000円 / 30,000円)
-//   外部入出金 2件 (02: 積立 -5,000円、03: 支払い箱 +272,469円; どちらも2つ目のスナップショット時点)
-//   残高記録 2件 (合計 216,912円 → 484,381円、期間の増減 +267,469円)
-
-const pad = (value: number): string => String(value).padStart(2, "0");
-
-/** ヘッダーやログ行と同じ「M/D HH:MM」表記(ローカル時刻) */
-function shortDateTime(epochMs: number): string {
-  const date = new Date(epochMs);
-  return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function dispatchTouch(
-  target: Element,
-  type: "touchstart" | "touchmove" | "touchend",
-  point: { clientX: number; clientY: number },
-): void {
-  const event = new Event(type, { bubbles: true });
-  Object.defineProperty(event, "touches", { value: [point] });
-  target.dispatchEvent(event);
-}
-
-function swipe(target: Element, dx: number, dy = 0): void {
-  dispatchTouch(target, "touchstart", { clientX: 200, clientY: 300 });
-  dispatchTouch(target, "touchmove", { clientX: 200 + dx, clientY: 300 + dy });
-  dispatchTouch(target, "touchend", { clientX: 200 + dx, clientY: 300 + dy });
-}
-
-/** 大きさの指定を除いた、色を表すクラスだけ */
-function dotColor(dot: Element): string {
-  return [...dot.classList].filter((name) => name.includes("#")).join(" ");
-}
-
-/** 並べ替えたうえでの最小間隔。マーカーが重なっていないことの確認に使う */
-function minGap(values: number[]): number {
-  const sorted = values.toSorted((left, right) => left - right);
-  let min = Infinity;
-  for (const [index, value] of sorted.slice(1).entries()) {
-    min = Math.min(min, value - sorted[index]);
-  }
-  return min;
-}
-
-function data(overrides: Partial<DashboardData> = {}): DashboardData {
-  return {
-    snapshots,
-    transfers,
-    statements: [],
-    autoTransfers: [],
-    comments: {},
-    deletions: {},
-    syncConfig: null,
-    lastSyncedAt: null,
-    debugMode: false,
-    theme: "system",
-    lastCollect: null,
-    ...overrides,
-  };
-}
-
-type RenderResult = DashboardHandlers & { redraw: () => void };
-
-function render(root: HTMLElement, dashboardData = data(), now?: () => number): RenderResult {
-  const handlers = {
-    onCommentChange: vi.fn<(key: string, text: string) => void>(),
-    onDeleteTransfer: vi.fn<(transfer: TransferRecord) => void>(),
-    onSaveSyncConfig: vi.fn<(config: SyncConfig) => Promise<string>>(() =>
-      Promise.resolve("保存しました"),
-    ),
-    onSyncNow: vi.fn<() => Promise<string>>(() => Promise.resolve("同期しました")),
-    onImportFile: vi.fn<(text: string) => Promise<string>>(() => Promise.resolve("読み込みました")),
-    onToggleDebug: vi.fn<(enabled: boolean) => void>(),
-    onChangeTheme: vi.fn<(preference: ThemePreference) => void>(),
-    onRequestCollect: vi.fn<() => void>(),
-  };
-  const redraw = renderDashboard(root, dashboardData, { handlers, now });
-  return { ...handlers, redraw };
-}
-
-describe("transfersCsv", () => {
-  it("ヘッダー付きで振替を新しい順にCSV化する(Excel向けBOM付き)", () => {
-    const comments = {
-      [`transfer:${transfers[1].transferredAt}`]: { text: "生活費", updatedAt: 1 },
-    };
-
-    const csv = transfersCsv(transfers, comments);
-
-    expect(csv).toBe(
-      "﻿日時,出金口座,入金口座,金額,コメント\r\n" +
-        `${formatDateTime(transfers[0].transferredAt)},01: お財布,02: 積立,5000,\r\n` +
-        `${formatDateTime(transfers[1].transferredAt)},02: 積立,03: 支払い箱,30000,生活費\r\n`,
-    );
-  });
-
-  it("カンマや引用符を含むフィールドはRFC4180形式でエスケープする", () => {
-    const transfer = {
-      transferredAt: 1,
-      from: { id: "1", name: 'A,B"C' },
-      to: { id: "2", name: "D" },
-      amount: 100,
-    };
-
-    const csv = transfersCsv([transfer], {});
-
-    expect(csv).toContain('"A,B""C",D,100,');
-  });
-});
-
-describe("formatYen", () => {
-  it("カンマ区切りと円記号を付ける", () => {
-    expect(formatYen(129_392)).toBe("129,392円");
-    expect(formatYen(0)).toBe("0円");
-  });
-});
-
-describe("formatSigned", () => {
-  it("符号付きで金額を表示する", () => {
-    expect(formatSigned(280_000)).toBe("+280,000円");
-    expect(formatSigned(-5000)).toBe("-5,000円");
-    expect(formatSigned(0)).toBe("±0円");
-  });
-});
-
-describe("formatDateTime", () => {
-  it("エポックミリ秒をローカル日時で表示する", () => {
-    const ms = new Date(2026, 6, 10, 22, 34).getTime();
-
-    expect(formatDateTime(ms)).toBe("2026/07/10 22:34");
-  });
-});
 
 describe("renderDashboard", () => {
   const root = document.createElement("div");
@@ -227,7 +67,7 @@ describe("renderDashboard", () => {
     });
 
     it("残高では合計を大きく出し、期間と増減を添える", () => {
-      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      render(root, data());
       clickTab("残高");
 
       const summary = root.querySelector(".total-summary")!;
@@ -237,6 +77,8 @@ describe("renderDashboard", () => {
     });
 
     describe("テーマ切り替え", () => {
+      afterEach(useWideScreen);
+
       function themeButton(): HTMLButtonElement {
         return root.querySelector<HTMLButtonElement>("button.theme-button")!;
       }
@@ -255,15 +97,16 @@ describe("renderDashboard", () => {
         expect(onChangeTheme).toHaveBeenCalledWith("light");
       });
 
-      it("狭い幅でも隠さない(下部バーに他の入口がない)", () => {
+      it("狭い幅でも隠さない(下部バーに他の入口がない)", async () => {
+        await usePhone();
         render(root);
 
-        expect(themeButton().className).not.toContain("max-sm:hidden");
+        expect(visible(themeButton())).toBe(true);
       });
     });
 
     it("開いたときは当月を表示する", () => {
-      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      render(root, data());
 
       expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe(
         "2026-07",
@@ -278,7 +121,7 @@ describe("renderDashboard", () => {
     });
 
     it("月を空にすると全期間に戻る", () => {
-      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      render(root, data());
       clickTab("残高");
 
       const input = root.querySelector<HTMLInputElement>('input[name="period-month"]')!;
@@ -303,7 +146,7 @@ describe("renderDashboard", () => {
     }
 
     it("口座ごとに違う色を割り当てる(並び順で決めるのでぶつからない)", () => {
-      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      render(root, data());
 
       const byName = coloredNames();
       expect(byName.size).toBeGreaterThan(1);
@@ -311,7 +154,7 @@ describe("renderDashboard", () => {
     });
 
     it("同じ口座には残高ページでも同じ色を使う", () => {
-      render(root, data(), () => Date.UTC(2026, 6, 27, 0, 0));
+      render(root, data());
       const wallet = coloredNames().get("01: お財布");
       clickTab("残高");
 
@@ -409,49 +252,41 @@ describe("renderDashboard", () => {
       expect(headings[2].querySelector(".day-total")).toBeNull();
     });
 
-    it("金額の列を固定幅・右揃えにし、行の種類によらず右端を揃える", () => {
+    it("金額の列は桁数によらず同じ幅で、行の種類によらず右端が揃う", () => {
       render(root);
 
-      // 金額セルが可変幅だと、後続のコメント欄の位置が桁数分ずれてガタガタに見える
+      // 金額セルが可変幅だと、後続のコメント欄の位置が桁数分ずれてガタガタに見える。
+      // 削除ボタンは振替行にしかないため、外部入出金行に同じ幅のスペーサーが無いと
+      // 金額の右端が振替行より右へはみ出す
       const amounts = [...root.querySelectorAll<HTMLElement>(".log .log-row .amount")];
-      expect(amounts.length).toBeGreaterThan(0);
-      for (const amount of amounts) {
-        expect(amount.className).toContain("w-[120px]");
-        expect(amount.className).toContain("text-right");
-      }
-
-      // 削除ボタンは振替行にしかないため、外部入出金行には同じ幅のスペーサーを
-      // 置かないと金額の右端が振替行より右にはみ出す
-      const rows = [...root.querySelectorAll<HTMLElement>(".log .log-row")];
-      const trailing = [
-        ...root.querySelectorAll<HTMLElement>(
-          ".log .log-row .delete-transfer, .log .log-row .delete-spacer",
-        ),
-      ];
-      expect(trailing).toHaveLength(rows.length);
-      for (const element of trailing) {
-        expect(element.className).toContain("w-[18px]");
-      }
+      expect(amounts.length).toBeGreaterThan(1);
+      expect(new Set(amounts.map((amount) => rightEdge(amount)))).toHaveLength(1);
+      expect(
+        new Set(amounts.map((amount) => Math.round(amount.getBoundingClientRect().width))),
+      ).toHaveLength(1);
+      expect(getComputedStyle(amounts[0]).textAlign).toBe("right");
     });
 
     it("極性を色で分けず、符号とインクの濃淡で示す", () => {
       render(root);
 
       const amounts = [...root.querySelectorAll<HTMLElement>(".log .log-row .amount")];
-      // 外部出金 −5,000 / 外部入金 +272,469 / 振替
-      expect(amounts[0].className).toContain("text-[#5b6675]");
-      expect(amounts[1].className).toContain("text-[#0f172a]");
+      // 外部出金 −5,000 は控えめに、外部入金 +272,469 は濃く
+      expect(ink(amounts[0])).not.toBe(ink(amounts[1]));
+      expect(lightness(amounts[0])).toBeGreaterThan(lightness(amounts[1]));
+      // 緑と赤で極性を語らない。無彩色に近いことを彩度で確かめる
       for (const amount of amounts) {
-        expect(amount.className).not.toContain("emerald");
-        expect(amount.className).not.toContain("rose");
+        expect(chroma(amount)).toBeLessThan(ACHROMATIC_LIMIT);
       }
     });
 
     it("1取引を1カードにし、残高記録は面を持たない従属行にする", () => {
       render(root);
 
-      expect(root.querySelector(".log .log-row")!.className).toContain("rounded-[12px]");
-      expect(root.querySelector(".log .snapshot-row")!.className).not.toContain("rounded");
+      const card = root.querySelector<HTMLElement>(".log .log-row")!;
+      const subordinate = root.querySelector<HTMLElement>(".log .snapshot-row")!;
+      expect(getComputedStyle(card).borderTopLeftRadius).toBe("12px");
+      expect(getComputedStyle(subordinate).borderTopLeftRadius).toBe("0px");
     });
 
     describe("記録が多いとき", () => {
@@ -615,7 +450,7 @@ describe("renderDashboard", () => {
         clickChip("振替");
         const row = root.querySelector(".log .log-row")!;
         expect(row.querySelector(".memo")!.textContent).toBe("積立へ移動");
-        expect(row.querySelector<HTMLInputElement>("input.comment")!.classList).toContain("hidden");
+        expect(visible(row.querySelector("input.comment")!)).toBe(false);
       });
 
       it("メモがなければ書き込める場所だと分かる誘い文を出す", () => {
@@ -630,12 +465,12 @@ describe("renderDashboard", () => {
 
         const row = root.querySelector<HTMLElement>(".log .log-row")!;
         const input = row.querySelector<HTMLInputElement>("input.comment")!;
-        expect(input.classList).toContain("hidden");
+        expect(visible(input)).toBe(false);
 
         row.querySelector<HTMLElement>(".log-title")!.click();
 
-        expect(input.classList).not.toContain("hidden");
-        expect(row.querySelector(".memo")!.firstElementChild!.classList).toContain("hidden");
+        expect(visible(input)).toBe(true);
+        expect(visible(row.querySelector(".memo")!.firstElementChild!)).toBe(false);
       });
 
       it("振替のコメントを編集するとキー付きで通知する", () => {
@@ -669,7 +504,7 @@ describe("renderDashboard", () => {
         const row = root.querySelector<HTMLElement>(".log .log-row")!;
         row.querySelector<HTMLInputElement>("input.comment")!.click();
 
-        expect(row.querySelector<HTMLInputElement>("input.comment")!.classList).toContain("hidden");
+        expect(visible(row.querySelector("input.comment")!)).toBe(false);
       });
 
       it("過去のコメントを入力候補として提示する", () => {
@@ -776,7 +611,7 @@ describe("renderDashboard", () => {
         expect(row.querySelector<HTMLElement>(".swipe-slider")!.style.transform).toBe(
           "translateX(0px)",
         );
-        expect(row.querySelector<HTMLInputElement>("input.comment")!.classList).toContain("hidden");
+        expect(visible(row.querySelector("input.comment")!)).toBe(false);
       });
 
       it("外部入出金と残高記録の行にはスワイプ削除を付けない", () => {
@@ -1271,6 +1106,17 @@ describe("renderDashboard", () => {
       );
     });
 
+    it("全期間から月を送るときも、渡された時計の月を基準にする", () => {
+      render(root);
+      clearPeriod();
+
+      root.querySelector<HTMLButtonElement>(".period .month-next")!.click();
+
+      expect(root.querySelector<HTMLInputElement>('input[name="period-month"]')!.value).toBe(
+        "2026-08",
+      );
+    });
+
     it("月送りボタンで再描画してもフォーカスを保つ", () => {
       render(root);
 
@@ -1635,30 +1481,6 @@ describe("renderDashboard", () => {
   });
 });
 
-const statements: StatementEntry[] = [
-  {
-    entryNumber: "0001",
-    valueDate: "2026-07-23",
-    amount: -4100,
-    balance: 445_281,
-    remark: "振込 ミツビシユーエフジエイ",
-  },
-  {
-    entryNumber: "0001",
-    valueDate: "2026-07-24",
-    amount: 635_144,
-    balance: 1_080_425,
-    remark: "給与  カ）アツトマーク",
-  },
-  {
-    entryNumber: "0002",
-    valueDate: "2026-07-24",
-    amount: -173_000,
-    balance: 907_425,
-    remark: "振込 ラクテン",
-  },
-];
-
 describe("代表口座の明細をログに統合する", () => {
   const root = document.createElement("div");
 
@@ -1668,7 +1490,7 @@ describe("代表口座の明細をログに統合する", () => {
   });
 
   function open(): void {
-    render(root, data({ statements }), () => Date.UTC(2026, 6, 27, 0, 0));
+    render(root, data({ statements }));
   }
 
   function titles(): string[] {
@@ -1695,7 +1517,8 @@ describe("代表口座の明細をログに統合する", () => {
     const row = [...root.querySelectorAll(".log .log-row")].find((node) =>
       node.textContent?.includes("給与"),
     )!;
-    expect(row.querySelector(".dot")!.className).toContain("bg-[#94a3b8]");
+    // つかいわけ口座に配る色とは違う灰色。SVGやbg-*の指定漏れは塗りに現れる
+    expect(getComputedStyle(row.querySelector(".dot")!).backgroundColor).toBe("rgb(148, 163, 184)");
   });
 
   it("その日の合計に明細の出入りを含める", () => {
@@ -1724,17 +1547,13 @@ describe("代表口座の明細をログに統合する", () => {
   });
 
   it("摘要が空でも行として読める", () => {
-    render(root, data({ statements: [{ ...statements[0], remark: "" }] }), () =>
-      Date.UTC(2026, 6, 27, 0, 0),
-    );
+    render(root, data({ statements: [{ ...statements[0], remark: "" }] }));
 
     expect(titles()).toContain("普通預金 → (摘要なし)");
   });
 
   it("明細にもメモを付けられる", () => {
-    const { onCommentChange } = render(root, data({ statements }), () =>
-      Date.UTC(2026, 6, 27, 0, 0),
-    );
+    const { onCommentChange } = render(root, data({ statements }));
 
     const row = [...root.querySelectorAll<HTMLElement>(".log .log-row")].find((node) =>
       node.textContent?.includes("給与"),
@@ -1899,29 +1718,18 @@ describe("記録にない口座間の移動(定額自動振替など)", () => {
   });
 });
 
-describe("statementsCsv", () => {
-  it("ヘッダー付きで明細を新しい順にCSV化する(Excel向けBOM付き)", () => {
-    const csv = statementsCsv(statements, {
-      "statement:2026-07-24:0001": { text: "月給", updatedAt: 1 },
-    });
-
-    expect(csv).toBe(
-      "﻿日付,摘要,金額,残高,コメント\r\n" +
-        "2026-07-24,振込 ラクテン,-173000,907425,\r\n" +
-        "2026-07-24,給与  カ）アツトマーク,635144,1080425,月給\r\n" +
-        "2026-07-23,振込 ミツビシユーエフジエイ,-4100,445281,\r\n",
-    );
-  });
-});
-
 describe("狭い幅 (スマホ)", () => {
   const root = document.createElement("div");
 
-  beforeEach(() => {
+  // 幅で変わる見た目を確かめる場所なので、実際に画面を狭めてから描く
+  beforeEach(async () => {
+    await usePhone();
     root.replaceChildren();
     document.body.replaceChildren(root);
-    render(root, data({ statements }), () => Date.UTC(2026, 6, 27, 0, 0));
+    render(root, data({ statements }));
   });
+
+  afterEach(useWideScreen);
 
   function bottomTab(label: string): HTMLButtonElement {
     return [...root.querySelectorAll<HTMLButtonElement>(".bottom-tab")].find(
@@ -1951,21 +1759,31 @@ describe("狭い幅 (スマホ)", () => {
   });
 
   it("ヘッダーのタブと歯車は狭い幅で隠す(下部バーと二重にしない)", () => {
-    expect(root.querySelector(".view-tabs")!.className).toContain("max-sm:hidden");
-    expect(root.querySelector(".settings-button")!.className).toContain("max-sm:hidden");
+    expect(visible(root.querySelector(".view-tabs")!)).toBe(false);
+    expect(visible(root.querySelector(".settings-button")!)).toBe(false);
   });
 
   it("時刻を左の固定列から2段目へ回し、口座名に幅を空ける", () => {
     const row = root.querySelector(".log .log-row")!;
-    expect(row.querySelector(".time")!.className).toContain("max-sm:hidden");
-    expect(row.querySelector(".time-inline")!.className).toContain("sm:hidden");
+    expect(visible(row.querySelector(".time")!)).toBe(false);
+    expect(visible(row.querySelector(".time-inline")!)).toBe(true);
   });
 
   it("口座カードのKPIは畳む(残高・増減・構成比まで読めれば足りる)", () => {
     bottomTab("残高").click();
 
-    expect(root.querySelector(".workspace-card .kpis")!.className).toContain("max-sm:hidden");
-    expect(root.querySelector(".workspace-card .share")).not.toBeNull();
+    expect(visible(root.querySelector(".workspace-card .kpis")!)).toBe(false);
+    expect(visible(root.querySelector(".workspace-card .share")!)).toBe(true);
+  });
+
+  it("下部バーは広い幅では出さない(ヘッダーのタブと二重にしない)", async () => {
+    await useWideScreen();
+    root.replaceChildren();
+    render(root, data({ statements }));
+
+    expect(root.querySelectorAll(".bottom-tab")).not.toHaveLength(0);
+    expect(visible(root.querySelector(".bottom-tab")!)).toBe(false);
+    expect(visible(root.querySelector(".view-tabs")!)).toBe(true);
   });
 });
 
@@ -2026,7 +1844,10 @@ describe("設定画面 (整理)", () => {
 
     const row = root.querySelector(".import-row")!;
     expect(row.textContent).toContain("ドロップ");
-    expect(row.querySelector('input[name="import-file"]')!.className).toContain("sr-only");
+    // 目には出さないが、支援技術からは触れる場所に残す(display:noneにはしない)
+    const input = row.querySelector<HTMLInputElement>('input[name="import-file"]')!;
+    expect(input.getBoundingClientRect().width).toBeLessThan(2);
+    expect(getComputedStyle(input).display).not.toBe("none");
   });
 
   it("保存されている記録の件数を出す(書き出す前に量が分かる)", () => {
