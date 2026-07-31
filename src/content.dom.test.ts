@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HistoryStore } from "./infrastructure/storage.ts";
 import type { StorageArea } from "./infrastructure/storage.ts";
@@ -549,16 +548,19 @@ describe("setupContentScript", () => {
   });
 });
 
-/** jsdomのlocationは書き換えられないため、パスだけ差し替えた文書を渡す */
-function docWithPath(pathname: string): Document {
-  return new Proxy(document, {
-    get: (target, prop) => (prop === "location" ? { pathname } : Reflect.get(target, prop, target)),
-  });
+/**
+ * 見ているパスを実際に書き換える。Proxyで location だけ差し替えると
+ * MutationObserver.observe が「Nodeではない」と撥ねる(実装がWebIDLで型を見るため)
+ */
+function goTo(pathname: string): Document {
+  history.pushState({}, "", pathname);
+  return document;
 }
 
 describe("setupContentScriptの銀行APIからの取り込み", () => {
   let store: HistoryStore | null = null;
   let teardown: (() => void) | null = null;
+  const testerPath = globalThis.location.pathname;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -570,11 +572,13 @@ describe("setupContentScriptの銀行APIからの取り込み", () => {
     teardown?.();
     teardown = null;
     vi.useRealTimers();
+    // テストランナー自身が読み込みに使うURLなので、必ず元へ戻す
+    history.pushState({}, "", testerPath);
   });
 
   function start(pathname: string): ReturnType<typeof vi.fn<() => Promise<void>>> {
     const collect = vi.fn<() => Promise<void>>(() => Promise.resolve());
-    teardown = setupContentScript(docWithPath(pathname), store!, { now: () => 42, collect });
+    teardown = setupContentScript(goTo(pathname), store!, { now: () => 42, collect });
     return collect;
   }
 
@@ -609,7 +613,7 @@ describe("setupContentScriptの銀行APIからの取り込み", () => {
   });
 
   it("取り込みが失敗しても他の記録を止めない", async () => {
-    teardown = setupContentScript(docWithPath("/bank/sp-account"), store!, {
+    teardown = setupContentScript(goTo("/bank/sp-account"), store!, {
       now: () => 42,
       collect: () => Promise.reject(new Error("HTTP 401")),
     });

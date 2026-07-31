@@ -53,6 +53,17 @@
             oxlint
             agent-browser
           ];
+
+          # DOMのテストは製品と同じFirefoxで走らせる。ブラウザはnixから渡し、
+          # playwrightに落とさせない(ダウンロード版はrevisionが別で、
+          # nix管理下のCIでは共有ライブラリも解決できない)
+          #
+          # NOTE: package.jsonのplaywrightは、ここのdriverと同じ版に揃えること。
+          # ずれるとfirefox-<revision>が見つからず起動できない
+          # (現在: playwright-driver ${pkgs.playwright-driver.version})
+          PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+          PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "1";
         };
       }
     );

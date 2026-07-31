@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { applyTheme, nextTheme, themeAttribute, themeLabel, toThemePreference } from "./theme.ts";
 import { describe, expect, it } from "vitest";
 

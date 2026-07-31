@@ -9,6 +9,8 @@
     "lint": "oxlint",
     "typecheck": "tsgo --noEmit",
     "test": "vitest run",
+    "test:logic": "vitest run --project=logic",
+    "test:dom": "vitest run --project=dom",
     "test:watch": "vitest",
     "verify": "pnpm run fmt:check && pnpm run lint && pnpm run typecheck && pnpm run test",
     "dev:assets": "mkdir -p .preview && cp src/dashboard/dashboard.html src/icon.svg .preview/",
@@ -26,8 +28,10 @@
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.2",
+    "@vitest/browser": "4.1.10",
+    "@vitest/browser-playwright": "4.1.10",
     "esbuild": "^0.28.1",
-    "jsdom": "^29.1.1",
+    "playwright": "^1.60.0",
     "tailwindcss": "^4.3.2",
     "vitest": "^4.1.10"
   }

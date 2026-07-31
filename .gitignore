@@ -12,3 +12,7 @@ sample/
 # ブラウザ検証用ハーネス(ビルド成果物のコピー+フェイクstorage)
 .preview/
 profiles/
+
+# ブラウザテストが失敗したときだけ残るスクリーンショット
+.vitest-attachments/
+src/__screenshots__/

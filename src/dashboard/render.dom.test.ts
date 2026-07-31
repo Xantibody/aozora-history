@@ -1,191 +1,18 @@
-// @vitest-environment jsdom
 import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
-import type { DashboardData, DashboardHandlers, ThemePreference } from "./render.ts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  formatDateTime,
-  formatSigned,
-  formatYen,
-  renderDashboard,
-  statementsCsv,
-  transfersCsv,
-} from "./render.ts";
-import type { StatementEntry } from "../domain/statement.ts";
+  data,
+  dotColor,
+  minGap,
+  render,
+  shortDateTime,
+  snapshots,
+  statements,
+  swipe,
+  transfers,
+} from "./render.fixture.ts";
+import type { DashboardData } from "./render.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
-
-const snapshots: BalanceSnapshot[] = [
-  {
-    takenAt: Date.UTC(2026, 6, 9, 13, 0),
-    updatedAt: "2026/07/09 21:59",
-    accounts: [
-      { id: "133331", name: "01: お財布", balance: 134_392 },
-      { id: "133332", name: "02: 積立", balance: 82_520 },
-    ],
-  },
-  {
-    takenAt: Date.UTC(2026, 6, 10, 13, 34),
-    updatedAt: "2026/07/10 22:34",
-    accounts: [
-      { id: "133331", name: "01: お財布", balance: 129_392 },
-      { id: "133332", name: "02: 積立", balance: 82_520 },
-      { id: "133805", name: "03: 支払い箱", balance: 272_469 },
-    ],
-  },
-];
-
-const transfers: TransferRecord[] = [
-  {
-    // 2つ目のスナップショット区間 (7/9 13:00, 7/10 13:34] の中
-    transferredAt: Date.UTC(2026, 6, 10, 13, 30),
-    from: { id: "133331", name: "01: お財布" },
-    to: { id: "133332", name: "02: 積立" },
-    amount: 5000,
-  },
-  {
-    transferredAt: Date.UTC(2026, 6, 8, 0, 0),
-    from: { id: "133332", name: "02: 積立" },
-    to: { id: "133805", name: "03: 支払い箱" },
-    amount: 30_000,
-  },
-];
-
-// ログの内訳(全期間):
-//   振替 2件 (5,000円 / 30,000円)
-//   外部入出金 2件 (02: 積立 -5,000円、03: 支払い箱 +272,469円; どちらも2つ目のスナップショット時点)
-//   残高記録 2件 (合計 216,912円 → 484,381円、期間の増減 +267,469円)
-
-const pad = (value: number): string => String(value).padStart(2, "0");
-
-/** ヘッダーやログ行と同じ「M/D HH:MM」表記(ローカル時刻) */
-function shortDateTime(epochMs: number): string {
-  const date = new Date(epochMs);
-  return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function dispatchTouch(
-  target: Element,
-  type: "touchstart" | "touchmove" | "touchend",
-  point: { clientX: number; clientY: number },
-): void {
-  const event = new Event(type, { bubbles: true });
-  Object.defineProperty(event, "touches", { value: [point] });
-  target.dispatchEvent(event);
-}
-
-function swipe(target: Element, dx: number, dy = 0): void {
-  dispatchTouch(target, "touchstart", { clientX: 200, clientY: 300 });
-  dispatchTouch(target, "touchmove", { clientX: 200 + dx, clientY: 300 + dy });
-  dispatchTouch(target, "touchend", { clientX: 200 + dx, clientY: 300 + dy });
-}
-
-/** 大きさの指定を除いた、色を表すクラスだけ */
-function dotColor(dot: Element): string {
-  return [...dot.classList].filter((name) => name.includes("#")).join(" ");
-}
-
-/** 並べ替えたうえでの最小間隔。マーカーが重なっていないことの確認に使う */
-function minGap(values: number[]): number {
-  const sorted = values.toSorted((left, right) => left - right);
-  let min = Infinity;
-  for (const [index, value] of sorted.slice(1).entries()) {
-    min = Math.min(min, value - sorted[index]);
-  }
-  return min;
-}
-
-function data(overrides: Partial<DashboardData> = {}): DashboardData {
-  return {
-    snapshots,
-    transfers,
-    statements: [],
-    autoTransfers: [],
-    comments: {},
-    deletions: {},
-    syncConfig: null,
-    lastSyncedAt: null,
-    debugMode: false,
-    theme: "system",
-    lastCollect: null,
-    ...overrides,
-  };
-}
-
-type RenderResult = DashboardHandlers & { redraw: () => void };
-
-/**
- * 記録は2026年7月に置いてあるので、既定の「いま」も同じ月に固定する。
- * 実時刻を使うと当月フィルタが月替わりで空振りし、月が変わった日にまとめて赤くなる。
- */
-const defaultNow = (): number => Date.UTC(2026, 6, 27, 0, 0);
-
-function render(root: HTMLElement, dashboardData = data(), now = defaultNow): RenderResult {
-  const handlers = {
-    onCommentChange: vi.fn<(key: string, text: string) => void>(),
-    onDeleteTransfer: vi.fn<(transfer: TransferRecord) => void>(),
-    onSaveSyncConfig: vi.fn<(config: SyncConfig) => Promise<string>>(() =>
-      Promise.resolve("保存しました"),
-    ),
-    onSyncNow: vi.fn<() => Promise<string>>(() => Promise.resolve("同期しました")),
-    onImportFile: vi.fn<(text: string) => Promise<string>>(() => Promise.resolve("読み込みました")),
-    onToggleDebug: vi.fn<(enabled: boolean) => void>(),
-    onChangeTheme: vi.fn<(preference: ThemePreference) => void>(),
-    onRequestCollect: vi.fn<() => void>(),
-  };
-  const redraw = renderDashboard(root, dashboardData, { handlers, now });
-  return { ...handlers, redraw };
-}
-
-describe("transfersCsv", () => {
-  it("ヘッダー付きで振替を新しい順にCSV化する(Excel向けBOM付き)", () => {
-    const comments = {
-      [`transfer:${transfers[1].transferredAt}`]: { text: "生活費", updatedAt: 1 },
-    };
-
-    const csv = transfersCsv(transfers, comments);
-
-    expect(csv).toBe(
-      "﻿日時,出金口座,入金口座,金額,コメント\r\n" +
-        `${formatDateTime(transfers[0].transferredAt)},01: お財布,02: 積立,5000,\r\n` +
-        `${formatDateTime(transfers[1].transferredAt)},02: 積立,03: 支払い箱,30000,生活費\r\n`,
-    );
-  });
-
-  it("カンマや引用符を含むフィールドはRFC4180形式でエスケープする", () => {
-    const transfer = {
-      transferredAt: 1,
-      from: { id: "1", name: 'A,B"C' },
-      to: { id: "2", name: "D" },
-      amount: 100,
-    };
-
-    const csv = transfersCsv([transfer], {});
-
-    expect(csv).toContain('"A,B""C",D,100,');
-  });
-});
-
-describe("formatYen", () => {
-  it("カンマ区切りと円記号を付ける", () => {
-    expect(formatYen(129_392)).toBe("129,392円");
-    expect(formatYen(0)).toBe("0円");
-  });
-});
-
-describe("formatSigned", () => {
-  it("符号付きで金額を表示する", () => {
-    expect(formatSigned(280_000)).toBe("+280,000円");
-    expect(formatSigned(-5000)).toBe("-5,000円");
-    expect(formatSigned(0)).toBe("±0円");
-  });
-});
-
-describe("formatDateTime", () => {
-  it("エポックミリ秒をローカル日時で表示する", () => {
-    const ms = new Date(2026, 6, 10, 22, 34).getTime();
-
-    expect(formatDateTime(ms)).toBe("2026/07/10 22:34");
-  });
-});
 
 describe("renderDashboard", () => {
   const root = document.createElement("div");
@@ -1652,30 +1479,6 @@ describe("renderDashboard", () => {
   });
 });
 
-const statements: StatementEntry[] = [
-  {
-    entryNumber: "0001",
-    valueDate: "2026-07-23",
-    amount: -4100,
-    balance: 445_281,
-    remark: "振込 ミツビシユーエフジエイ",
-  },
-  {
-    entryNumber: "0001",
-    valueDate: "2026-07-24",
-    amount: 635_144,
-    balance: 1_080_425,
-    remark: "給与  カ）アツトマーク",
-  },
-  {
-    entryNumber: "0002",
-    valueDate: "2026-07-24",
-    amount: -173_000,
-    balance: 907_425,
-    remark: "振込 ラクテン",
-  },
-];
-
 describe("代表口座の明細をログに統合する", () => {
   const root = document.createElement("div");
 
@@ -1913,21 +1716,6 @@ describe("記録にない口座間の移動(定額自動振替など)", () => {
 
   it("記録ではないため削除できない", () => {
     expect(root.querySelector(".delete-transfer")).toBeNull();
-  });
-});
-
-describe("statementsCsv", () => {
-  it("ヘッダー付きで明細を新しい順にCSV化する(Excel向けBOM付き)", () => {
-    const csv = statementsCsv(statements, {
-      "statement:2026-07-24:0001": { text: "月給", updatedAt: 1 },
-    });
-
-    expect(csv).toBe(
-      "﻿日付,摘要,金額,残高,コメント\r\n" +
-        "2026-07-24,振込 ラクテン,-173000,907425,\r\n" +
-        "2026-07-24,給与  カ）アツトマーク,635144,1080425,月給\r\n" +
-        "2026-07-23,振込 ミツビシユーエフジエイ,-4100,445281,\r\n",
-    );
   });
 });
 
