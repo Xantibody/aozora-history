@@ -194,9 +194,11 @@ pnpm dev   # http://localhost:8000/dashboard.html
 `about:debugging#/runtime/this-firefox` → 「一時的なアドオンを読み込む」で
 `dist/manifest.json` を選ぶ。
 
-CI(`.github/workflows/ci.yml`)は push / PR ごとに、静的解析・node のテスト・
-Firefox のテスト・build を独立したジョブで並列に実行する。ツールは CI でも
-nix (`.github/actions/setup`) から取るため、環境差異が出ない。
+検査は `.github/workflows/checks.yml`(静的解析・node のテスト・Firefox のテスト・
+build を独立したジョブで並列実行)に書いてあり、`ci.yml`(push / PR)と
+`release.yml` の両方がこれを呼ぶ。リリースは検査に `needs` で続くので、
+同じ検査を通ってからしか成果物が出ない。ツールは CI でも nix
+(`.github/actions/setup`)から取るため、環境差異が出ない。
 
 ### テストの置き場所
 
@@ -232,7 +234,7 @@ flake の `playwright-driver` と同じ版に固定すること。** ずれる�
 `manifest.firefox.json` と `package.json` の `version` をタグに揃えてから `v*` タグを push すると、
 `.github/workflows/release.yml` が動く。
 
-1. verify 一式を実行して xpi をビルド
+1. `checks.yml` の検査を並列で通してから xpi をビルド
 2. GitHub Release を作成(xpi を添付)
 3. AMO へ提出(要 `AMO_JWT_ISSUER` / `AMO_JWT_SECRET`)
 
