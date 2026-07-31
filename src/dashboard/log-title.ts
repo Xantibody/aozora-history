@@ -1,7 +1,6 @@
 import { BADGE, INK, INK_DECOR, INK_SOFT, accountDot, el } from "./dom.ts";
 import type { LogEntry } from "../domain/log.ts";
 import type { RenderContext } from "./context.ts";
-import type { StatementEntry } from "../domain/statement.ts";
 import type { TransferRecord } from "../domain/ledger.ts";
 import { counterparty } from "./counterparty.ts";
 import { icon } from "./icons.ts";
@@ -89,20 +88,31 @@ function primaryAccountName(): HTMLElement {
   return label;
 }
 
-/** 代表口座の明細。入金なら相手先→口座、出金なら口座→相手先と、振替と同じ向きで読める */
-function statementTitle(statement: StatementEntry): TitlePart[] {
-  const account = primaryAccountName();
+/**
+ * 代表口座の明細。入金なら相手先→口座、出金なら口座→相手先と、振替と同じ向きで読める。
+ *
+ * どのつかいわけ口座の動きか突き合わせが付いていれば、そちらの名前で出す。
+ * 代表口座の残高はつかいわけ口座の合計なので、「普通預金」と出すより
+ * 「01: お財布」と出した方が、同じ出来事を指していることが読める
+ */
+function statementTitle(
+  ctx: RenderContext,
+  entry: Extract<LogEntry, { kind: "statement" }>,
+): TitlePart[] {
+  const { statement, account } = entry;
+  const from =
+    account === undefined
+      ? primaryAccountName()
+      : accountName(ctx, { id: account.accountId, name: account.accountName });
   const other = otherParty(statement.remark === "" ? "(摘要なし)" : statement.remark);
-  return statement.amount > 0 ? [other, arrow(), account] : [account, arrow(), other];
+  return statement.amount > 0 ? [other, arrow(), from] : [from, arrow(), other];
 }
 
 function titleParts(ctx: RenderContext, entry: TransactionEntry): TitlePart[] {
   if (entry.kind === "transfer") {
     return transferTitle(ctx, entry.transfer);
   }
-  return entry.kind === "statement"
-    ? statementTitle(entry.statement)
-    : externalTitle(ctx, entry.change);
+  return entry.kind === "statement" ? statementTitle(ctx, entry) : externalTitle(ctx, entry.change);
 }
 
 export function logTitle(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
