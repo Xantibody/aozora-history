@@ -77,12 +77,17 @@ async function openConfirmModal(): Promise<void> {
   await vi.runAllTimersAsync();
 }
 
-async function executeTransfer(): Promise<void> {
+// 「実行」を押して完了ブロックが現れるところまで。記録の検証待ちは呼び出し側で進める
+function showCompletionStep(): void {
   const [confirmStep, completeStep] =
     document.querySelectorAll<HTMLElement>(".modal .confirm-info");
   document.querySelector<HTMLElement>("#sp-account-account-to-account-execute")!.click();
   confirmStep.style.display = "none";
   completeStep.style.display = "";
+}
+
+async function executeTransfer(): Promise<void> {
+  showCompletionStep();
   await vi.runAllTimersAsync();
 }
 
@@ -208,11 +213,7 @@ describe("setupContentScript", () => {
     await openConfirmModal();
 
     // 認証切れのまま実行できてしまい、完了表示が一瞬出た後にセッション切れ画面へ遷移する
-    const [confirmStep, completeStep] =
-      document.querySelectorAll<HTMLElement>(".modal .confirm-info");
-    document.querySelector<HTMLElement>("#sp-account-account-to-account-execute")!.click();
-    confirmStep.style.display = "none";
-    completeStep.style.display = "";
+    showCompletionStep();
     await vi.advanceTimersByTimeAsync(100);
     document.body.innerHTML = sessionExpiredHtml;
     await vi.runAllTimersAsync();
@@ -258,6 +259,37 @@ describe("setupContentScript", () => {
     await executeTransfer();
 
     await expect(store!.loadTransfers()).resolves.toHaveLength(2);
+  });
+
+  // 実サイトの閉じるボタンはモーダルをその場で外す。完了表示が消えたあとに
+  // 検証しても手遅れなので、押された時点で記録できていないといけない
+  it("完了表示の検証を待たずに閉じるボタンを押しても記録する", async () => {
+    document.body.innerHTML = transferHtml;
+    await openConfirmModal();
+    showCompletionStep();
+    await vi.advanceTimersByTimeAsync(200);
+
+    document.querySelector<HTMLElement>("#sp-account-account-to-account-close")!.click();
+    document.querySelector(".modal")!.remove();
+    await vi.runAllTimersAsync();
+
+    await expect(store!.loadTransfers()).resolves.toHaveLength(1);
+    expect(document.querySelector("#aozora-history-comment")).not.toBeNull();
+  });
+
+  it("セッション切れの案内が出ている場合は閉じるボタンを押しても記録しない", async () => {
+    document.body.innerHTML = transferHtml;
+    await openConfirmModal();
+    document.body.insertAdjacentHTML("beforeend", sessionExpiredHtml);
+    showCompletionStep();
+    await vi.advanceTimersByTimeAsync(200);
+
+    document.querySelector<HTMLElement>("#sp-account-account-to-account-close")!.click();
+    document.querySelector(".modal")!.remove();
+    await vi.runAllTimersAsync();
+
+    await expect(store!.loadTransfers()).resolves.toStrictEqual([]);
+    expect(document.querySelector("#aozora-history-comment")).toBeNull();
   });
 
   // 実サイトの closeConfirmModal はモーダルを閉じたあと300ms経ってから
