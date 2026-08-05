@@ -6,6 +6,7 @@ import { parseTransferForm } from "./domain/parser.ts";
 import { showCommentPrompt } from "./comment-prompt.ts";
 
 const CONFIRM_BUTTON_ID = "sp-account-account-to-account-confirm";
+const CLOSE_BUTTON_ID = "sp-account-account-to-account-close";
 // 実行ボタンには安定したidがないため、完了ダイアログの文言で振替の成立を検知する
 const COMPLETION_MESSAGE = "つかいわけ口座の振替が完了しました";
 // 実サイトはセッションを画面遷移時とAPI呼び出し時にしか確認せず、切れていても
@@ -133,9 +134,27 @@ function commitOnCompletion(state: TrackerState): void {
   scheduleVerifyOnAppearance(state);
 }
 
+/**
+ * 完了ダイアログの「閉じる」を押せたということは、完了表示が人の目に映っていた
+ * ということ。1秒の検証はセッション切れへの差し替えで完了表示が一瞬だけ現れる
+ * 場合の番人なので、この経路では待たずに記録してよい。
+ *
+ * 実サイトは閉じるボタンでモーダルをその場で外す。待つと検証したときには
+ * 完了表示が消えていて、早く閉じた振替だけ記録もコメント欄も出なかった
+ */
+function commitOnClose(state: TrackerState): void {
+  cancelVerify(state);
+  commitIfStillCompleted(state);
+}
+
 function handleClick(state: TrackerState, target: Element): void {
   if (target.closest(`#${CONFIRM_BUTTON_ID}`) !== null) {
     state.pendingTransfer = parseTransferForm(state.doc);
+    return;
+  }
+  // クリックはキャプチャ段階で届くため、サイトがモーダルを外す前に完了表示を見られる
+  if (target.closest(`#${CLOSE_BUTTON_ID}`) !== null) {
+    commitOnClose(state);
   }
 }
 
