@@ -1,10 +1,20 @@
-import { BORDER, INK, INK_DECOR, INK_SOFT, SELECTED, SURFACE, accountDot, el } from "./dom.ts";
+import {
+  BORDER,
+  INK,
+  INK_DECOR,
+  INK_SOFT,
+  SELECTED,
+  SURFACE,
+  accountDot,
+  el,
+  signedCell,
+} from "./dom.ts";
+import type { WorkspaceSummary, WorkspaceTotals } from "../domain/ledger.ts";
+import { workspaceSummaries, workspaceTotals } from "../domain/ledger.ts";
 import type { RenderContext } from "./context.ts";
-import type { WorkspaceSummary } from "../domain/ledger.ts";
 import { formatYen } from "./format.ts";
 import { icon } from "./icons.ts";
 import { inPeriod } from "./period.ts";
-import { workspaceSummaries } from "../domain/ledger.ts";
 
 /**
  * ログページの口座の帯。合計と口座残高は取引を読むうえでの文脈でしかないため、
@@ -46,21 +56,20 @@ function accountChip(ctx: RenderContext, summary: WorkspaceSummary): HTMLElement
 }
 
 /** 合計。面を持たせず、数字だけを置いて口座チップに場所を譲る */
-function totalLine(total: number, delta: number): HTMLElement {
+function totalLine(totals: WorkspaceTotals): HTMLElement {
   const line = el("div", "strip-total flex shrink-0 items-baseline gap-1.5");
   line.append(el("span", `text-[11.5px] ${INK_SOFT}`, "合計"));
   const amount = el(
     "span",
     `total-balance text-[22px] font-bold tracking-[-.01em] tabular-nums sm:text-2xl ${INK}`,
-    total.toLocaleString("ja-JP"),
+    totals.balance.toLocaleString("ja-JP"),
   );
   amount.append(el("span", "text-[13px] font-medium", "円"));
   line.append(amount);
-  const deltaCell = el(
-    "span",
-    `total-delta text-[13px] font-bold tabular-nums ${INK_SOFT}`,
-    delta === 0 ? "±0" : `${delta > 0 ? "+" : "-"}${Math.abs(delta).toLocaleString("ja-JP")}`,
-  );
+  // 単位まで残高ページの見出しと同じにする。増減だけ「円」を落とすと、
+  // 隣の合計の続きの桁に見える
+  const deltaCell = signedCell(totals.delta);
+  deltaCell.classList.add("total-delta", "text-[13px]", "font-bold");
   line.append(deltaCell);
   return line;
 }
@@ -83,12 +92,10 @@ export function accountStrip(ctx: RenderContext): HTMLElement {
   const summaries = workspaceSummaries(ctx.data.snapshots, ctx.ledger.transfers, (ms) =>
     inPeriod(ctx.state, ms),
   );
-  const total = summaries.reduce((sum, summary) => sum + summary.balance, 0);
-  const delta = summaries.reduce((sum, summary) => sum + summary.delta, 0);
   const strip = el(
     "div",
     "account-strip flex items-center gap-3 overflow-hidden pt-1 pb-3 sm:gap-4",
   );
-  strip.append(totalLine(total, delta), chipRail(ctx, summaries));
+  strip.append(totalLine(workspaceTotals(summaries)), chipRail(ctx, summaries));
   return strip;
 }

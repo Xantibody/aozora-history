@@ -37,6 +37,9 @@ function cardBalance(summary: WorkspaceSummary): HTMLElement {
   return box;
 }
 
+/** 構成比は百分率で出す */
+const PERCENT = 100;
+
 /**
  * 帯として引ける長さ。割合はマイナスにも100%超えにもなる(残高がマイナスの口座が
  * あると、他の口座の割合が合計を追い越す)。そのままCSSの幅に渡すと不正な値として
@@ -80,9 +83,6 @@ function cardKpis(summary: WorkspaceSummary): HTMLElement {
   );
   return kpis;
 }
-
-/** 構成比は百分率で出す */
-const PERCENT = 100;
 
 interface CardInput {
   summary: WorkspaceSummary;

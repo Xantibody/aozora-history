@@ -133,6 +133,19 @@ describe("renderDashboard", () => {
       expect(summary.querySelector(".total-balance")!.textContent).toBe("484,381円");
     });
 
+    it("ログと残高で同じ合計・同じ増減を出す(単位まで揃える)", () => {
+      render(root);
+
+      const strip = root.querySelector(".account-strip")!;
+      const stripTotal = strip.querySelector(".total-balance")!.textContent;
+      const stripDelta = strip.querySelector(".total-delta")!.textContent;
+      clickTab("残高");
+
+      const summary = root.querySelector(".total-summary")!;
+      expect(stripTotal).toBe(summary.querySelector(".total-balance")!.textContent);
+      expect(stripDelta).toBe(summary.querySelector(".total-delta")!.textContent);
+    });
+
     describe("テーマ切り替え", () => {
       afterEach(useWideScreen);
 

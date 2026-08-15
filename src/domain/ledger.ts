@@ -239,6 +239,23 @@ export interface WorkspaceSummary {
   points: BalancePoint[];
 }
 
+export interface WorkspaceTotals {
+  balance: number;
+  delta: number;
+}
+
+/**
+ * 口座サマリーの合計。ログページの帯と残高ページの見出しは同じ「合計と増減」を
+ * 出すので、数え方を1か所に持つ。別々に数えると、口座が期間の途中で
+ * 増減したときに2つのページで違う数字が出る
+ */
+export function workspaceTotals(summaries: WorkspaceSummary[]): WorkspaceTotals {
+  return {
+    balance: summaries.reduce((sum, summary) => sum + summary.balance, 0),
+    delta: summaries.reduce((sum, summary) => sum + summary.delta, 0),
+  };
+}
+
 function netOf(changes: BalanceChange[], pick: (change: BalanceChange) => number): number {
   return changes.reduce((sum, change) => sum + pick(change), 0);
 }
