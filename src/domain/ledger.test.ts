@@ -466,7 +466,27 @@ describe("workspaceSummaries", () => {
     ]);
   });
 
-  it("外部入出金は期間境界をまたぐ変動も含める(残高変動の表と一致させる)", () => {
+  it("期間内の増減は振替と外部入出金の合計に一致する", () => {
+    // 期間の最初のスナップショット(20)と同時刻の振替。区間 (10, 20] の中なので
+    // 20を起点に増減を測ると、この振替だけが振替純額に残って辻褄が合わなくなる
+    const s1 = snapshot(10, accounts(["お財布", 100_000], ["積立", 50_000]));
+    const s2 = snapshot(20, accounts(["お財布", 70_000], ["積立", 80_000]));
+    const s3 = snapshot(30, accounts(["お財布", 60_000], ["積立", 80_000]));
+    const records = [
+      transfer({ at: 20, from: ["100", "お財布"], to: ["101", "積立"], amount: 30_000 }),
+    ];
+
+    const summaries = workspaceSummaries([s1, s2, s3], records, (ms) => ms >= 20);
+
+    expect(
+      summaries.map((summary) => [summary.delta, summary.transferNet, summary.externalNet]),
+    ).toStrictEqual([
+      [-40_000, -30_000, -10_000],
+      [30_000, 30_000, 0],
+    ]);
+  });
+
+  it("期間境界をまたぐ変動も含める(残高変動の表と一致させる)", () => {
     // 期間前(10)と期間内(20)のスナップショットの間に外部入金があったケース。
     // 期間で絞ったスナップショットだけから計算すると区間ごと消えてしまう
     const s1 = snapshot(10, accounts(["お財布", 100_000]));
@@ -477,7 +497,7 @@ describe("workspaceSummaries", () => {
         id: "100",
         name: "お財布",
         balance: 130_000,
-        delta: 0,
+        delta: 30_000,
         transferNet: 0,
         externalNet: 30_000,
         points: [{ takenAt: 20, balance: 130_000 }],

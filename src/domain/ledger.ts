@@ -230,7 +230,7 @@ export interface WorkspaceSummary {
   name: string;
   /** 期間内最新の残高 */
   balance: number;
-  /** 期間内の最初のスナップショットからの増減 */
+  /** 期間の始まりの残高からの増減。振替純額と外部入出金の和に一致する */
   delta: number;
   /** つかいわけ口座間の振替による純増減(入金 − 出金) */
   transferNet: number;
@@ -239,11 +239,21 @@ export interface WorkspaceSummary {
   points: BalancePoint[];
 }
 
+function netOf(changes: BalanceChange[], pick: (change: BalanceChange) => number): number {
+  return changes.reduce((sum, change) => sum + pick(change), 0);
+}
+
 /**
  * 口座(workspace)ごとのKPIサマリー。全期間の記録とinPeriodを渡す。
- * 外部入出金は全期間の変動を求めてから期間で絞る。絞り込み済みの
- * スナップショットから計算すると期間境界をまたぐ区間ごと消えてしまい、
- * 「残高変動」の表と食い違うため
+ *
+ * 増減・振替・外部入出金は、期間内に終わるスナップショット区間だけを見て
+ * 同じ足し算から出す。区間ごとに 増減 = 振替 + 外部入出金 が成り立つので、
+ * 足し上げてもカードの3つの数字は必ず噛み合う。
+ *
+ * 期間で絞ったスナップショットから増減を測ってはいけない。期間の始まりを
+ * またぐ区間が落ち、そこで起きた振替だけが振替純額に残る(定額自動振替が
+ * 期間の最初の記録と同時刻に立つと必ずこうなる)。区間で揃えることは、
+ * 期間の始まりを「その直前の記録の残高」に取ることでもある
  */
 export function workspaceSummaries(
   snapshots: BalanceSnapshot[],
@@ -251,20 +261,16 @@ export function workspaceSummaries(
   inPeriod: (epochMs: number) => boolean = () => true,
 ): WorkspaceSummary[] {
   const changes = detectBalanceChanges(snapshots, transfers).filter((ch) => inPeriod(ch.toTakenAt));
-  const visibleTransfers = transfers.filter((tr) => inPeriod(tr.transferredAt));
   return balanceSeries(snapshots.filter((sn) => inPeriod(sn.takenAt))).map((series) => {
     const lastPoint = series.points.at(-1) ?? series.points[0];
-    const flows = flowTotals(visibleTransfers, series.id);
-    const externalNet = changes
-      .filter((ch) => ch.accountId === series.id)
-      .reduce((sum, ch) => sum + ch.externalDelta, 0);
+    const mine = changes.filter((ch) => ch.accountId === series.id);
     return {
       id: series.id,
       name: series.name,
       balance: lastPoint.balance,
-      delta: lastPoint.balance - series.points[0].balance,
-      transferNet: flows.incoming - flows.outgoing,
-      externalNet,
+      delta: netOf(mine, (ch) => ch.delta),
+      transferNet: netOf(mine, (ch) => ch.transferDelta),
+      externalNet: netOf(mine, (ch) => ch.externalDelta),
       points: series.points,
     };
   });
