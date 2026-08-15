@@ -398,6 +398,29 @@ describe("setupContentScript", () => {
       expect(chips.map((chip) => chip.textContent)).toStrictEqual(["積立", "家賃"]);
     });
 
+    it("いま振り替えた額に近い記録のコメントを先に出す", async () => {
+      // フォームは5,000円。「家賃」の方がよく使っているが、8万円の振替のコメント
+      const past = {
+        from: { id: "133331", name: "01: お財布" },
+        to: { id: "133332", name: "02: 積立" },
+      };
+      await store!.recordTransfer({ transferredAt: 1, ...past, amount: 80_000 });
+      await store!.recordTransfer({ transferredAt: 2, ...past, amount: 80_000 });
+      await store!.recordTransfer({ transferredAt: 3, ...past, amount: 5000 });
+      await store!.setComment("transfer:1", "家賃");
+      await store!.setComment("transfer:2", "家賃");
+      await store!.setComment("transfer:3", "ランチ");
+
+      await confirmTransfer();
+
+      const chips = [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          "#aozora-history-comment button.suggestion",
+        ),
+      ];
+      expect(chips.map((chip) => chip.textContent)).toStrictEqual(["ランチ", "家賃"]);
+    });
+
     it("チップをタップすると入力欄に反映し、保存で永続化する", async () => {
       await store!.setComment("transfer:1", "家賃");
 

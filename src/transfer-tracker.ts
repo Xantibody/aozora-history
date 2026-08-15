@@ -52,10 +52,16 @@ async function recordTransferAndPrompt(
 ): Promise<void> {
   await store.recordTransfer(record);
   // パネルはダッシュボードと同じ明暗で出す。設定は端末ごとの見え方なのでstorageから読む
-  const [comments, theme] = await Promise.all([store.loadComments(), store.loadTheme()]);
+  const [comments, transfers, theme] = await Promise.all([
+    store.loadComments(),
+    store.loadTransfers(),
+    store.loadTheme(),
+  ]);
   showCommentPrompt(doc, store, {
     key: transferCommentKey(record),
-    suggestions: commentSuggestions(comments),
+    // いま記録した額に近い振替のコメントを先に出す。同じ額を動かすときは
+    // 同じ用途であることが多く、口座を選んだ時点で書きたい言葉は絞れている
+    suggestions: commentSuggestions(comments, { amount: record.amount, transfers }),
     record,
     theme,
   });
