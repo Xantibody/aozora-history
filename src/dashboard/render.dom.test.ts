@@ -133,6 +133,19 @@ describe("renderDashboard", () => {
       expect(summary.querySelector(".total-balance")!.textContent).toBe("484,381円");
     });
 
+    it("ログと残高で同じ合計・同じ増減を出す(単位まで揃える)", () => {
+      render(root);
+
+      const strip = root.querySelector(".account-strip")!;
+      const stripTotal = strip.querySelector(".total-balance")!.textContent;
+      const stripDelta = strip.querySelector(".total-delta")!.textContent;
+      clickTab("残高");
+
+      const summary = root.querySelector(".total-summary")!;
+      expect(stripTotal).toBe(summary.querySelector(".total-balance")!.textContent);
+      expect(stripDelta).toBe(summary.querySelector(".total-delta")!.textContent);
+    });
+
     describe("テーマ切り替え", () => {
       afterEach(useWideScreen);
 
@@ -737,6 +750,29 @@ describe("renderDashboard", () => {
       )!;
       expect(payments.querySelector(".share-value")!.textContent).toBe("56.3%");
       expect(payments.querySelector("svg.workspace-sparkline")).toBeNull();
+    });
+
+    it("割合がマイナスでもバーはトラックに収める(満杯に見せない)", () => {
+      const overdrawn: BalanceSnapshot[] = [
+        {
+          takenAt: Date.UTC(2026, 6, 10, 13, 34),
+          updatedAt: null,
+          accounts: [
+            { id: "133331", name: "01: お財布", balance: 300_000 },
+            { id: "133332", name: "02: 積立", balance: -100_000 },
+          ],
+        },
+      ];
+      render(root, data({ snapshots: overdrawn, transfers: [] }));
+      clickTab("残高");
+
+      const savings = card("02: 積立");
+      const fill = savings.querySelector(".share-fill")!;
+      const track = fill.parentElement!;
+      expect(savings.querySelector(".share-value")!.textContent).toBe("-50.0%");
+      expect(fill.getBoundingClientRect().width).toBeLessThan(
+        track.getBoundingClientRect().width / 2,
+      );
     });
 
     it("期間で絞り込むとサマリーも追随する", () => {
@@ -1568,6 +1604,21 @@ describe("代表口座の明細をログに統合する", () => {
     expect(root.querySelector(".statements")).toBeNull();
   });
 
+  it("明細に時刻は出さない(銀行が持つのは起算日だけ)", () => {
+    // 並べるために日の終わりへ寄せているが、その 23:59 は記録された時刻ではない
+    open();
+
+    const statement = [...root.querySelectorAll(".log .log-row")].find((row) =>
+      row.textContent?.includes("振込 ラクテン"),
+    )!;
+    const transfer = [...root.querySelectorAll(".log .log-row")].find((row) =>
+      row.textContent?.includes("01: お財布 → 02: 積立"),
+    )!;
+
+    expect(statement.querySelector(".time")!.textContent).not.toMatch(/\d/u);
+    expect(transfer.querySelector(".time")!.textContent).toMatch(/\d{2}:\d{2}/u);
+  });
+
   it("つかいわけ口座の残高変動と突き合わせが付けば、その口座名と色で出す", () => {
     // 代表口座の残高はつかいわけ口座の合計なので、ATM出金は明細としても
     // つかいわけ口座の残高減としても現れる。二重に並べず、口座を補って1行にする
@@ -1852,6 +1903,25 @@ describe("狭い幅 (スマホ)", () => {
   it("ヘッダーのタブと歯車は狭い幅で隠す(下部バーと二重にしない)", () => {
     expect(visible(root.querySelector(".view-tabs")!)).toBe(false);
     expect(visible(root.querySelector(".settings-button")!)).toBe(false);
+  });
+
+  it("口座チップは合計と同じ行に押し込めない(先頭のチップが欠ける)", () => {
+    const rail = root.querySelector(".account-chips")!;
+    const first = root.querySelector(".account-chip")!;
+
+    expect(first.getBoundingClientRect().width).toBeLessThanOrEqual(
+      rail.getBoundingClientRect().width,
+    );
+  });
+
+  it("横に続きがある合図は、スクロールする前から見える位置に置く", () => {
+    const rail = root.querySelector(".account-chips")!;
+    const hint = root.querySelector(".scroll-hint")!;
+
+    expect(rail.scrollWidth).toBeGreaterThan(rail.clientWidth);
+    expect(hint.getBoundingClientRect().right).toBeLessThanOrEqual(
+      Math.ceil(rail.getBoundingClientRect().right),
+    );
   });
 
   it("時刻を左の固定列から2段目へ回し、口座名に幅を空ける", () => {

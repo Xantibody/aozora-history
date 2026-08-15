@@ -122,6 +122,20 @@ describe("dummyData", () => {
       expect(data.ledger.transfers.length).toBeGreaterThan(100);
     });
   });
+
+  describe.each(["rich", "dense"] as const)("%s の月の流れ", (scenario) => {
+    it("どの口座もマイナス残高にならない(銀行は残高を超える出金を通さない)", () => {
+      // 出ていくばかりの口座があると、構成比がマイナスになるなど、
+      // 実物では起きない見え方でしか画面を確かめられなくなる
+      const { snapshots } = dummyData(scenario, NOW).ledger;
+      const overdrawn = snapshots
+        .flatMap((snapshot) => snapshot.accounts)
+        .filter((account) => account.balance < 0)
+        .map((account) => account.name);
+
+      expect([...new Set(overdrawn)]).toStrictEqual([]);
+    });
+  });
 });
 
 describe("toScenario", () => {

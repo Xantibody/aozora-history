@@ -1,9 +1,9 @@
 import { DAY_MS, inPeriod } from "./period.ts";
 import { INK, INK_SOFT, SUCCESS, SURFACE, WARNING, el, signedCell } from "./dom.ts";
 import type { RenderContext, UiState, ViewTab } from "./context.ts";
-import { latestRecordAt, totalBalancePoints } from "../domain/ledger.ts";
+import { latestRecordAt, workspaceSummaries, workspaceTotals } from "../domain/ledger.ts";
 import { nextTheme, themeIcon, themeLabel } from "./theme.ts";
-import type { BalancePoint } from "../domain/ledger.ts";
+import type { WorkspaceSummary } from "../domain/ledger.ts";
 import { accountStrip } from "./account-strip.ts";
 import { formatShortDateTime } from "./format.ts";
 import { icon } from "./icons.ts";
@@ -165,11 +165,9 @@ function viewTabs(ctx: RenderContext): HTMLElement {
 }
 
 /** 残高ページの合計。このページの主役なので大きく取る */
-function summaryLabel(ctx: RenderContext, totals: BalancePoint[]): HTMLElement {
+function summaryLabel(ctx: RenderContext, delta: number): HTMLElement {
   const label = el("div", `text-[11.5px] tracking-[.04em] ${INK_SOFT}`);
   label.append(`合計残高 · ${periodLabel(ctx.state)} `);
-  const lastTotal = totals.at(-1);
-  const delta = lastTotal === undefined ? 0 : lastTotal.balance - totals[0].balance;
   const deltaCell = signedCell(delta);
   deltaCell.classList.add("total-delta", "text-sm", "font-bold");
   label.append(deltaCell);
@@ -186,15 +184,22 @@ function bigBalance(balance: number): HTMLElement {
   return big;
 }
 
+/** ログページの帯と同じ数え方。2ページで違う合計を出さないための1本 */
+function summariesInPeriod(ctx: RenderContext): WorkspaceSummary[] {
+  return workspaceSummaries(ctx.data.snapshots, ctx.ledger.transfers, (ms) =>
+    inPeriod(ctx.state, ms),
+  );
+}
+
 function totalSummary(ctx: RenderContext): HTMLElement {
-  const visible = ctx.data.snapshots.filter((snapshot) => inPeriod(ctx.state, snapshot.takenAt));
-  const totals = totalBalancePoints(visible);
+  const inside = summariesInPeriod(ctx);
   const summary = el("div", "total-summary pt-1 pb-3");
-  summary.append(summaryLabel(ctx, totals));
-  // 大きい数字は期間内最新の合計。期間を絞っていなければ現在の合計と一致する
-  const total = totals.at(-1) ?? totalBalancePoints(ctx.data.snapshots).at(-1);
-  if (total !== undefined) {
-    summary.append(bigBalance(total.balance));
+  summary.append(summaryLabel(ctx, workspaceTotals(inside).delta));
+  // 大きい数字は期間内最新の合計。期間に記録が無ければ、いまの残高だけは出す
+  const shown =
+    inside.length > 0 ? inside : workspaceSummaries(ctx.data.snapshots, ctx.ledger.transfers);
+  if (shown.length > 0) {
+    summary.append(bigBalance(workspaceTotals(shown).balance));
   }
   return summary;
 }

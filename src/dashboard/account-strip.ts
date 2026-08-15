@@ -1,10 +1,20 @@
-import { BORDER, INK, INK_DECOR, INK_SOFT, SELECTED, SURFACE, accountDot, el } from "./dom.ts";
+import {
+  BORDER,
+  INK,
+  INK_DECOR,
+  INK_SOFT,
+  SELECTED,
+  SURFACE,
+  accountDot,
+  el,
+  signedCell,
+} from "./dom.ts";
+import type { WorkspaceSummary, WorkspaceTotals } from "../domain/ledger.ts";
+import { workspaceSummaries, workspaceTotals } from "../domain/ledger.ts";
 import type { RenderContext } from "./context.ts";
-import type { WorkspaceSummary } from "../domain/ledger.ts";
 import { formatYen } from "./format.ts";
 import { icon } from "./icons.ts";
 import { inPeriod } from "./period.ts";
-import { workspaceSummaries } from "../domain/ledger.ts";
 
 /**
  * ログページの口座の帯。合計と口座残高は取引を読むうえでの文脈でしかないため、
@@ -46,35 +56,48 @@ function accountChip(ctx: RenderContext, summary: WorkspaceSummary): HTMLElement
 }
 
 /** 合計。面を持たせず、数字だけを置いて口座チップに場所を譲る */
-function totalLine(total: number, delta: number): HTMLElement {
+function totalLine(totals: WorkspaceTotals): HTMLElement {
   const line = el("div", "strip-total flex shrink-0 items-baseline gap-1.5");
   line.append(el("span", `text-[11.5px] ${INK_SOFT}`, "合計"));
   const amount = el(
     "span",
     `total-balance text-[22px] font-bold tracking-[-.01em] tabular-nums sm:text-2xl ${INK}`,
-    total.toLocaleString("ja-JP"),
+    totals.balance.toLocaleString("ja-JP"),
   );
   amount.append(el("span", "text-[13px] font-medium", "円"));
   line.append(amount);
-  const deltaCell = el(
-    "span",
-    `total-delta text-[13px] font-bold tabular-nums ${INK_SOFT}`,
-    delta === 0 ? "±0" : `${delta > 0 ? "+" : "-"}${Math.abs(delta).toLocaleString("ja-JP")}`,
-  );
+  // 単位まで残高ページの見出しと同じにする。増減だけ「円」を落とすと、
+  // 隣の合計の続きの桁に見える
+  const deltaCell = signedCell(totals.delta);
+  deltaCell.classList.add("total-delta", "text-[13px]", "font-bold");
   line.append(deltaCell);
   return line;
 }
 
+/**
+ * 横に続きがあることの合図。スクロールできると気づけないと口座を選べない。
+ *
+ * 帯の中に流し込むと、右端まで送ったときにしか見えない。合図が要るのは
+ * 送る前なので、右端に貼り付けてチップを下に潜らせる
+ */
+function scrollHint(): HTMLElement {
+  const hint = el("span", `scroll-hint sticky right-0 shrink-0 pl-1.5 ${SURFACE} ${INK_DECOR}`);
+  hint.append(icon("chevron-right", HINT_ICON_SIZE));
+  return hint;
+}
+
 function chipRail(ctx: RenderContext, summaries: WorkspaceSummary[]): HTMLElement {
-  const chips = el("div", "account-chips flex min-w-0 items-center gap-2 overflow-x-auto");
+  // 狭い幅では合計と分け合わず1行を丸ごと使う。分け合うと先頭のチップから
+  // 桁が欠け、「01: お財布 1,0」のように残高を読み違える幅になる
+  const chips = el(
+    "div",
+    "account-chips flex min-w-0 items-center gap-2 overflow-x-auto max-sm:w-full",
+  );
   for (const summary of summaries) {
     chips.append(accountChip(ctx, summary));
   }
-  // 横に続きがあることの合図。スクロールできると気づけないと口座を選べない
   if (summaries.length > 0) {
-    const hint = el("span", `scroll-hint shrink-0 ${INK_DECOR}`);
-    hint.append(icon("chevron-right", HINT_ICON_SIZE));
-    chips.append(hint);
+    chips.append(scrollHint());
   }
   return chips;
 }
@@ -83,12 +106,10 @@ export function accountStrip(ctx: RenderContext): HTMLElement {
   const summaries = workspaceSummaries(ctx.data.snapshots, ctx.ledger.transfers, (ms) =>
     inPeriod(ctx.state, ms),
   );
-  const total = summaries.reduce((sum, summary) => sum + summary.balance, 0);
-  const delta = summaries.reduce((sum, summary) => sum + summary.delta, 0);
   const strip = el(
     "div",
-    "account-strip flex items-center gap-3 overflow-hidden pt-1 pb-3 sm:gap-4",
+    "account-strip flex flex-wrap items-center gap-x-3 gap-y-1 overflow-hidden pt-1 pb-3 sm:flex-nowrap sm:gap-x-4",
   );
-  strip.append(totalLine(total, delta), chipRail(ctx, summaries));
+  strip.append(totalLine(workspaceTotals(summaries)), chipRail(ctx, summaries));
   return strip;
 }

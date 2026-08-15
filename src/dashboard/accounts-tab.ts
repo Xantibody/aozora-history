@@ -37,6 +37,18 @@ function cardBalance(summary: WorkspaceSummary): HTMLElement {
   return box;
 }
 
+/** 構成比は百分率で出す */
+const PERCENT = 100;
+
+/**
+ * 帯として引ける長さ。割合はマイナスにも100%超えにもなる(残高がマイナスの口座が
+ * あると、他の口座の割合が合計を追い越す)。そのままCSSの幅に渡すと不正な値として
+ * 捨てられ、幅指定の無い帯がトラックいっぱいに伸びて「満杯」に見えてしまう
+ */
+function barShare(share: number): number {
+  return Math.min(Math.max(share, 0), PERCENT);
+}
+
 /**
  * 合計に占める割合。残高の数字だけでは口座間の配分が読み取れないため、
  * 長さでも示す。スパークラインは形しか伝えず推移パネルと役割が重なるので置かない
@@ -53,7 +65,7 @@ function shareBar(share: number, fillClass: string): HTMLElement {
     "mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#eef1f5] dark:bg-[#1e2733]",
   );
   const fill = el("div", `share-fill h-full min-w-[3px] rounded-full ${fillClass}`);
-  fill.style.width = `${share}%`;
+  fill.style.width = `${barShare(share)}%`;
   track.append(fill);
   box.append(head, track);
   return box;
@@ -71,9 +83,6 @@ function cardKpis(summary: WorkspaceSummary): HTMLElement {
   );
   return kpis;
 }
-
-/** 構成比は百分率で出す */
-const PERCENT = 100;
 
 interface CardInput {
   summary: WorkspaceSummary;
