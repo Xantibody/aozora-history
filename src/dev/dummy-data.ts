@@ -215,12 +215,20 @@ function paydayEvents(world: World, day: Date): Event[] {
 }
 
 /**
+ * 生活費へ月にまとめて送るぶん。家賃とカードの引落は週ごとの振替では賄えず、
+ * これが無いと生活費だけが月7万円ずつ減り続ける。残高がマイナスのつかいわけ口座は
+ * 銀行では起こらないうえ、構成比がマイナスになるなど実物と違う画面しか見られない
+ */
+const LIVING_ALLOWANCE = 80_000;
+
+/**
  * 給与の翌日にまとめて配分する。コメントは記録の時刻をキーにするため、
- * 続けて操作した2件でも同じ時刻にはしない(同じメモが両方に出てしまう)
+ * 続けて操作した3件でも同じ時刻にはしない(同じメモが全部に出てしまう)
  */
 function allocationEvents(world: World, day: Date): Event[] {
   const toSavings = timeOf(day, 21, 15);
   const toSpecial = timeOf(day, 21, 18);
+  const toLiving = timeOf(day, 21, 21);
   return [
     {
       at: toSavings,
@@ -245,6 +253,19 @@ function allocationEvents(world: World, day: Date): Event[] {
           amount: 15_000,
           recorded: true,
           memo: "特別費の積み増し",
+        });
+      },
+    },
+    {
+      at: toLiving,
+      apply: (): void => {
+        transfer(world, {
+          at: toLiving,
+          from: WALLET,
+          to: LIVING,
+          amount: LIVING_ALLOWANCE,
+          recorded: true,
+          memo: "家賃・カードぶん",
         });
       },
     },
