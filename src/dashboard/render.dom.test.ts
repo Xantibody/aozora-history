@@ -739,6 +739,29 @@ describe("renderDashboard", () => {
       expect(payments.querySelector("svg.workspace-sparkline")).toBeNull();
     });
 
+    it("割合がマイナスでもバーはトラックに収める(満杯に見せない)", () => {
+      const overdrawn: BalanceSnapshot[] = [
+        {
+          takenAt: Date.UTC(2026, 6, 10, 13, 34),
+          updatedAt: null,
+          accounts: [
+            { id: "133331", name: "01: お財布", balance: 300_000 },
+            { id: "133332", name: "02: 積立", balance: -100_000 },
+          ],
+        },
+      ];
+      render(root, data({ snapshots: overdrawn, transfers: [] }));
+      clickTab("残高");
+
+      const savings = card("02: 積立");
+      const fill = savings.querySelector(".share-fill")!;
+      const track = fill.parentElement!;
+      expect(savings.querySelector(".share-value")!.textContent).toBe("-50.0%");
+      expect(fill.getBoundingClientRect().width).toBeLessThan(
+        track.getBoundingClientRect().width / 2,
+      );
+    });
+
     it("期間で絞り込むとサマリーも追随する", () => {
       render(root);
       clickTab("残高");
