@@ -1604,6 +1604,21 @@ describe("代表口座の明細をログに統合する", () => {
     expect(root.querySelector(".statements")).toBeNull();
   });
 
+  it("明細に時刻は出さない(銀行が持つのは起算日だけ)", () => {
+    // 並べるために日の終わりへ寄せているが、その 23:59 は記録された時刻ではない
+    open();
+
+    const statement = [...root.querySelectorAll(".log .log-row")].find((row) =>
+      row.textContent?.includes("振込 ラクテン"),
+    )!;
+    const transfer = [...root.querySelectorAll(".log .log-row")].find((row) =>
+      row.textContent?.includes("01: お財布 → 02: 積立"),
+    )!;
+
+    expect(statement.querySelector(".time")!.textContent).not.toMatch(/\d/u);
+    expect(transfer.querySelector(".time")!.textContent).toMatch(/\d{2}:\d{2}/u);
+  });
+
   it("つかいわけ口座の残高変動と突き合わせが付けば、その口座名と色で出す", () => {
     // 代表口座の残高はつかいわけ口座の合計なので、ATM出金は明細としても
     // つかいわけ口座の残高減としても現れる。二重に並べず、口座を補って1行にする

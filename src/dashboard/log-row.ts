@@ -65,14 +65,29 @@ function trailingColumn(ctx: RenderContext, entry: TransactionEntry): HTMLElemen
 }
 
 /**
+ * 時刻。銀行APIから取り込んだ明細は起算日しか持たない。時系列に混ぜるために
+ * 日の終わりへ寄せているが、その 23:59 は記録された時刻ではないので出さない。
+ * 出すと、その日の入出金が揃って深夜に起きたように読める
+ */
+function timeCell(cls: string, entry: TransactionEntry): HTMLElement {
+  if (entry.kind !== "statement") {
+    return el("span", cls, formatTime(entry.at));
+  }
+  const unknown = el("span", cls);
+  unknown.append("–", el("span", "sr-only", "時刻の記録なし"));
+  unknown.title = "銀行の明細は起算日だけを持ちます";
+  return unknown;
+}
+
+/**
  * 2段目。狭い幅では時刻を左の固定列から外してここへ回す。
  * 44pxの列を空けるだけで口座名に使える幅がはっきり増える
  */
-function memoRow(memo: MemoField, at: number): HTMLElement {
+function memoRow(memo: MemoField, entry: TransactionEntry): HTMLElement {
   const row = el("div", "flex items-baseline justify-between gap-3");
   row.append(
     memo.field,
-    el("span", `time-inline shrink-0 text-xs tabular-nums sm:hidden ${INK_WEAK}`, formatTime(at)),
+    timeCell(`time-inline shrink-0 text-xs tabular-nums sm:hidden ${INK_WEAK}`, entry),
   );
   return row;
 }
@@ -87,13 +102,9 @@ function transactionMain(
     "flex items-center gap-3 px-3.5 py-3 sm:gap-[18px] sm:px-[18px] sm:py-[15px]",
   );
   const body = el("div", "flex min-w-0 flex-1 flex-col gap-[5px]");
-  body.append(logTitle(ctx, entry), memoRow(memo, entry.at));
+  body.append(logTitle(ctx, entry), memoRow(memo, entry));
   main.append(
-    el(
-      "span",
-      `time w-11 shrink-0 text-xs tabular-nums max-sm:hidden ${INK_WEAK}`,
-      formatTime(entry.at),
-    ),
+    timeCell(`time w-11 shrink-0 text-xs tabular-nums max-sm:hidden ${INK_WEAK}`, entry),
     body,
     transactionAmount(entry),
     trailingColumn(ctx, entry),
