@@ -530,7 +530,7 @@ describe("sortTransfersDesc", () => {
 describe("logEntries", () => {
   it("記録がなければ空を返す", () => {
     expect(
-      logEntries({ snapshots: [], transfers: [], statements: [], dayStart: () => null }),
+      logEntries({ snapshots: [], transfers: [], statements: [], placeAt: () => null }),
     ).toStrictEqual([]);
   });
 
@@ -544,7 +544,7 @@ describe("logEntries", () => {
       snapshots: [s1, s2],
       transfers: [record],
       statements: [],
-      dayStart: () => null,
+      placeAt: () => null,
     });
 
     expect(entries.map((entry) => [entry.kind, entry.at])).toStrictEqual([
@@ -563,7 +563,7 @@ describe("logEntries", () => {
       snapshots: [snap],
       transfers: [],
       statements: [],
-      dayStart: () => null,
+      placeAt: () => null,
     });
 
     expect(entries).toStrictEqual([{ kind: "snapshot", at: 10, snapshot: snap, total: 150 }]);
@@ -578,7 +578,7 @@ describe("logEntries", () => {
       snapshots: [s1, s2],
       transfers: [record],
       statements: [],
-      dayStart: () => null,
+      placeAt: () => null,
     });
 
     expect(entries.filter((entry) => entry.kind === "external")).toStrictEqual([]);
@@ -593,7 +593,7 @@ describe("logEntries", () => {
       snapshots: [s1, s2],
       transfers: [record],
       statements: [],
-      dayStart: () => null,
+      placeAt: () => null,
     });
 
     expect(entries.map((entry) => entry.kind)).toStrictEqual(["transfer", "snapshot", "snapshot"]);
