@@ -10,6 +10,14 @@ function dayStart(valueDate: string): number | null {
   return year && month && day ? new Date(year, month - 1, day).getTime() : null;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** 起算日の終わり。ダッシュボードが前日以前の明細を置いている位置と同じ役 */
+function endOfDay(valueDate: string): number | null {
+  const start = dayStart(valueDate);
+  return start === null ? null : start + DAY_MS - 1;
+}
+
 /**
  * ATMで20,000円下ろしただけの台帳。
  *
@@ -38,7 +46,7 @@ const atmWithdrawal: StatementEntry = {
 };
 
 function entries(statements: StatementEntry[]): LogEntry[] {
-  return logEntries({ snapshots, transfers: [], statements, dayStart });
+  return logEntries({ snapshots, transfers: [], statements, placeAt: dayStart });
 }
 
 function kinds(log: LogEntry[]): string[] {
@@ -87,7 +95,7 @@ describe("logEntries", () => {
       { ...atmWithdrawal, valueDate: "2026-07-16", amount: -20_000, balance: 100_000 },
     ];
 
-    const log = logEntries({ snapshots: wide, transfers: [], statements, dayStart });
+    const log = logEntries({ snapshots: wide, transfers: [], statements, placeAt: dayStart });
 
     // 合算の1行ではなく、いつ何にいくら使ったかが分かる2行が残る
     expect(kinds(log)).toStrictEqual(["statement", "statement"]);
@@ -118,10 +126,48 @@ describe("logEntries", () => {
       { ...atmWithdrawal, entryNumber: "0002", balance: 80_000 },
     ];
 
-    const log = logEntries({ snapshots: twoAccounts, transfers: [], statements, dayStart });
+    const log = logEntries({
+      snapshots: twoAccounts,
+      transfers: [],
+      statements,
+      placeAt: dayStart,
+    });
 
     expect(kinds(log).filter((kind) => kind === "external")).toHaveLength(2);
     expect(kinds(log).filter((kind) => kind === "statement")).toHaveLength(2);
+  });
+
+  it("日の終わりに置いた明細は、同じ日の振替より新しい順で先に並ぶ", () => {
+    // 0時に置くと、後から取り込んだ入出金がその日の最初の出来事として
+    // 振替の下に沈む。起きた順としては読めない
+    const transfer = {
+      transferredAt: new Date(2026, 6, 16, 10, 0).getTime(),
+      from: { id: "133331", name: "01: お財布" },
+      to: { id: "133332", name: "02: 積立" },
+      amount: 5000,
+    };
+
+    const log = logEntries({
+      snapshots: [],
+      transfers: [transfer],
+      statements: [atmWithdrawal],
+      placeAt: endOfDay,
+    });
+
+    expect(kinds(log)).toStrictEqual(["statement", "transfer"]);
+  });
+
+  it("明細を日の終わりに置いても、その日の残高変動と突き合わせる", () => {
+    // 並びを整えるために置く時刻は動かせる。突き合わせは起算日で見るため、
+    // 21時のスナップショットより後ろ(23:59)に置いても二重には並ばない
+    const log = logEntries({
+      snapshots,
+      transfers: [],
+      statements: [atmWithdrawal],
+      placeAt: endOfDay,
+    });
+
+    expect(kinds(log)).toStrictEqual(["statement"]);
   });
 
   it("残高変動で説明できない明細は残す(取り込みの穴を隠さない)", () => {

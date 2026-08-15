@@ -2,8 +2,8 @@ import { BORDER, INK_DECOR, INK_SOFT, MUTED, SELECTED, SURFACE, el, signedCell }
 import type { BalanceChange, TransferRecord } from "../domain/ledger.ts";
 import type { LogFilter, RenderContext, UiState } from "./context.ts";
 import { PAGE_SIZE, moreButton, pageLimit } from "./paging.ts";
-import { dayStart, inPeriod } from "./period.ts";
 import { formatDayHeading, formatShortDateTime, localDayKey } from "./format.ts";
+import { inPeriod, statementAt } from "./period.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
 import type { LogEntry } from "../domain/log.ts";
 import { emptyMessage } from "./empty-state.ts";
@@ -240,7 +240,7 @@ function visibleEntries(ctx: RenderContext): LogEntry[] {
     snapshots: ctx.data.snapshots,
     transfers: ctx.ledger.transfers,
     statements: ctx.data.statements,
-    dayStart,
+    placeAt: (valueDate) => statementAt(valueDate, ctx.now()),
   }).filter((entry) => matchesLog(ctx.state, entry));
 }
 

@@ -1,5 +1,5 @@
+import { localDayKey, pad } from "./format.ts";
 import type { UiState } from "./context.ts";
-import { pad } from "./format.ts";
 
 const HOURS_PER_DAY = 24;
 const MINUTES_PER_HOUR = 60;
@@ -14,6 +14,24 @@ export function dayStart(value: string): number | null {
     return null;
   }
   return new Date(year, month - 1, day).getTime();
+}
+
+/**
+ * 銀行APIから取り込んだ明細を、ログのどの時刻に置くか。
+ *
+ * 明細は起算日(日単位)しか持たない。0時に置くと、その日に記録した振替より
+ * 必ず古い扱いになり、後から取り込んだ入出金が朝いちばんの出来事として
+ * 一日の末尾に並ぶ。起きた順とは読めないため、日の終わりへ寄せる。
+ *
+ * 当日だけは「今」に置く。日の終わりに置くと、これから記録する振替が
+ * すでに取り込んである明細より前に来てしまう
+ */
+export function statementAt(valueDate: string, now: number): number | null {
+  const start = dayStart(valueDate);
+  if (start === null) {
+    return null;
+  }
+  return start === dayStart(localDayKey(now)) ? now : start + DAY_MS - 1;
 }
 
 /** "YYYY-MM" をその月の[開始, 翌月開始)に変換する */

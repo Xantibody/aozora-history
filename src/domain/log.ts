@@ -39,7 +39,7 @@ export interface LogInput {
   /** 代表口座の明細。つかいわけ口座の明細は外部入出金の摘要に使うので入れない */
   statements: StatementEntry[];
   /** 明細は起算日しか持たないため、その日のどの時刻に置くかは呼び出し側が決める */
-  dayStart: (valueDate: string) => number | null;
+  placeAt: (valueDate: string) => number | null;
 }
 
 /** 起算日は日単位なので、区間の始まりもその日の0時まで広げて見る */
@@ -57,7 +57,7 @@ interface PlacedStatement {
 function placeStatements(input: LogInput): PlacedStatement[] {
   const placed: PlacedStatement[] = [];
   for (const statement of primaryStatements(input.statements)) {
-    const at = input.dayStart(statement.valueDate);
+    const at = input.placeAt(statement.valueDate);
     if (at !== null) {
       placed.push({ statement, at });
     }
@@ -67,13 +67,18 @@ function placeStatements(input: LogInput): PlacedStatement[] {
 
 const sameSign = (left: number, right: number): boolean => left > 0 === right > 0;
 
-/** その残高変動の区間にあって、まだどの残高変動にも結び付いていない明細 */
+/**
+ * その残高変動の区間にあって、まだどの残高変動にも結び付いていない明細。
+ *
+ * 見るのは置いた時刻ではなく起算日。並びを整えるために日の終わりへ寄せても、
+ * どの残高変動を説明する明細かという読みは変わらないため
+ */
 function freeLines(placed: PlacedStatement[], change: BalanceChange): PlacedStatement[] {
   return placed.filter(
     (line) =>
       line.account === undefined &&
-      line.at >= startOfDay(change.fromTakenAt) &&
-      line.at <= change.toTakenAt,
+      startOfDay(line.at) >= startOfDay(change.fromTakenAt) &&
+      startOfDay(line.at) <= change.toTakenAt,
   );
 }
 
