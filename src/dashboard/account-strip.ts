@@ -74,16 +74,30 @@ function totalLine(totals: WorkspaceTotals): HTMLElement {
   return line;
 }
 
+/**
+ * 横に続きがあることの合図。スクロールできると気づけないと口座を選べない。
+ *
+ * 帯の中に流し込むと、右端まで送ったときにしか見えない。合図が要るのは
+ * 送る前なので、右端に貼り付けてチップを下に潜らせる
+ */
+function scrollHint(): HTMLElement {
+  const hint = el("span", `scroll-hint sticky right-0 shrink-0 pl-1.5 ${SURFACE} ${INK_DECOR}`);
+  hint.append(icon("chevron-right", HINT_ICON_SIZE));
+  return hint;
+}
+
 function chipRail(ctx: RenderContext, summaries: WorkspaceSummary[]): HTMLElement {
-  const chips = el("div", "account-chips flex min-w-0 items-center gap-2 overflow-x-auto");
+  // 狭い幅では合計と分け合わず1行を丸ごと使う。分け合うと先頭のチップから
+  // 桁が欠け、「01: お財布 1,0」のように残高を読み違える幅になる
+  const chips = el(
+    "div",
+    "account-chips flex min-w-0 items-center gap-2 overflow-x-auto max-sm:w-full",
+  );
   for (const summary of summaries) {
     chips.append(accountChip(ctx, summary));
   }
-  // 横に続きがあることの合図。スクロールできると気づけないと口座を選べない
   if (summaries.length > 0) {
-    const hint = el("span", `scroll-hint shrink-0 ${INK_DECOR}`);
-    hint.append(icon("chevron-right", HINT_ICON_SIZE));
-    chips.append(hint);
+    chips.append(scrollHint());
   }
   return chips;
 }
@@ -94,7 +108,7 @@ export function accountStrip(ctx: RenderContext): HTMLElement {
   );
   const strip = el(
     "div",
-    "account-strip flex items-center gap-3 overflow-hidden pt-1 pb-3 sm:gap-4",
+    "account-strip flex flex-wrap items-center gap-x-3 gap-y-1 overflow-hidden pt-1 pb-3 sm:flex-nowrap sm:gap-x-4",
   );
   strip.append(totalLine(workspaceTotals(summaries)), chipRail(ctx, summaries));
   return strip;

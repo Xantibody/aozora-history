@@ -1890,6 +1890,25 @@ describe("狭い幅 (スマホ)", () => {
     expect(visible(root.querySelector(".settings-button")!)).toBe(false);
   });
 
+  it("口座チップは合計と同じ行に押し込めない(先頭のチップが欠ける)", () => {
+    const rail = root.querySelector(".account-chips")!;
+    const first = root.querySelector(".account-chip")!;
+
+    expect(first.getBoundingClientRect().width).toBeLessThanOrEqual(
+      rail.getBoundingClientRect().width,
+    );
+  });
+
+  it("横に続きがある合図は、スクロールする前から見える位置に置く", () => {
+    const rail = root.querySelector(".account-chips")!;
+    const hint = root.querySelector(".scroll-hint")!;
+
+    expect(rail.scrollWidth).toBeGreaterThan(rail.clientWidth);
+    expect(hint.getBoundingClientRect().right).toBeLessThanOrEqual(
+      Math.ceil(rail.getBoundingClientRect().right),
+    );
+  });
+
   it("時刻を左の固定列から2段目へ回し、口座名に幅を空ける", () => {
     const row = root.querySelector(".log .log-row")!;
     expect(visible(row.querySelector(".time")!)).toBe(false);
