@@ -1,0 +1,56 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  extends: [
+    "config:recommended",
+    // コミットの体裁はこのリポジトリの履歴に合わせる (chore(deps): ...)
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+  ],
+
+  timezone: "Asia/Tokyo",
+
+  // 更新の到着を週1回に寄せる。都度PRが飛ぶと、CIの空き時間より
+  // 「またRenovateか」で無視する癖のほうが先に育つ
+  schedule: ["before 9am on monday"],
+  prConcurrentLimit: 3,
+
+  // flake.lockのnixpkgsがnode・pnpm・oxfmt/oxlint・typescript-go・
+  // playwright-driverを一度に動かす。npmの更新と混ぜず、単独のPRで見る
+  nix: {
+    enabled: true,
+  },
+
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ["before 9am on the first day of the month"],
+  },
+
+  packageRules: [
+    {
+      // playwrightはflake.nixのplaywright-driverと同じ版でしか動かない。
+      // ずれるとfirefox-<revision>が見つからずDOMのテストが起動しない。
+      // nixpkgs側が動いてから手で合わせるので、PRは自動で作らせない
+      matchPackageNames: ["playwright"],
+      dependencyDashboardApproval: true,
+    },
+    {
+      // vitest本体とブラウザランナーは版を揃える前提。別々のPRにすると
+      // 片方だけマージした瞬間に落ちる
+      matchPackageNames: ["vitest", "@vitest/**"],
+      groupName: "vitest",
+    },
+    {
+      // CLIとviteプラグインは同じtailwindの版を見る
+      matchPackageNames: ["tailwindcss", "@tailwindcss/**"],
+      groupName: "tailwindcss",
+    },
+    {
+      // actionはmajorだけ個別に見れば足りる。v4→v5のような書き換えが要る変更と、
+      // タグの付け替えだけの変更を、同じ粒度で読む必要はない
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "github-actions",
+    },
+  ],
+}
