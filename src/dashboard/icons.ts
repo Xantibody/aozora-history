@@ -32,6 +32,7 @@ const ICONS = {
     '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/>' +
     '<path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
   "chart-line": '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
   monitor:
     '<rect width="20" height="14" x="2" y="3" rx="2"/>' +
     '<line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',

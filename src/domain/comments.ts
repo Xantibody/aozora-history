@@ -42,9 +42,9 @@ export interface SuggestionContext {
 /** 同じ額とみなす隔たり(=完全一致) */
 const SAME_AMOUNT = 0;
 /** ほぼ同じ額とみなす隔たり。3,000円に対する3,300円まで */
-const NEAR_AMOUNT = 0.1;
+export const NEAR_AMOUNT = 0.1;
 /** 同じ桁とみなす隔たり。3,000円に対する6,000円まで */
-const SAME_SCALE = 0.5;
+export const SAME_SCALE = 0.5;
 
 /**
  * 金額の近さの段階。同額 → ほぼ同額 → 同じ桁 → それ以外。
@@ -56,7 +56,7 @@ const NEARNESS_RATIOS = [SAME_AMOUNT, NEAR_AMOUNT, SAME_SCALE];
 const FAR = NEARNESS_RATIOS.length;
 
 /** 2つの金額の隔たり。桁が違えば1に近づく(3,000円と80,000円は「遠い」) */
-function relativeGap(amount: number, other: number): number {
+export function relativeGap(amount: number, other: number): number {
   const scale = Math.max(Math.abs(amount), Math.abs(other));
   return scale === 0 ? SAME_AMOUNT : Math.abs(amount - other) / scale;
 }
@@ -106,34 +106,46 @@ function amountsByKey(transfers: TransferRecord[]): Map<string, number> {
   return new Map(transfers.map((transfer) => [transferCommentKey(transfer), transfer.amount]));
 }
 
-/** 並べ替えに使う分だけ取り出した候補。金額は近さに畳んだので持たない */
-interface Ranked {
+/** 並べ替えを終えた候補。検索の候補行が回数と金額のヒントを添えるのに使う */
+export interface CommentCandidate {
   text: string;
-  nearness: number;
   count: number;
-  lastAt: number;
+  /** そのコメントを使った記録の金額。引けなかったものは入らない */
+  amounts: number[];
 }
 
 /**
- * コメント欄の入力候補。削除の記録を除き、使用回数の多い順
+ * コメントの候補。削除の記録を除き、使用回数の多い順
  * (同数なら記録またはコメント編集が新しい順)に並べる。
  *
- * 記録を渡した場合は、金額の近さを先に見る。同じ額を動かすときは同じ用途で
+ * 金額を渡した場合は、その額との近さを先に見る。同じ額を動かすときは同じ用途で
  * あることが多く、よく使う候補を上から順に読むより先に見つかる
  */
-export function commentSuggestions(comments: Comments, context?: SuggestionContext): string[] {
-  const stats = collectStats(comments, amountsByKey(context?.transfers ?? []));
-  const ranked: Ranked[] = [...stats.entries()].map(([text, stat]) => ({
+export function commentCandidates(
+  comments: Comments,
+  transfers: TransferRecord[],
+  amount?: number,
+): CommentCandidate[] {
+  const stats = collectStats(comments, amountsByKey(transfers));
+  const ranked = [...stats.entries()].map(([text, stat]) => ({
     text,
     count: stat.count,
     lastAt: stat.lastAt,
+    amounts: stat.amounts,
     // 金額を渡されていなければ、近さでは差を付けない
-    nearness: context === undefined ? SAME_AMOUNT : nearnessOf(context.amount, stat.amounts),
+    nearness: amount === undefined ? SAME_AMOUNT : nearnessOf(amount, stat.amounts),
   }));
   return ranked
     .toSorted(
       (left, right) =>
         left.nearness - right.nearness || right.count - left.count || right.lastAt - left.lastAt,
     )
-    .map((entry) => entry.text);
+    .map(({ text, count, amounts }) => ({ text, count, amounts }));
+}
+
+/** コメント欄の入力候補。並びは commentCandidates と同じ */
+export function commentSuggestions(comments: Comments, context?: SuggestionContext): string[] {
+  return commentCandidates(comments, context?.transfers ?? [], context?.amount).map(
+    (candidate) => candidate.text,
+  );
 }

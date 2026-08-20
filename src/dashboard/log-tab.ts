@@ -1,14 +1,13 @@
+import type { AppliedSearch, LogFilter, RenderContext, UiState } from "./context.ts";
 import { BORDER, INK_DECOR, INK_SOFT, MUTED, SELECTED, SURFACE, el, signedCell } from "./dom.ts";
-import type { BalanceChange, TransferRecord } from "../domain/ledger.ts";
-import type { LogFilter, RenderContext, UiState } from "./context.ts";
 import { PAGE_SIZE, moreButton, pageLimit } from "./paging.ts";
+import { appliedSearchLabel, searchKey } from "./search.ts";
 import { formatDayHeading, formatShortDateTime, localDayKey } from "./format.ts";
-import { inPeriod, statementAt } from "./period.ts";
 import { snapshotRow, transactionRow } from "./log-row.ts";
 import type { LogEntry } from "../domain/log.ts";
 import { emptyMessage } from "./empty-state.ts";
 import { icon } from "./icons.ts";
-import { logEntries } from "../domain/log.ts";
+import { visibleEntries } from "./log-filter.ts";
 
 const SPAN_ICON_SIZE = 14;
 
@@ -79,6 +78,34 @@ function spanChip(ctx: RenderContext, span: { from: number; to: number }): HTMLE
   return chip;
 }
 
+function searchClearButton(ctx: RenderContext): HTMLElement {
+  const clear = el("button", `search-clear flex cursor-pointer items-center ${INK_DECOR}`);
+  clear.append(icon("x", SPAN_ICON_SIZE));
+  clear.title = "検索の絞り込みを解除";
+  clear.setAttribute("aria-label", clear.title);
+  clear.addEventListener("click", () => {
+    ctx.state.appliedSearch = null;
+    ctx.draw();
+  });
+  return clear;
+}
+
+/** 検索から渡ってきた絞り込みの表示。区間チップと同型で、×で解除する */
+function searchChip(ctx: RenderContext, applied: AppliedSearch): HTMLElement {
+  // 区間チップと並んだときに右端の取り合いをしないよう、autoは片方だけ
+  const align = ctx.state.selectedSpan === null ? "ml-auto " : "";
+  const chip = el(
+    "div",
+    `search-chip ${align}flex shrink-0 items-center gap-2 rounded-full bg-[#eef2f6] px-3 ` +
+      `py-1.5 text-[12.5px] ring-1 ring-[#dde4ec] dark:bg-[#1a2330] dark:ring-[#243040] ${INK_SOFT}`,
+  );
+  chip.append(
+    el("span", undefined, `${appliedSearchLabel(applied)}で絞り込み中`),
+    searchClearButton(ctx),
+  );
+  return chip;
+}
+
 function filterChips(ctx: RenderContext): HTMLElement {
   const row = el("div", "log-filters flex items-center gap-1.5 overflow-x-auto pb-3.5");
   for (const def of FILTERS) {
@@ -87,68 +114,10 @@ function filterChips(ctx: RenderContext): HTMLElement {
   if (ctx.state.selectedSpan !== null) {
     row.append(spanChip(ctx, ctx.state.selectedSpan));
   }
+  if (ctx.state.appliedSearch !== null) {
+    row.append(searchChip(ctx, ctx.state.appliedSearch));
+  }
   return row;
-}
-
-function matchesTransfer(state: UiState, transfer: TransferRecord): boolean {
-  if (state.logFilter === "in" || state.logFilter === "out") {
-    return false;
-  }
-  return (
-    state.filterAccountId === null ||
-    transfer.from.id === state.filterAccountId ||
-    transfer.to.id === state.filterAccountId
-  );
-}
-
-function matchesExternal(state: UiState, change: BalanceChange): boolean {
-  if (state.logFilter === "transfer") {
-    return false;
-  }
-  if (state.logFilter === "in" && change.externalDelta < 0) {
-    return false;
-  }
-  if (state.logFilter === "out" && change.externalDelta > 0) {
-    return false;
-  }
-  return state.filterAccountId === null || change.accountId === state.filterAccountId;
-}
-
-/**
- * 代表口座の明細。つかいわけ口座ではないので、口座で絞っている間は出さない。
- * 入金・出金の絞り込みは符号で判断する
- */
-function matchesStatement(state: UiState, amount: number): boolean {
-  if (state.logFilter === "transfer" || state.filterAccountId !== null) {
-    return false;
-  }
-  if (state.logFilter === "in") {
-    return amount > 0;
-  }
-  return state.logFilter === "out" ? amount < 0 : true;
-}
-
-/** 推移で選んだ区間。選んでいなければ素通りさせる */
-function inSelectedSpan(state: UiState, at: number): boolean {
-  const span = state.selectedSpan;
-  return span === null || (at >= span.from && at <= span.to);
-}
-
-function matchesLog(state: UiState, entry: LogEntry): boolean {
-  if (!inPeriod(state, entry.at) || !inSelectedSpan(state, entry.at)) {
-    return false;
-  }
-  if (entry.kind === "transfer") {
-    return matchesTransfer(state, entry.transfer);
-  }
-  if (entry.kind === "statement") {
-    return matchesStatement(state, entry.statement.amount);
-  }
-  if (entry.kind === "external") {
-    return matchesExternal(state, entry.change);
-  }
-  // 記録行は従属情報。何かで絞り込んでいる間はノイズになるため出さない
-  return state.logFilter === "all" && state.filterAccountId === null;
 }
 
 /** 口座の外と出入りした額だけ。振替は口座間の移動なので日計に含めない */
@@ -223,6 +192,7 @@ function filterKey(state: UiState): string {
     state.periodToExclusive,
     state.selectedSpan?.from,
     state.selectedSpan?.to,
+    searchKey(state.appliedSearch),
   ].join("|");
 }
 
@@ -233,15 +203,6 @@ function logMoreButton(ctx: RenderContext, rest: number): HTMLElement {
   });
   more.classList.add("log-more", "mt-1", "mb-4");
   return more;
-}
-
-function visibleEntries(ctx: RenderContext): LogEntry[] {
-  return logEntries({
-    snapshots: ctx.data.snapshots,
-    transfers: ctx.ledger.transfers,
-    statements: ctx.data.statements,
-    placeAt: (valueDate) => statementAt(valueDate, ctx.now()),
-  }).filter((entry) => matchesLog(ctx.state, entry));
 }
 
 /** 日ごとのカードを上限まで積み、残りがあれば続きを足すボタンで締める */

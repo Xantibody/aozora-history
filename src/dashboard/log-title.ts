@@ -1,4 +1,5 @@
 import { BADGE, INK, INK_DECOR, INK_SOFT, accountDot, el } from "./dom.ts";
+import { appliedQuery, highlighted, searchAmountOf, tierBadgeLabel } from "./search.ts";
 import type { LogEntry } from "../domain/log.ts";
 import type { RenderContext } from "./context.ts";
 import type { TransferRecord } from "../domain/ledger.ts";
@@ -53,8 +54,10 @@ function arrow(): HTMLElement {
 }
 
 /** 口座でない相手先(給与の振込元、引落先など)。口座色を持たないプレーンな文字 */
-function otherParty(name: string): HTMLElement {
-  return el("span", INK_SOFT, name);
+function otherParty(ctx: RenderContext, name: string): HTMLElement {
+  const label = el("span", INK_SOFT);
+  label.append(...highlighted(name, appliedQuery(ctx.state.appliedSearch)));
+  return label;
 }
 
 type TitlePart = Element | string;
@@ -69,7 +72,7 @@ function externalTitle(
   change: Extract<LogEntry, { kind: "external" }>["change"],
 ): TitlePart[] {
   const account = accountName(ctx, { id: change.accountId, name: change.accountName });
-  const other = otherParty(counterparty(ctx, change));
+  const other = otherParty(ctx, counterparty(ctx, change));
   return change.externalDelta > 0 ? [other, arrow(), account] : [account, arrow(), other];
 }
 
@@ -104,7 +107,7 @@ function statementTitle(
     account === undefined
       ? primaryAccountName()
       : accountName(ctx, { id: account.accountId, name: account.accountName });
-  const other = otherParty(statement.remark === "" ? "(摘要なし)" : statement.remark);
+  const other = otherParty(ctx, statement.remark === "" ? "(摘要なし)" : statement.remark);
   return statement.amount > 0 ? [other, arrow(), from] : [from, arrow(), other];
 }
 
@@ -115,11 +118,29 @@ function titleParts(ctx: RenderContext, entry: TransactionEntry): TitlePart[] {
   return entry.kind === "statement" ? statementTitle(ctx, entry) : externalTitle(ctx, entry.change);
 }
 
+/**
+ * 金額検索の適用中に、なぜこの行が残っているのかを金額の近さで示すバッジ。
+ * ほぼ同額の中でも +9% と -7% を見分けられるよう、実差で言う
+ */
+function nearnessBadge(ctx: RenderContext, entry: TransactionEntry): HTMLElement[] {
+  const applied = ctx.state.appliedSearch;
+  if (applied?.kind !== "amount") {
+    return [];
+  }
+  return [
+    el(
+      "span",
+      `nearness-badge py-[2px] text-[11px] font-bold whitespace-nowrap ${BADGE}`,
+      tierBadgeLabel(applied.amount, searchAmountOf(entry)),
+    ),
+  ];
+}
+
 export function logTitle(ctx: RenderContext, entry: TransactionEntry): HTMLElement {
   const title = el(
     "div",
     `log-title flex min-w-0 flex-wrap items-center gap-2 text-[14.5px] leading-snug sm:gap-[9px] sm:text-[15.5px] ${INK}`,
   );
-  title.append(...titleParts(ctx, entry));
+  title.append(...titleParts(ctx, entry), ...nearnessBadge(ctx, entry));
   return title;
 }
