@@ -1883,6 +1883,7 @@ describe("狭い幅 (スマホ)", () => {
     expect([...root.querySelectorAll(".bottom-tab")].map((tab) => tab.textContent)).toStrictEqual([
       "ログ",
       "残高",
+      "検索",
       "設定",
     ]);
   });

@@ -1,4 +1,5 @@
 import { INK_SOFT, INK_WEAK, el } from "./dom.ts";
+import { appliedQuery, highlighted } from "./search.ts";
 import { changeCommentKey, commentText, transferCommentKey } from "../domain/comments.ts";
 import type { LogEntry } from "../domain/log.ts";
 import type { RenderContext } from "./context.ts";
@@ -31,7 +32,9 @@ export interface MemoField {
 function memoText(ctx: RenderContext, key: string): HTMLElement {
   const comment = commentText(ctx.data.comments, key);
   if (comment !== "") {
-    return el("span", `truncate ${INK_SOFT}`, comment);
+    const view = el("span", `truncate ${INK_SOFT}`);
+    view.append(...highlighted(comment, appliedQuery(ctx.state.appliedSearch)));
+    return view;
   }
   // 操作の入口なので、装飾ではなく本文と同じ濃さで置く
   const hint = el("span", `memo-add inline-flex items-center gap-1.5 ${INK_WEAK}`);

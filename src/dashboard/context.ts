@@ -62,6 +62,17 @@ export type ThemePreference = "system" | "light" | "dark";
 export type LogFilter = "all" | "transfer" | "in" | "out";
 type StatementFilter = "all" | "in" | "out";
 
+/** 金額の揺れ検索の、近さの段階。同額 → ほぼ同額(±10%) → 同じ桁(±50%) */
+export const SAME_TIER = 0;
+export const NEAR_TIER = 1;
+export const SCALE_TIER = 2;
+export type SearchTier = typeof SAME_TIER | typeof NEAR_TIER | typeof SCALE_TIER;
+
+/** 適用済みの検索。ログの絞り込みとして月・口座・種類のフィルタとANDで効く */
+export type AppliedSearch =
+  | { kind: "text"; query: string }
+  | { kind: "amount"; amount: number; tier: SearchTier };
+
 /** 再描画をまたいで保持するUI状態(選択中のタブ・期間・フィルタなど) */
 export interface UiState {
   view: "dashboard" | "settings";
@@ -85,6 +96,13 @@ export interface UiState {
   snapshotPaging: Paging;
   syncStatus: string;
   importStatus: string;
+  /** 検索パレットの開閉と入力中のクエリ。テーマと違い保存しない(開き直したらリセット) */
+  searchOpen: boolean;
+  searchQuery: string;
+  /** 金額の揺れ検索で選んでいる近さの段階 */
+  searchTier: SearchTier;
+  /** 適用済みの検索。nullなら未適用 */
+  appliedSearch: AppliedSearch | null;
 }
 
 /**
@@ -109,6 +127,10 @@ export function initialUiState(now: () => number = Date.now): UiState {
     snapshotPaging: initialPaging(),
     syncStatus: "",
     importStatus: "",
+    searchOpen: false,
+    searchQuery: "",
+    searchTier: NEAR_TIER,
+    appliedSearch: null,
   };
   applyBounds(state);
   return state;

@@ -2,7 +2,7 @@ import { DAY_MS, inPeriod } from "./period.ts";
 import { INK, INK_SOFT, SUCCESS, SURFACE, WARNING, el, signedCell } from "./dom.ts";
 import type { RenderContext, UiState, ViewTab } from "./context.ts";
 import { latestRecordAt, workspaceSummaries, workspaceTotals } from "../domain/ledger.ts";
-import { nextTheme, themeIcon, themeLabel } from "./theme.ts";
+import { searchButton, settingsButton, themeButton } from "./header-buttons.ts";
 import type { WorkspaceSummary } from "../domain/ledger.ts";
 import { accountStrip } from "./account-strip.ts";
 import { formatShortDateTime } from "./format.ts";
@@ -15,7 +15,6 @@ const STALE_DAYS = 7;
 const STALE_AFTER_MS = STALE_DAYS * DAY_MS;
 
 const STATUS_ICON_SIZE = 13;
-const SETTINGS_ICON_SIZE = 17;
 
 function staleWarning(): HTMLElement {
   const warning = el(
@@ -72,47 +71,6 @@ function freshness(ctx: RenderContext, latest: number): HTMLElement {
   }
   node.append(...freshnessParts(ctx, latest));
   return node;
-}
-
-/** ヘッダー右上の丸ボタンの見た目。中身と表示条件は呼び出し側が足す */
-const ROUND_BUTTON =
-  `flex shrink-0 cursor-pointer items-center justify-center rounded-full ${INK_SOFT} ` +
-  "bg-[#f4f6f9] ring-1 ring-[#e4e8ee] transition-colors hover:bg-[#eef1f5] " +
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 " +
-  "dark:bg-[#1a222c] dark:ring-[#243040] dark:hover:bg-[#1e2733]";
-
-/**
- * 画面の明暗。押すたびに システム → ライト → ダーク と巡る。
- * 設定画面には置かず、見た目を変えるものは見ながら試せる場所に出す。
- * 歯車と違って狭い幅でも隠さない(下部バーに他の入口がないため)
- */
-function themeButton(ctx: RenderContext): HTMLElement {
-  const preference = ctx.data.theme;
-  const button = el("button", `theme-button ${ROUND_BUTTON} h-[34px] w-[34px]`);
-  button.append(icon(themeIcon(preference), SETTINGS_ICON_SIZE));
-  const label = `テーマ: ${themeLabel(preference)}`;
-  button.title = `${label}(クリックで切り替え)`;
-  button.setAttribute("aria-label", label);
-  button.addEventListener("click", () => {
-    ctx.handlers.onChangeTheme(nextTheme(preference));
-    ctx.draw();
-  });
-  return button;
-}
-
-function settingsButton(ctx: RenderContext): HTMLElement {
-  const button = el(
-    "button",
-    `settings-button ${ROUND_BUTTON} max-sm:hidden sm:h-[34px] sm:w-[34px]`,
-  );
-  button.append(icon("settings-2", SETTINGS_ICON_SIZE));
-  button.title = "設定";
-  button.setAttribute("aria-label", "設定");
-  button.addEventListener("click", () => {
-    ctx.state.view = "settings";
-    ctx.draw();
-  });
-  return button;
 }
 
 /** 期間の増減ラベル。「7月」のように月名または期間の種類を添える */
@@ -222,7 +180,7 @@ function headerStatus(ctx: RenderContext, latest: number | null): HTMLElement {
   if (latest !== null) {
     side.append(freshness(ctx, latest));
   }
-  side.append(themeButton(ctx), settingsButton(ctx));
+  side.append(searchButton(ctx), themeButton(ctx), settingsButton(ctx));
   return side;
 }
 

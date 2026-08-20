@@ -2,6 +2,7 @@ import { INK, INK_SOFT, SURFACE, el } from "./dom.ts";
 import type { IconName } from "./icons.ts";
 import type { RenderContext } from "./context.ts";
 import { icon } from "./icons.ts";
+import { openSearch } from "./search-actions.ts";
 
 /**
  * 狭い幅のページ切り替え。ヘッダーに置くと、片手で持ったときに親指から
@@ -16,7 +17,7 @@ const BAR =
   "pb-[env(safe-area-inset-bottom)] sm:hidden dark:border-[#1e2733]";
 
 interface TabDef {
-  key: "log" | "balance" | "settings";
+  key: "log" | "balance" | "search" | "settings";
   label: string;
   name: IconName;
 }
@@ -24,16 +25,25 @@ interface TabDef {
 const TABS: TabDef[] = [
   { key: "log", label: "ログ", name: "list" },
   { key: "balance", label: "残高", name: "chart-line" },
+  { key: "search", label: "検索", name: "search" },
   { key: "settings", label: "設定", name: "settings-2" },
 ];
 
 function isActive(ctx: RenderContext, def: TabDef): boolean {
+  if (def.key === "search") {
+    return ctx.state.searchOpen;
+  }
   return def.key === "settings"
     ? ctx.state.view === "settings"
     : ctx.state.view === "dashboard" && ctx.state.activeTab === def.key;
 }
 
 function select(ctx: RenderContext, def: TabDef): void {
+  // 検索はページではなくシート。いまのページの上に重ねて開く
+  if (def.key === "search") {
+    openSearch(ctx);
+    return;
+  }
   if (def.key === "settings") {
     ctx.state.view = "settings";
   } else {

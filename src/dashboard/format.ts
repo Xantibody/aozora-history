@@ -25,9 +25,14 @@ export function formatTime(epochMs: number): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function formatShortDateTime(epochMs: number): string {
+/** 「8/1」。検索パレットの記録行は1行に収めるため、時刻まで出さない */
+export function formatShortDate(epochMs: number): string {
   const date = new Date(epochMs);
-  return `${date.getMonth() + 1}/${date.getDate()} ${formatTime(epochMs)}`;
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+export function formatShortDateTime(epochMs: number): string {
+  return `${formatShortDate(epochMs)} ${formatTime(epochMs)}`;
 }
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];

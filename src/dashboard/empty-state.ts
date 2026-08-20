@@ -21,6 +21,10 @@ export function emptyMessage(ctx: RenderContext): string {
   if (hasNoRecord(ctx)) {
     return "まだ記録がありません";
   }
+  // 検索が理由で空のときに「今月の記録はありません」と言うと、取り込みを疑わせる
+  if (ctx.state.appliedSearch !== null) {
+    return "この絞り込みに合う記録はありません";
+  }
   if (ctx.state.monthValue !== "") {
     return `${monthLabel(ctx.state.monthValue)}の記録はありません`;
   }
