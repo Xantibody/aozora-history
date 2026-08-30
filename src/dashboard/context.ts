@@ -1,63 +1,23 @@
-import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
+import type { DashboardData, DashboardHandlers } from "./data.ts";
 import { applyBounds, monthOf } from "./period.ts";
 import type { AccountColor } from "./dom.ts";
-import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
-import type { CollectReport } from "../domain/diagnostics.ts";
-import type { Comments } from "../domain/comments.ts";
 import type { Paging } from "./paging.ts";
 import type { Reconciled } from "../domain/reconcile.ts";
-import type { StatementEntry } from "../domain/statement.ts";
-import type { SyncConfig } from "../infrastructure/r2sync.ts";
 import { initialPaging } from "./paging.ts";
 
-export interface DashboardData {
-  snapshots: BalanceSnapshot[];
-  transfers: TransferRecord[];
-  /** 代表口座とつかいわけ口座の入出金明細。銀行APIから取得したもの */
-  statements: StatementEntry[];
-  /** つかいわけ口座の定額自動振替の設定。銀行APIから取得したもの */
-  autoTransfers: AutoTransferSetting[];
-  comments: Comments;
-  deletions: Record<string, number>;
-  syncConfig: SyncConfig | null;
-  lastSyncedAt: number | null;
-  /** 設定画面にデバッグ欄を出すか */
-  debugMode: boolean;
-  /** 画面の明暗。端末ごとの見え方の設定なので、他端末とは同期しない */
-  theme: ThemePreference;
-  /** 最後に銀行APIを取り込んだ結果。まだ一度も走っていなければnull */
-  lastCollect: CollectReport | null;
-}
-
-export interface DashboardHandlers {
-  onCommentChange: (key: string, text: string) => void;
-  onDeleteTransfer: (transfer: TransferRecord) => void;
-  onSaveSyncConfig: (config: SyncConfig) => Promise<string>;
-  onSyncNow: () => Promise<string>;
-  onImportFile: (text: string) => Promise<string>;
-  onToggleDebug: (enabled: boolean) => void;
-  onChangeTheme: (preference: ThemePreference) => void;
-  /** 次に銀行サイトを開いたときの取り込みを、間隔を待たずに走らせる */
-  onRequestCollect: () => void;
-}
-
-export interface DashboardOptions {
-  handlers: DashboardHandlers;
-  now?: () => number;
-}
+// 記録の型は data.ts にある。読む側はどちらから来た型かを意識しなくてよい
+export type {
+  DashboardData,
+  DashboardHandlers,
+  DashboardOptions,
+  ThemePreference,
+} from "./data.ts";
 
 /**
  * 「ログ」は毎日開いて取引を読むページ、「残高」は週に数回、口座の配分と
  * 推移を見るページ。1画面に全部載せると情報量が多すぎるため役割で分けている
  */
 export type ViewTab = "log" | "balance";
-
-/**
- * 画面の明暗。OSの設定に従うのを既定にしつつ、明示的に固定もできる。
- * 家計を見る画面は昼にも夜にも開くため、端末の自動切り替えと
- * 見たい明るさが一致しないことがある
- */
-export type ThemePreference = "system" | "light" | "dark";
 
 export type LogFilter = "all" | "transfer" | "in" | "out";
 type StatementFilter = "all" | "in" | "out";
