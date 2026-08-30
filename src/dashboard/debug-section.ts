@@ -45,6 +45,10 @@ function statRows(report: CollectReport): HTMLElement[] {
     statRow("代表口座の明細", report.statements),
     statRow("つかいわけ口座の明細", report.accountStatements),
     statRow("定額自動振替の設定", report.autoTransfers),
+    // この項目が入る前の記録には無い。取り込みが古いだけなので、行ごと省く
+    ...(report.regularTransfers === undefined
+      ? []
+      : [statRow("定額自動振込の契約", report.regularTransfers)]),
     ...report.errors.map((message) => errorBlock(message)),
   ];
 }

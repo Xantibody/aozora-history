@@ -2,6 +2,7 @@ import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
 import type { Comments } from "../domain/comments.ts";
+import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
 
@@ -19,6 +20,8 @@ export interface DashboardData {
   statements: StatementEntry[];
   /** つかいわけ口座の定額自動振替の設定。銀行APIから取得したもの */
   autoTransfers: AutoTransferSetting[];
+  /** 外部の口座への定額自動振込の契約。銀行APIから取得したもの */
+  regularTransfers: RegularTransferSetting[];
   comments: Comments;
   deletions: Record<string, number>;
   syncConfig: SyncConfig | null;

@@ -19,6 +19,8 @@ import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { usePhone, useWideScreen } from "./screen.fixture.ts";
 import type { DashboardData } from "./render.ts";
+import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
+import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
 
 describe("renderDashboard", () => {
@@ -1602,6 +1604,57 @@ describe("代表口座の明細をログに統合する", () => {
     expect(titles()).toContain("給与  カ）アツトマーク → 普通預金");
     expect(titles()).toContain("普通預金 → 振込 ラクテン");
     expect(root.querySelector(".statements")).toBeNull();
+  });
+
+  describe("定額自動振込", () => {
+    // 実行されると、契約の受取人名がそのまま摘要に入る
+    const rentStatements: StatementEntry[] = [
+      {
+        entryNumber: "0001",
+        valueDate: "2026-07-26",
+        amount: -173_000,
+        balance: 907_425,
+        remark: "振込 ラクテン アイザワ　リユウ",
+      },
+    ];
+
+    const rent: RegularTransferSetting = {
+      id: "000003",
+      payeeName: "アイザワ　リユウ",
+      bankName: "楽天銀行",
+      amount: 173_000,
+      active: true,
+      groupName: "家賃－投資",
+    };
+
+    function openRent(regularTransfers: RegularTransferSetting[]): void {
+      render(root, data({ statements: rentStatements, regularTransfers }));
+    }
+
+    it("契約と一致する明細には、毎月の振込だと分かるバッジを出す", () => {
+      openRent([rent]);
+
+      expect(root.querySelector(".regular-badge")!.textContent).toBe("定額自動振込");
+    });
+
+    // 銀行側で用途をグループに書いてあるなら、それが何の振込かの答えになる
+    it("グループを付けている契約なら、その名前を添える", () => {
+      openRent([rent]);
+
+      expect(root.querySelector<HTMLElement>(".regular-badge")!.title).toContain("家賃－投資");
+    });
+
+    it("契約と結び付かない明細にはバッジを出さない", () => {
+      openRent([{ ...rent, amount: 50_000 }]);
+
+      expect(root.querySelector(".regular-badge")).toBeNull();
+    });
+
+    it("契約をまだ取り込めていなければバッジは出さない", () => {
+      openRent([]);
+
+      expect(root.querySelector(".regular-badge")).toBeNull();
+    });
   });
 
   it("明細に時刻は出さない(銀行が持つのは起算日だけ)", () => {

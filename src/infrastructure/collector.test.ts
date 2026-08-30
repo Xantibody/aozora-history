@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { BankApiClient } from "./bank-api.ts";
 import { HistoryStore } from "./storage.ts";
+import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { StorageArea } from "./storage.ts";
 
@@ -55,6 +56,17 @@ const autoTransfers: AutoTransferSetting[] = [
   },
 ];
 
+const regularTransfers: RegularTransferSetting[] = [
+  {
+    id: "000003",
+    payeeName: "アイザワ　リユウ",
+    bankName: "楽天銀行",
+    amount: 173_000,
+    active: true,
+    groupName: "家賃－投資",
+  },
+];
+
 /** 成否を差し替えられる最小のAPIクライアント */
 function fakeClient(overrides: Partial<BankApiClient> = {}): BankApiClient {
   return {
@@ -62,6 +74,7 @@ function fakeClient(overrides: Partial<BankApiClient> = {}): BankApiClient {
     ordinaryStatement: () => Promise.resolve(statements),
     spAccountStatement: () => Promise.resolve(accountStatements),
     autoTransfers: () => Promise.resolve(autoTransfers),
+    regularTransfers: () => Promise.resolve(regularTransfers),
     ...overrides,
   } as BankApiClient;
 }
@@ -85,7 +98,7 @@ describe("shouldCollect", () => {
 });
 
 describe("collectFromBank", () => {
-  it("残高スナップショット・明細・定額自動振替の設定をまとめて記録する", async () => {
+  it("残高スナップショット・明細・自動振替と自動振込の設定をまとめて記録する", async () => {
     const store = new HistoryStore(fakeStorage(), () => 42);
 
     const result = await collectFromBank(store, fakeClient(), () => 42);
@@ -96,6 +109,7 @@ describe("collectFromBank", () => {
       statements: { count: 1, saved: true },
       accountStatements: { count: 1, saved: true },
       autoTransfers: { count: 1, saved: true },
+      regularTransfers: { count: 1, saved: true },
       errors: [],
     });
     await expect(store.loadSnapshots()).resolves.toStrictEqual([{ takenAt: 42, ...snapshot }]);
@@ -104,6 +118,21 @@ describe("collectFromBank", () => {
       ...accountStatements,
     ]);
     await expect(store.loadAutoTransfers()).resolves.toStrictEqual(autoTransfers);
+    await expect(store.loadRegularTransfers()).resolves.toStrictEqual(regularTransfers);
+  });
+
+  // 定額自動振込だけが取れなくても、残りは今までどおり記録できる
+  it("定額自動振込の契約が取れなくても、他の記録は残す", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 42);
+    const client = fakeClient({
+      regularTransfers: () => Promise.reject(new Error("HTTP 404")),
+    });
+
+    const result = await collectFromBank(store, client, () => 42);
+
+    expect(result.regularTransfers).toStrictEqual({ count: null, saved: false });
+    expect(result.balances.saved).toBe(true);
+    expect(result.errors).toHaveLength(1);
   });
 
   it("残高が合わないつかいわけ口座の明細は取り込まない(別口座の明細が返っている)", async () => {
