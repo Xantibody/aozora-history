@@ -165,6 +165,7 @@ export function data(overrides: Partial<DashboardData> = {}): DashboardData {
     debugMode: false,
     theme: "system",
     lastCollect: null,
+    collectState: "idle",
     ...overrides,
   };
 }
@@ -189,6 +190,7 @@ export function render(root: HTMLElement, dashboardData = data(), now = defaultN
     onToggleDebug: vi.fn<(enabled: boolean) => void>(),
     onChangeTheme: vi.fn<(preference: ThemePreference) => void>(),
     onRequestCollect: vi.fn<() => void>(),
+    onOpenBank: vi.fn<() => void>(),
   };
   const redraw = renderDashboard(root, dashboardData, { handlers, now });
   return { ...handlers, redraw };

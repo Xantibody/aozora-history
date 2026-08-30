@@ -27,7 +27,15 @@ export interface DashboardData {
   theme: ThemePreference;
   /** 最後に銀行APIを取り込んだ結果。まだ一度も走っていなければnull */
   lastCollect: CollectReport | null;
+  /** 開いた時点の取り込みの状況。銀行サイトのタブがなければ取り込めない */
+  collectState: CollectState;
 }
+
+/**
+ * 開いた時点の取り込みの状況。取り込みは銀行サイトのタブでしか走らないため、
+ * 開いていなければ更新できない(needs-bank-tab)
+ */
+export type CollectState = "idle" | "collecting" | "needs-bank-tab";
 
 export interface DashboardHandlers {
   onCommentChange: (key: string, text: string) => void;
@@ -39,6 +47,8 @@ export interface DashboardHandlers {
   onChangeTheme: (preference: ThemePreference) => void;
   /** 次に銀行サイトを開いたときの取り込みを、間隔を待たずに走らせる */
   onRequestCollect: () => void;
+  /** 取り込みに必要な銀行サイトのタブを開く */
+  onOpenBank: () => void;
 }
 
 export interface DashboardOptions {

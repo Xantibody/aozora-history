@@ -19,6 +19,8 @@ declare const browser: {
   };
   tabs: {
     create: (props: { url: string }) => Promise<unknown>;
+    /** url で絞るには、そのホストへの権限が要る(この拡張は host_permissions で持つ) */
+    query: (props: { url: string }) => Promise<unknown[]>;
   };
 };
 

@@ -1316,6 +1316,35 @@ describe("renderDashboard", () => {
 
       expect(root.querySelector(".freshness .last-synced")).toBeNull();
     });
+
+    it("開いた時点の取り込みが走っていれば、その旨を表示する", () => {
+      render(root, data({ collectState: "collecting" }), () => latestAt);
+
+      expect(root.querySelector(".freshness .collecting")!.textContent).toContain("取り込み中");
+    });
+
+    it("銀行サイトのタブがなければ、開くための導線を出す", () => {
+      const { onOpenBank } = render(root, data({ collectState: "needs-bank-tab" }), () => latestAt);
+
+      root.querySelector<HTMLElement>(".freshness .open-bank")!.click();
+
+      expect(onOpenBank).toHaveBeenCalledTimes(1);
+    });
+
+    // 記録が止まっているときこそ、取り込みを走らせ直す導線が要る
+    it("7日以上記録が増えていなくても、銀行サイトを開く導線は出す", () => {
+      render(root, data({ collectState: "needs-bank-tab" }), () => latestAt + 8 * DAY);
+
+      expect(root.querySelector(".freshness .stale-warning")).not.toBeNull();
+      expect(root.querySelector(".freshness .open-bank")).not.toBeNull();
+    });
+
+    it("取り込みが済んでいれば取り込みの表示は出さない", () => {
+      render(root, data(), () => latestAt);
+
+      expect(root.querySelector(".freshness .collecting")).toBeNull();
+      expect(root.querySelector(".freshness .open-bank")).toBeNull();
+    });
   });
 
   describe("設定画面 (R2同期)", () => {

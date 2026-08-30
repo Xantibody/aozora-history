@@ -1,5 +1,5 @@
 import { DAY_MS, inPeriod } from "./period.ts";
-import { INK, INK_SOFT, SUCCESS, SURFACE, WARNING, el, signedCell } from "./dom.ts";
+import { INK, INK_SOFT, LINK_BUTTON, SUCCESS, SURFACE, WARNING, el, signedCell } from "./dom.ts";
 import type { RenderContext, UiState, ViewTab } from "./context.ts";
 import { latestRecordAt, workspaceSummaries, workspaceTotals } from "../domain/ledger.ts";
 import { searchButton, settingsButton, themeButton } from "./header-buttons.ts";
@@ -56,6 +56,30 @@ function freshnessParts(ctx: RenderContext, latest: number): HTMLElement[] {
   ];
 }
 
+function openBankButton(ctx: RenderContext): HTMLElement {
+  const button = el("button", `open-bank ${LINK_BUTTON} text-[11.5px]`, "銀行サイトを開いて更新");
+  button.title =
+    "残高と明細はログイン中の銀行サイトのタブでしか取り込めません。開くとその場で取り込みます";
+  button.addEventListener("click", () => {
+    ctx.handlers.onOpenBank();
+  });
+  return button;
+}
+
+/**
+ * 開いた時点の取り込みの状況。銀行サイトのタブがなければ画面の記録は
+ * 古いままになるため、黙って出さずに開く手立てを添える
+ */
+function collectState(ctx: RenderContext): HTMLElement | null {
+  if (ctx.data.collectState === "collecting") {
+    return el("span", "collecting", "取り込み中…");
+  }
+  if (ctx.data.collectState === "needs-bank-tab") {
+    return openBankButton(ctx);
+  }
+  return null;
+}
+
 /**
  * ヘッダー右上の鮮度表示。記録が止まっていたら警告に差し替える。
  * アイコンは状態の合図でしかないため、必ず文言と併記する
@@ -65,6 +89,10 @@ function freshness(ctx: RenderContext, latest: number): HTMLElement {
     "span",
     `freshness inline-flex items-center gap-1.5 text-right text-[11.5px] ${INK_SOFT}`,
   );
+  const collect = collectState(ctx);
+  if (collect !== null) {
+    node.append(collect, el("span", "freshness-separator max-sm:hidden", " · "));
+  }
   if (ctx.now() - latest > STALE_AFTER_MS) {
     node.append(staleWarning());
     return node;
