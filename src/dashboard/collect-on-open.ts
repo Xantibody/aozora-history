@@ -1,4 +1,4 @@
-import type { CollectState } from "./context.ts";
+import type { CollectState } from "./data.ts";
 import type { HistoryStore } from "../infrastructure/storage.ts";
 
 /**

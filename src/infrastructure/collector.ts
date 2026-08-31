@@ -46,6 +46,7 @@ export interface CollectResult {
   /** つかいわけ口座ごとの明細。countは取り込めた明細の合計 */
   accountStatements: Collected;
   autoTransfers: Collected;
+  regularTransfers: Collected;
   /** 一部だけ失敗することがあるため、起きたエラーはまとめて返す */
   errors: unknown[];
 }
@@ -75,6 +76,14 @@ async function collectAutoTransfers(
 ): Promise<Collected> {
   const parsed = await client.autoTransfers(AUTO_TRANSFER_LIMIT);
   return { count: parsed.length, saved: await store.recordAutoTransfers(parsed) };
+}
+
+async function collectRegularTransfers(
+  store: HistoryStore,
+  client: BankApiClient,
+): Promise<Collected> {
+  const parsed = await client.regularTransfers();
+  return { count: parsed.length, saved: await store.recordRegularTransfers(parsed) };
 }
 
 function addCount(left: number | null, right: number | null): number | null {
@@ -153,16 +162,18 @@ export async function collectFromBank(
       statements: NOT_FETCHED,
       accountStatements: NOT_FETCHED,
       autoTransfers: NOT_FETCHED,
+      regularTransfers: NOT_FETCHED,
       errors: [],
     };
   }
   // 未ログインのページで何度も問い合わせに行かないよう、成否によらず先に印を付ける
   await store.markCollected();
 
-  const [balances, statements, autoTransfers] = await Promise.allSettled([
+  const [balances, statements, autoTransfers, regularTransfers] = await Promise.allSettled([
     collectBalances(store, client, now),
     collectStatements(store, client),
     collectAutoTransfers(store, client),
+    collectRegularTransfers(store, client),
   ]);
   // 口座別明細は口座一覧が要るため、残高が取れてから
   const accountStatements = await collectAccountStatements(
@@ -177,6 +188,10 @@ export async function collectFromBank(
     statements: settled(statements),
     accountStatements: onlyCollected(accountStatements),
     autoTransfers: settled(autoTransfers),
-    errors: [...reasonsOf([balances, statements, autoTransfers]), ...accountStatements.errors],
+    regularTransfers: settled(regularTransfers),
+    errors: [
+      ...reasonsOf([balances, statements, autoTransfers, regularTransfers]),
+      ...accountStatements.errors,
+    ],
   };
 }

@@ -1,11 +1,11 @@
 import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
 import { changeCommentKey, transferCommentKey } from "../domain/comments.ts";
-import type { AccountRef } from "../domain/parser.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
 import type { Comments } from "../domain/comments.ts";
 import { DEFAULT_OBJECT_KEY } from "../infrastructure/r2sync.ts";
 import type { LedgerData } from "../domain/merge.ts";
+import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import { STATEMENT_LIMIT } from "../infrastructure/collector.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
@@ -29,6 +29,7 @@ export type Scenario = (typeof SCENARIOS)[number];
 export interface DummyData {
   ledger: LedgerData;
   autoTransfers: AutoTransferSetting[];
+  regularTransfers: RegularTransferSetting[];
   syncConfig: SyncConfig | null;
   lastCollect: CollectReport;
   debugMode: boolean;
@@ -38,6 +39,9 @@ export interface DummyData {
 export function toScenario(value: string | null): Scenario {
   return SCENARIOS.find((name) => name === value) ?? "rich";
 }
+
+/** 振替の出金側・入金側と同じ形。口座の参照だけのためにモジュールを増やさない */
+type AccountRef = TransferRecord["from"];
 
 const WALLET: AccountRef = { id: "133331", name: "01: お財布" };
 const LIVING: AccountRef = { id: "133332", name: "02: 生活費" };
@@ -59,6 +63,16 @@ const AUTO_TRANSFER: AutoTransferSetting = {
   from: WALLET,
   to: SAVINGS,
   amount: 30_000,
+};
+
+/** 毎月の家賃(下の monthlyEvents が出す「ﾔﾁﾝ ｱｵｿﾞﾗﾌﾄﾞｳｻﾝ」)の契約 */
+const REGULAR_TRANSFER: RegularTransferSetting = {
+  id: "000003",
+  payeeName: "ｱｵｿﾞﾗﾌﾄﾞｳｻﾝ",
+  bankName: "みずほ銀行",
+  amount: 95_000,
+  active: true,
+  groupName: "家賃",
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -487,6 +501,7 @@ function collectReport(now: number, statements: number): CollectReport {
     statements: { count: STATEMENT_LIMIT, saved: false },
     accountStatements: { count: statements, saved: true },
     autoTransfers: { count: 1, saved: false },
+    regularTransfers: { count: 1, saved: false },
     errors: [],
   };
 }
@@ -516,6 +531,7 @@ export function dummyData(scenario: Scenario, now: number): DummyData {
       deletions: {},
     },
     autoTransfers: empty ? [] : [AUTO_TRANSFER],
+    regularTransfers: empty ? [] : [REGULAR_TRANSFER],
     syncConfig: empty ? null : SYNC_CONFIG,
     lastCollect: collectReport(now, statements.length),
     debugMode: true,

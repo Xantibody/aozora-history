@@ -1,11 +1,13 @@
 import {
   parseAutoTransfers,
   parseOrdinaryStatement,
+  parseRegularTransfers,
   parseSpAccountBalances,
   parseSpAccountStatement,
 } from "../domain/api-parser.ts";
 import type { AccountsSnapshot } from "../domain/parser.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
+import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import { describeJson } from "../domain/diagnostics.ts";
 
@@ -156,6 +158,22 @@ export class BankApiClient {
       depositOrderType: ORDER_DESC,
     });
     const parsed = parseSpAccountStatement(json, accountId);
+    if (parsed === null) {
+      throw BankApiClient.unexpected(path, json);
+    }
+    return parsed;
+  }
+
+  /**
+   * 定額自動振込の契約一覧。画面「振込・支払 > 定額自動振込一覧」と同じ呼び方をする。
+   *
+   * この画面が送る検索条件(口座・グループ・ステータス)はどれも任意で、
+   * 省くと全件返る。絞り込みはこちらでやるので何も送らない
+   */
+  public async regularTransfers(): Promise<RegularTransferSetting[]> {
+    const path = "transfers/regularly-contracts";
+    const json = await this.get(path);
+    const parsed = parseRegularTransfers(json);
     if (parsed === null) {
       throw BankApiClient.unexpected(path, json);
     }

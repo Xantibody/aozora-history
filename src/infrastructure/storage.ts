@@ -4,6 +4,7 @@ import { appendSnapshot, transferKey } from "../domain/ledger.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
 import type { LedgerData } from "../domain/merge.ts";
+import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "./r2sync.ts";
 import { mergeStatements } from "../domain/statement.ts";
@@ -27,6 +28,8 @@ const SYNC_CONFIG_KEY = "syncConfig";
  * LEDGER_KEYSに含めない(端末間で同期しなくても、各端末が銀行から取り直せる)
  */
 export const AUTO_TRANSFERS_KEY = "autoTransferSettings";
+/** 定額自動振込の契約。定額自動振替と同じ理由でLEDGER_KEYSに含めない */
+export const REGULAR_TRANSFERS_KEY = "regularTransferSettings";
 /** 設定画面にデバッグ欄を出すかどうか。既定は出さない */
 const DEBUG_MODE_KEY = "debugMode";
 /** 画面の明暗。端末ごとの見え方の設定なのでLEDGER_KEYSに含めない(同期しない) */
@@ -129,6 +132,21 @@ export class HistoryStore {
       return false;
     }
     await this.storage.set({ [AUTO_TRANSFERS_KEY]: settings });
+    return true;
+  }
+
+  public async loadRegularTransfers(): Promise<RegularTransferSetting[]> {
+    const items = await this.storage.get(REGULAR_TRANSFERS_KEY);
+    return (items[REGULAR_TRANSFERS_KEY] as RegularTransferSetting[] | undefined) ?? [];
+  }
+
+  /** 契約も滅多に変わらないため、変わっていなければ書き込まない。保存したかどうかを返す */
+  public async recordRegularTransfers(settings: RegularTransferSetting[]): Promise<boolean> {
+    const existing = await this.loadRegularTransfers();
+    if (JSON.stringify(settings) === JSON.stringify(existing)) {
+      return false;
+    }
+    await this.storage.set({ [REGULAR_TRANSFERS_KEY]: settings });
     return true;
   }
 

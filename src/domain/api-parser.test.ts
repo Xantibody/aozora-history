@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseAutoTransfers,
   parseOrdinaryStatement,
+  parseRegularTransfers,
   parseSpAccountBalances,
   parseSpAccountStatement,
 } from "./api-parser.ts";
@@ -231,6 +232,68 @@ describe("parseAutoTransfers", () => {
     expect(parseAutoTransfers({})).toBeNull();
     expect(
       parseAutoTransfers({ spAccountAutoTransferList: [{ spAutoTransferId: "9001" }] }),
+    ).toBeNull();
+  });
+});
+
+describe("parseRegularTransfers", () => {
+  // 「振込・支払 > 定額自動振込一覧」が同じ条件で叩いているレスポンス
+  const contract = {
+    regularlyTransferContractId: "000003",
+    contractDate: "20240210",
+    contractStatus: "1",
+    creditBankName: "楽天銀行",
+    creditBranchName: "アロハ支店",
+    creditAccountNumber: "4379611",
+    creditPayeeNameKana: "アイザワ　リユウ",
+    transferAmount: "173000",
+    transferFrequency: "1",
+    monthlyTransferDay: "26",
+    nextTransferDate: "20260925",
+    groupName: "家賃－投資",
+  };
+
+  const setting = {
+    id: "000003",
+    payeeName: "アイザワ　リユウ",
+    bankName: "楽天銀行",
+    amount: 173_000,
+    active: true,
+    groupName: "家賃－投資",
+  };
+
+  it("定額自動振込の契約一覧を設定に変換する", () => {
+    const json = { regularlyTransferContractList: [contract], searchDate: "20260831" };
+
+    expect(parseRegularTransfers(json)).toStrictEqual([setting]);
+  });
+
+  // 1=契約中 2=一時休止 3=強制休止 4=解約。契約中以外は実行されない
+  it("契約中でないものは active を偽にする", () => {
+    const suspended = { ...contract, contractStatus: "2" };
+
+    expect(parseRegularTransfers({ regularlyTransferContractList: [suspended] })).toStrictEqual([
+      { ...setting, active: false },
+    ]);
+  });
+
+  it("グループを付けていない契約も読める", () => {
+    const noGroup = { ...contract, groupName: undefined };
+
+    expect(parseRegularTransfers({ regularlyTransferContractList: [noGroup] })).toStrictEqual([
+      { ...setting, groupName: "" },
+    ]);
+  });
+
+  it("契約が1件もなければ空配列(契約なしと取得失敗を区別する)", () => {
+    expect(parseRegularTransfers({ regularlyTransferContractList: [] })).toStrictEqual([]);
+  });
+
+  it("形が違えばnull", () => {
+    expect(parseRegularTransfers(null)).toBeNull();
+    expect(parseRegularTransfers({})).toBeNull();
+    expect(
+      parseRegularTransfers({ regularlyTransferContractList: [{ contractStatus: "1" }] }),
     ).toBeNull();
   });
 });
