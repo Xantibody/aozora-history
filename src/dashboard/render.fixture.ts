@@ -166,6 +166,7 @@ export function data(overrides: Partial<DashboardData> = {}): DashboardData {
     debugMode: false,
     theme: "system",
     lastCollect: null,
+    collectState: "idle",
     ...overrides,
   };
 }

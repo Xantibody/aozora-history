@@ -57,6 +57,31 @@ function freshnessParts(ctx: RenderContext, latest: number): HTMLElement[] {
 }
 
 /**
+ * 取り込めなかった理由。ここから銀行サイトを開く導線は置かない。
+ * 銀行のセッションは短く、押してもログイン画面が開くだけに終わるため
+ * (取り込めるのは、利用者が自分でログインしているあいだだけ)
+ */
+function needsBankTab(): HTMLElement {
+  const note = el("span", "needs-bank-tab", "銀行サイトを開くと更新されます");
+  note.title = "残高と明細は、ログイン中の銀行サイトのタブでしか取り込めません";
+  return note;
+}
+
+/**
+ * 開いた時点の取り込みの状況。銀行サイトのタブがなければ画面の記録は
+ * 古いままになるため、黙って出さずに理由を添える
+ */
+function collectState(ctx: RenderContext): HTMLElement | null {
+  if (ctx.data.collectState === "collecting") {
+    return el("span", "collecting", "取り込み中…");
+  }
+  if (ctx.data.collectState === "needs-bank-tab") {
+    return needsBankTab();
+  }
+  return null;
+}
+
+/**
  * ヘッダー右上の鮮度表示。記録が止まっていたら警告に差し替える。
  * アイコンは状態の合図でしかないため、必ず文言と併記する
  */
@@ -65,6 +90,10 @@ function freshness(ctx: RenderContext, latest: number): HTMLElement {
     "span",
     `freshness inline-flex items-center gap-1.5 text-right text-[11.5px] ${INK_SOFT}`,
   );
+  const collect = collectState(ctx);
+  if (collect !== null) {
+    node.append(collect, el("span", "freshness-separator max-sm:hidden", " · "));
+  }
   if (ctx.now() - latest > STALE_AFTER_MS) {
     node.append(staleWarning());
     return node;

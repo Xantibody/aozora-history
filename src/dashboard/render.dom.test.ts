@@ -1318,6 +1318,35 @@ describe("renderDashboard", () => {
 
       expect(root.querySelector(".freshness .last-synced")).toBeNull();
     });
+
+    it("開いた時点の取り込みが走っていれば、その旨を表示する", () => {
+      render(root, data({ collectState: "collecting" }), () => latestAt);
+
+      expect(root.querySelector(".freshness .collecting")!.textContent).toContain("取り込み中");
+    });
+
+    it("銀行サイトのタブがなければ、更新できない理由を出す", () => {
+      render(root, data({ collectState: "needs-bank-tab" }), () => latestAt);
+
+      expect(root.querySelector(".freshness .needs-bank-tab")!.textContent).toContain(
+        "銀行サイトを開くと更新されます",
+      );
+    });
+
+    // 記録が止まっているときこそ、なぜ更新されないのかが要る
+    it("7日以上記録が増えていなくても、更新できない理由は出す", () => {
+      render(root, data({ collectState: "needs-bank-tab" }), () => latestAt + 8 * DAY);
+
+      expect(root.querySelector(".freshness .stale-warning")).not.toBeNull();
+      expect(root.querySelector(".freshness .needs-bank-tab")).not.toBeNull();
+    });
+
+    it("取り込みが済んでいれば取り込みの表示は出さない", () => {
+      render(root, data(), () => latestAt);
+
+      expect(root.querySelector(".freshness .collecting")).toBeNull();
+      expect(root.querySelector(".freshness .needs-bank-tab")).toBeNull();
+    });
   });
 
   describe("設定画面 (R2同期)", () => {

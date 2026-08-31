@@ -9,14 +9,13 @@ import {
 import type { DashboardData, DashboardHandlers } from "./render.ts";
 import { R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
 import { applyTheme, toThemePreference } from "./theme.ts";
-import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
-import type { CollectReport } from "../domain/diagnostics.ts";
 import type { FetchLike } from "../infrastructure/r2sync.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { TransferRecord } from "../domain/ledger.ts";
 import { mergeLedgers } from "../domain/merge.ts";
 import { parseLedgerJson } from "../domain/serialization.ts";
 import { renderDashboard } from "./render.ts";
+import { startCollectOnOpen } from "./collect-on-open.ts";
 import { transferCommentKey } from "../domain/comments.ts";
 import { transferKey } from "../domain/ledger.ts";
 
@@ -63,6 +62,7 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     debugMode,
     theme: toThemePreference(theme),
     lastCollect,
+    collectState: "idle",
   };
 }
 
@@ -124,7 +124,8 @@ async function syncNow(store: HistoryStore, data: DashboardData): Promise<string
   }
 }
 
-function createHandlers(store: HistoryStore, data: DashboardData): DashboardHandlers {
+function createHandlers(app: AppContext): DashboardHandlers {
+  const { store, data } = app;
   return {
     onCommentChange: (key, text) => {
       // 再描画時に最新のコメントが出るようローカルにも反映する
@@ -175,10 +176,10 @@ interface AppContext {
 
 interface StoredState {
   ledger: LedgerData;
-  autoTransfers: AutoTransferSetting[];
+  autoTransfers: DashboardData["autoTransfers"];
   regularTransfers: DashboardData["regularTransfers"];
   syncedAt: number | null;
-  lastCollect: CollectReport | null;
+  lastCollect: DashboardData["lastCollect"];
 }
 
 function sameAsShown(app: AppContext, stored: StoredState): boolean {
@@ -221,7 +222,12 @@ async function refreshFromStorage(app: AppContext): Promise<void> {
   if (sameAsShown(app, stored)) {
     return;
   }
+  // 取り込みの結果が届いた合図。見送りも記録されるため、走ったかどうかは問わない
+  const collected = JSON.stringify(stored.lastCollect) !== JSON.stringify(app.data.lastCollect);
   applyStored(app, stored);
+  if (collected) {
+    app.data.collectState = "idle";
+  }
   // 入力中は見送る。dataには反映済みなので、次の描画で追いつく
   if (!isEditing(app)) {
     app.redraw();
@@ -270,11 +276,12 @@ async function main(): Promise<void> {
   const store = new HistoryStore(browser.storage.local);
   const data = await loadDashboardData(store);
   applyTheme(document.documentElement, data.theme);
-  const redraw = renderDashboard(root, data, {
-    handlers: createHandlers(store, data),
-  });
-  watchStorage({ root, store, data, redraw });
-  await initialSync(store, data);
+  // ハンドラは再描画を呼び、その再描画はハンドラを渡して作る。輪を切るため、
+  // 先に器を作ってから描画関数を入れる(ハンドラが呼ばれるのは描画の後)
+  const app: AppContext = { root, store, data, redraw: (): void => undefined };
+  app.redraw = renderDashboard(root, data, { handlers: createHandlers(app) });
+  watchStorage(app);
+  await Promise.all([initialSync(store, data), startCollectOnOpen(app, store)]);
 }
 
 void main();

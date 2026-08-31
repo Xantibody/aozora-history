@@ -10,11 +10,17 @@ import type { StorageArea } from "../infrastructure/storage.ts";
 
 type ChangeListener = (changes: Record<string, unknown>, areaName: string) => void;
 
-/** ダッシュボードが使うのは storage だけなので、その分だけを用意する */
+/**
+ * ダッシュボードが使うのは storage と、銀行サイトのタブを探す tabs だけなので、
+ * その分だけを用意する
+ */
 export interface FakeBrowser {
   storage: {
     local: StorageArea;
     onChanged: { addListener: (listener: ChangeListener) => void };
+  };
+  tabs: {
+    query: (props: { url: string }) => Promise<unknown[]>;
   };
 }
 
@@ -48,6 +54,12 @@ export function createFakeBrowser(): FakeBrowser {
           listeners.push(listener);
         },
       },
+    },
+
+    // プレビューには銀行サイトのタブが無い。開いた時点の取り込みは走らず、
+    // 画面には「銀行サイトを開くと更新されます」が出る状態になる
+    tabs: {
+      query: () => Promise.resolve([]),
     },
   };
 }
