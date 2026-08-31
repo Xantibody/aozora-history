@@ -81,7 +81,11 @@
     // テスト名は日本語文。英字頭字語(CSV/JSON)の小文字化は誤り
     "vitest/prefer-lowercase-title": "off",
     // エントリポイントはiife形式でバンドルするためtop-level awaitは使えない
-    "unicorn/prefer-top-level-await": "off"
+    "unicorn/prefer-top-level-await": "off",
+    // 既定は"always"で、連続する宣言を`const a = 1, b = 2;`へまとめさせる。
+    // 宣言を1つ足すだけで隣の行にも差分が出て、レビューで読みにくくなる
+    // (主要なスタイルガイドが採る"never"とも逆向き)。1行1宣言で通す
+    "eslint/one-var": "off"
   },
   "overrides": [
     {

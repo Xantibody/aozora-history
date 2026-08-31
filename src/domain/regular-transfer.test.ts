@@ -28,7 +28,7 @@ describe("matchingRegularTransfer", () => {
     expect(matchingRegularTransfer([rent], statement())).toBe(rent);
   });
 
-  // 摘要と契約で空白の入り方が違うことがある(「アイザワ　リユウ」と「アイザワリユウ」)
+  // 契約の受取人名は姓と名を全角空白で区切るが、摘要では詰まっていることがある
   it("空白の入り方が違っても同じ名前として扱う", () => {
     const spaced = matchingRegularTransfer(
       [rent],

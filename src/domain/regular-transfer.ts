@@ -22,8 +22,8 @@ export interface RegularTransferSetting {
 }
 
 /**
- * 空白を落とした形。摘要は「振込 ラクテン アイザワ　リユウ」のように
- * 語の区切りに半角・全角の空白が入り、契約側の受取人名と揃わないことがある
+ * 空白を落とした形。摘要は「振込 ラクテン アイザワ リユウ」のように語の区切りへ
+ * 空白が入り、しかも半角と全角が混ざるため、契約側の受取人名と揃わないことがある
  */
 function withoutSpaces(text: string): string {
   return text.replaceAll(/\s/gu, "");
