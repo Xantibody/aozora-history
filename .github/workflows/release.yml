@@ -28,7 +28,7 @@ jobs:
         run: pnpm run package:firefox
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: aozora-history-v*.xpi
           generate_release_notes: true
