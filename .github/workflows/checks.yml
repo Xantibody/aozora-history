@@ -39,7 +39,7 @@ jobs:
       - run: pnpm run test:dom
 
       # 落ちた画面だけが残る。緑のときは何も上がらない
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: firefox-failure-screenshots
