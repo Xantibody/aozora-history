@@ -9,7 +9,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: DeterminateSystems/nix-installer-action@v16
+    - uses: DeterminateSystems/nix-installer-action@v22
 
     # 道具の一覧はflake.nixの`toolchain`が持つ。ここで名前を並べ直すと、
     # devShellに足したのにCIで落ちる(あるいはその逆)という食い違いが起きる
