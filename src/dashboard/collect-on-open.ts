@@ -10,9 +10,6 @@ import type { HistoryStore } from "../infrastructure/storage.ts";
  * 黙って古い記録を出さずに開く手立てを画面に出す
  */
 
-/** 取り込みに使う銀行サイト。ここを開くとcontent scriptが取りに行く */
-const BANK_URL = "https://bank.gmo-aozora.com/";
-
 /** content scriptが入っているタブの条件。manifestのmatchesと揃える */
 const BANK_TAB_PATTERN = "https://bank.gmo-aozora.com/*";
 
@@ -68,12 +65,6 @@ function beginCollect(view: CollectView): void {
       setCollectState(view, "needs-bank-tab");
     }
   }, COLLECT_TIMEOUT_MS);
-}
-
-/** 取り込みに必要な銀行サイトのタブを開く。開いたタブが取り込んで返してくる */
-export function openBankTab(view: CollectView): void {
-  void browser.tabs.create({ url: BANK_URL });
-  beginCollect(view);
 }
 
 /** 銀行サイトのタブが開いているか。取り込みはそのタブでしか走らない */

@@ -20,7 +20,6 @@ export interface FakeBrowser {
     onChanged: { addListener: (listener: ChangeListener) => void };
   };
   tabs: {
-    create: (props: { url: string }) => Promise<unknown>;
     query: (props: { url: string }) => Promise<unknown[]>;
   };
 }
@@ -58,12 +57,8 @@ export function createFakeBrowser(): FakeBrowser {
     },
 
     // プレビューには銀行サイトのタブが無い。開いた時点の取り込みは走らず、
-    // 画面には「銀行サイトを開いて更新」の導線が出る状態になる
+    // 画面には「銀行サイトを開くと更新されます」が出る状態になる
     tabs: {
-      create: ({ url }) => {
-        globalThis.open(url, "_blank");
-        return Promise.resolve(null);
-      },
       query: () => Promise.resolve([]),
     },
   };

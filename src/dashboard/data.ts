@@ -52,8 +52,6 @@ export interface DashboardHandlers {
   onChangeTheme: (preference: ThemePreference) => void;
   /** 次に銀行サイトを開いたときの取り込みを、間隔を待たずに走らせる */
   onRequestCollect: () => void;
-  /** 取り込みに必要な銀行サイトのタブを開く */
-  onOpenBank: () => void;
 }
 
 export interface DashboardOptions {

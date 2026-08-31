@@ -1,5 +1,5 @@
 import { DAY_MS, inPeriod } from "./period.ts";
-import { INK, INK_SOFT, LINK_BUTTON, SUCCESS, SURFACE, WARNING, el, signedCell } from "./dom.ts";
+import { INK, INK_SOFT, SUCCESS, SURFACE, WARNING, el, signedCell } from "./dom.ts";
 import type { RenderContext, UiState, ViewTab } from "./context.ts";
 import { latestRecordAt, workspaceSummaries, workspaceTotals } from "../domain/ledger.ts";
 import { searchButton, settingsButton, themeButton } from "./header-buttons.ts";
@@ -56,26 +56,27 @@ function freshnessParts(ctx: RenderContext, latest: number): HTMLElement[] {
   ];
 }
 
-function openBankButton(ctx: RenderContext): HTMLElement {
-  const button = el("button", `open-bank ${LINK_BUTTON} text-[11.5px]`, "銀行サイトを開いて更新");
-  button.title =
-    "残高と明細はログイン中の銀行サイトのタブでしか取り込めません。開くとその場で取り込みます";
-  button.addEventListener("click", () => {
-    ctx.handlers.onOpenBank();
-  });
-  return button;
+/**
+ * 取り込めなかった理由。ここから銀行サイトを開く導線は置かない。
+ * 銀行のセッションは短く、押してもログイン画面が開くだけに終わるため
+ * (取り込めるのは、利用者が自分でログインしているあいだだけ)
+ */
+function needsBankTab(): HTMLElement {
+  const note = el("span", "needs-bank-tab", "銀行サイトを開くと更新されます");
+  note.title = "残高と明細は、ログイン中の銀行サイトのタブでしか取り込めません";
+  return note;
 }
 
 /**
  * 開いた時点の取り込みの状況。銀行サイトのタブがなければ画面の記録は
- * 古いままになるため、黙って出さずに開く手立てを添える
+ * 古いままになるため、黙って出さずに理由を添える
  */
 function collectState(ctx: RenderContext): HTMLElement | null {
   if (ctx.data.collectState === "collecting") {
     return el("span", "collecting", "取り込み中…");
   }
   if (ctx.data.collectState === "needs-bank-tab") {
-    return openBankButton(ctx);
+    return needsBankTab();
   }
   return null;
 }

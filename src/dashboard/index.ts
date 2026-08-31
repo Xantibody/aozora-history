@@ -9,13 +9,13 @@ import {
 import type { DashboardData, DashboardHandlers } from "./render.ts";
 import { R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
 import { applyTheme, toThemePreference } from "./theme.ts";
-import { openBankTab, startCollectOnOpen } from "./collect-on-open.ts";
 import type { FetchLike } from "../infrastructure/r2sync.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { TransferRecord } from "../domain/ledger.ts";
 import { mergeLedgers } from "../domain/merge.ts";
 import { parseLedgerJson } from "../domain/serialization.ts";
 import { renderDashboard } from "./render.ts";
+import { startCollectOnOpen } from "./collect-on-open.ts";
 import { transferCommentKey } from "../domain/comments.ts";
 import { transferKey } from "../domain/ledger.ts";
 
@@ -163,10 +163,6 @@ function createHandlers(app: AppContext): DashboardHandlers {
 
     onRequestCollect: () => {
       void store.requestCollect();
-    },
-
-    onOpenBank: () => {
-      openBankTab(app);
     },
   };
 }
