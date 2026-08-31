@@ -1,12 +1,14 @@
 import { BADGE, INK, INK_DECOR, INK_SOFT, accountDot, el } from "./dom.ts";
 import { appliedQuery, highlighted, searchAmountOf, tierBadgeLabel } from "./search.ts";
 import type { LogEntry } from "../domain/log.ts";
+import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { RenderContext } from "./context.ts";
 import type { TransferRecord } from "../domain/ledger.ts";
 import { counterparty } from "./counterparty.ts";
 import { icon } from "./icons.ts";
 import { isDetected } from "../domain/reconcile.ts";
 import { matchesAutoTransfer } from "../domain/auto-transfer.ts";
+import { matchingRegularTransfer } from "../domain/regular-transfer.ts";
 
 /** 振替の出金側・入金側と同じ形。口座の参照だけのためにモジュールを増やさない */
 type AccountRef = TransferRecord["from"];
@@ -92,6 +94,33 @@ function primaryAccountName(): HTMLElement {
 }
 
 /**
+ * 定額自動振込の契約と結び付いた明細。摘要には相手先しか出ないため、
+ * 毎月の決まった振込なのか、その月だけの振込なのかが読めない。
+ *
+ * 何のための振込かは銀行側のグループ名に書いてあるので、あればそれを添える
+ */
+function regularBadge(setting: RegularTransferSetting): HTMLElement {
+  const badge = el(
+    "span",
+    `regular-badge py-[2px] text-[11px] font-bold whitespace-nowrap ${BADGE}`,
+    "定額自動振込",
+  );
+  badge.title =
+    setting.groupName === ""
+      ? `${setting.bankName}への定額自動振込`
+      : `${setting.bankName}への定額自動振込(${setting.groupName})`;
+  return badge;
+}
+
+/** ログに並べる明細1件。取り込んだ明細そのもの(statement.ts の型) */
+type Statement = Extract<LogEntry, { kind: "statement" }>["statement"];
+
+function statementBadge(ctx: RenderContext, statement: Statement): TitlePart[] {
+  const setting = matchingRegularTransfer(ctx.data.regularTransfers, statement);
+  return setting === null ? [] : [regularBadge(setting)];
+}
+
+/**
  * 代表口座の明細。入金なら相手先→口座、出金なら口座→相手先と、振替と同じ向きで読める。
  *
  * どのつかいわけ口座の動きか突き合わせが付いていれば、そちらの名前で出す。
@@ -108,7 +137,8 @@ function statementTitle(
       ? primaryAccountName()
       : accountName(ctx, { id: account.accountId, name: account.accountName });
   const other = otherParty(ctx, statement.remark === "" ? "(摘要なし)" : statement.remark);
-  return statement.amount > 0 ? [other, arrow(), from] : [from, arrow(), other];
+  const parts = statement.amount > 0 ? [other, arrow(), from] : [from, arrow(), other];
+  return [...parts, ...statementBadge(ctx, statement)];
 }
 
 function titleParts(ctx: RenderContext, entry: TransactionEntry): TitlePart[] {

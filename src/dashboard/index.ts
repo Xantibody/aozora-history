@@ -4,6 +4,7 @@ import {
   LAST_COLLECT_KEY,
   LAST_SYNCED_KEY,
   LEDGER_KEYS,
+  REGULAR_TRANSFERS_KEY,
 } from "../infrastructure/storage.ts";
 import type { DashboardData, DashboardHandlers } from "./render.ts";
 import { R2Client, syncWithR2 } from "../infrastructure/r2sync.ts";
@@ -27,6 +28,7 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     transfers,
     statements,
     autoTransfers,
+    regularTransfers,
     comments,
     deletions,
     syncConfig,
@@ -39,6 +41,7 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     store.loadTransfers(),
     store.loadStatements(),
     store.loadAutoTransfers(),
+    store.loadRegularTransfers(),
     store.loadComments(),
     store.loadDeletions(),
     store.loadSyncConfig(),
@@ -52,6 +55,7 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     transfers,
     statements,
     autoTransfers,
+    regularTransfers,
     comments,
     deletions,
     syncConfig,
@@ -172,6 +176,7 @@ interface AppContext {
 interface StoredState {
   ledger: LedgerData;
   autoTransfers: AutoTransferSetting[];
+  regularTransfers: DashboardData["regularTransfers"];
   syncedAt: number | null;
   lastCollect: CollectReport | null;
 }
@@ -181,23 +186,26 @@ function sameAsShown(app: AppContext, stored: StoredState): boolean {
     stored.syncedAt === app.data.lastSyncedAt &&
     JSON.stringify(stored.ledger) === JSON.stringify(currentLedger(app.data)) &&
     JSON.stringify(stored.autoTransfers) === JSON.stringify(app.data.autoTransfers) &&
+    JSON.stringify(stored.regularTransfers) === JSON.stringify(app.data.regularTransfers) &&
     JSON.stringify(stored.lastCollect) === JSON.stringify(app.data.lastCollect)
   );
 }
 
 async function loadStoredState(store: HistoryStore): Promise<StoredState> {
-  const [ledger, autoTransfers, syncedAt, lastCollect] = await Promise.all([
+  const [ledger, autoTransfers, regularTransfers, syncedAt, lastCollect] = await Promise.all([
     store.loadLedger(),
     store.loadAutoTransfers(),
+    store.loadRegularTransfers(),
     store.loadLastSyncedAt(),
     store.loadLastCollect(),
   ]);
-  return { ledger, autoTransfers, syncedAt, lastCollect };
+  return { ledger, autoTransfers, regularTransfers, syncedAt, lastCollect };
 }
 
 function applyStored(app: AppContext, stored: StoredState): void {
   applyLedger(app.data, stored.ledger);
   app.data.autoTransfers = stored.autoTransfers;
+  app.data.regularTransfers = stored.regularTransfers;
   app.data.lastSyncedAt = stored.syncedAt;
   app.data.lastCollect = stored.lastCollect;
 }
@@ -226,7 +234,13 @@ function watchStorage(app: AppContext): void {
     if (areaName !== "local") {
       return;
     }
-    const watched = [...LEDGER_KEYS, LAST_SYNCED_KEY, AUTO_TRANSFERS_KEY, LAST_COLLECT_KEY];
+    const watched = [
+      ...LEDGER_KEYS,
+      LAST_SYNCED_KEY,
+      AUTO_TRANSFERS_KEY,
+      REGULAR_TRANSFERS_KEY,
+      LAST_COLLECT_KEY,
+    ];
     if (!watched.some((key) => key in changes)) {
       return;
     }

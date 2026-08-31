@@ -1,5 +1,6 @@
 import type { AccountsSnapshot, SubAccount } from "./parser.ts";
 import type { AutoTransferSetting } from "./auto-transfer.ts";
+import type { RegularTransferSetting } from "./regular-transfer.ts";
 import type { StatementEntry } from "./statement.ts";
 
 /**
@@ -195,6 +196,46 @@ function toAutoTransfer(value: unknown): AutoTransferSetting | null {
     to: { id: toId, name: toText(value.creditSpAccountName) ?? "" },
     amount,
   };
+}
+
+/** 契約中を表す contractStatus のコード。2=一時休止 3=強制休止 4=解約 */
+const CONTRACT_ACTIVE = "1";
+
+function toRegularTransfer(value: unknown): RegularTransferSetting | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const id = toText(value.regularlyTransferContractId);
+  const payeeName = toText(value.creditPayeeNameKana);
+  const amount = toAmount(value.transferAmount);
+  if (id === null || payeeName === null || amount === null) {
+    return null;
+  }
+  return {
+    id,
+    payeeName,
+    bankName: toText(value.creditBankName) ?? "",
+    amount,
+    active: toText(value.contractStatus) === CONTRACT_ACTIVE,
+    // グループは任意。付けていない契約でも取り込めるようにする
+    groupName: toText(value.groupName) ?? "",
+  };
+}
+
+/** GET /v1/transfers/regularly-contracts のレスポンス。取れなければnull */
+export function parseRegularTransfers(json: unknown): RegularTransferSetting[] | null {
+  if (!isRecord(json) || !Array.isArray(json.regularlyTransferContractList)) {
+    return null;
+  }
+  const settings: RegularTransferSetting[] = [];
+  for (const item of json.regularlyTransferContractList) {
+    const setting = toRegularTransfer(item);
+    if (setting === null) {
+      return null;
+    }
+    settings.push(setting);
+  }
+  return settings;
 }
 
 /** GET /v1/sp-accounts/auto-transfer のレスポンス。取れなければnull */
