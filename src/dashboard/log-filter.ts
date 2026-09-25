@@ -105,6 +105,7 @@ export function allLogEntries(ctx: RenderContext): LogEntry[] {
     transfers: ctx.ledger.transfers,
     statements: ctx.data.statements,
     placeAt: (valueDate) => statementAt(valueDate, ctx.now()),
+    tranMapping: ctx.data.tranMapping,
   });
 }
 

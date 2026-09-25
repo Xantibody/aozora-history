@@ -5,6 +5,7 @@ import {
   parseRegularTransfers,
   parseSpAccountBalances,
   parseSpAccountStatement,
+  parseTranMappingTypes,
 } from "./api-parser.ts";
 
 describe("parseSpAccountBalances", () => {
@@ -295,5 +296,53 @@ describe("parseRegularTransfers", () => {
     expect(
       parseRegularTransfers({ regularlyTransferContractList: [{ contractStatus: "1" }] }),
     ).toBeNull();
+  });
+});
+
+describe("parseTranMappingTypes", () => {
+  /** 設定画面(つかいわけ口座設定 > 入出金の設定)が読むのと同じ形 */
+  const json = {
+    spAccountList: [
+      { spAccountId: "133331", spAccountName: "01: お財布" },
+      { spAccountId: "133333", spAccountName: "03: 支払い箱" },
+    ],
+    spAccountIdForAtmWithdrawal: "133331",
+    spAccountIdForAtmDeposit: "133331",
+    spAccountIdForDebitWithdrawal: "133331",
+    spAccountIdForSweepDebit: "133331",
+    spAccountIdForDirectDebit: "133333",
+    spAccountIdForFee: "133331",
+    spAccountIdForInterest: "133331",
+    sweepDebitFlag: "1",
+    debitWithdrawalFlag: "1",
+  };
+
+  it("入出金の種類ごとの口座IDを読む", () => {
+    expect(parseTranMappingTypes(json)).toStrictEqual({
+      atmWithdrawal: "133331",
+      atmDeposit: "133331",
+      debitWithdrawal: "133331",
+      directDebit: "133333",
+      sweepDebit: "133331",
+      fee: "133331",
+      interest: "133331",
+    });
+  });
+
+  it("未設定の項目はnull", () => {
+    const partial = Object.fromEntries(
+      Object.entries({ ...json, spAccountIdForFee: "" }).filter(
+        ([key]) => key !== "spAccountIdForSweepDebit",
+      ),
+    );
+
+    expect(parseTranMappingTypes(partial)).toMatchObject({
+      sweepDebit: null,
+      fee: null,
+    });
+  });
+
+  it("形が違えばnull", () => {
+    expect(parseTranMappingTypes({ spAccountIdForAtmWithdrawal: "133331" })).toBeNull();
   });
 });

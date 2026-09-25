@@ -1735,6 +1735,55 @@ describe("代表口座の明細をログに統合する", () => {
     );
   });
 
+  it("口座別明細と対になった明細には、その口座の取引前と取引後の残高を出す", () => {
+    const withdrawal = {
+      entryNumber: "0001",
+      valueDate: "2026-07-16",
+      amount: -20_000,
+      balance: 480_000,
+      remark: "ATM セブン銀行",
+    };
+    const pair = { ...withdrawal, entryNumber: "7", balance: 100_000, accountId: "133331" };
+
+    render(root, data({ transfers: [], statements: [withdrawal, pair] }));
+
+    const row = [...root.querySelectorAll(".log .log-row")].find((node) =>
+      node.textContent?.includes("ATM セブン銀行"),
+    )!;
+    expect(row.querySelector(".balance-line")!.textContent).toBe(
+      "残高 01: お財布 120,000 → 100,000円",
+    );
+  });
+
+  it("振替には出金側と入金側の両方の残高を出す", () => {
+    const transfer = {
+      transferredAt: new Date(2026, 6, 16, 10, 0).getTime(),
+      from: { id: "133331", name: "01: お財布" },
+      to: { id: "133332", name: "02: 積立" },
+      amount: 5000,
+    };
+    const line = { entryNumber: "1", valueDate: "2026-07-16", remark: "ﾌﾘｶｴ" };
+    const accountLines = [
+      { ...line, amount: -5000, balance: 115_000, accountId: "133331" },
+      { ...line, amount: 5000, balance: 55_000, accountId: "133332" },
+    ];
+
+    render(root, data({ transfers: [transfer], statements: accountLines }));
+
+    const row = [...root.querySelectorAll(".log .log-row")].find(
+      (node) => node.querySelector(".balance-line") !== null,
+    )!;
+    expect(row.querySelector(".balance-line")!.textContent).toBe(
+      "残高 01: お財布 120,000 → 115,000円 · 02: 積立 50,000 → 55,000円",
+    );
+  });
+
+  it("残高の分からない行には残高を出さない", () => {
+    open();
+
+    expect(root.querySelectorAll(".log .balance-line")).toHaveLength(0);
+  });
+
   it("代表口座は口座色を割り当てず灰色で示す", () => {
     open();
 

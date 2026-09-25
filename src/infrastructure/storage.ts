@@ -7,6 +7,7 @@ import type { LedgerData } from "../domain/merge.ts";
 import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "./r2sync.ts";
+import type { TranMapping } from "../domain/tran-mapping.ts";
 import { mergeStatements } from "../domain/statement.ts";
 import { transferCommentKey } from "../domain/comments.ts";
 
@@ -30,6 +31,8 @@ const SYNC_CONFIG_KEY = "syncConfig";
 export const AUTO_TRANSFERS_KEY = "autoTransferSettings";
 /** 定額自動振込の契約。定額自動振替と同じ理由でLEDGER_KEYSに含めない */
 export const REGULAR_TRANSFERS_KEY = "regularTransferSettings";
+/** つかいわけ口座の入出金の設定。定額自動振替と同じ理由でLEDGER_KEYSに含めない */
+const TRAN_MAPPING_KEY = "tranMappingSettings";
 /** 設定画面にデバッグ欄を出すかどうか。既定は出さない */
 const DEBUG_MODE_KEY = "debugMode";
 /** 画面の明暗。端末ごとの見え方の設定なのでLEDGER_KEYSに含めない(同期しない) */
@@ -147,6 +150,22 @@ export class HistoryStore {
       return false;
     }
     await this.storage.set({ [REGULAR_TRANSFERS_KEY]: settings });
+    return true;
+  }
+
+  /** 一度も取り込めていなければnull */
+  public async loadTranMapping(): Promise<TranMapping | null> {
+    const items = await this.storage.get(TRAN_MAPPING_KEY);
+    return (items[TRAN_MAPPING_KEY] as TranMapping | undefined) ?? null;
+  }
+
+  /** 設定は滅多に変わらないため、変わっていなければ書き込まない。保存したかどうかを返す */
+  public async recordTranMapping(mapping: TranMapping): Promise<boolean> {
+    const existing = await this.loadTranMapping();
+    if (JSON.stringify(mapping) === JSON.stringify(existing)) {
+      return false;
+    }
+    await this.storage.set({ [TRAN_MAPPING_KEY]: mapping });
     return true;
   }
 

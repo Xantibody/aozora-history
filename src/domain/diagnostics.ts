@@ -26,6 +26,8 @@ export interface CollectReport {
   autoTransfers: CollectStat;
   /** 定額自動振込の契約。この項目が無い古い記録もあるため任意にする */
   regularTransfers?: CollectStat;
+  /** つかいわけ口座の入出金の設定。同じくこの項目が無い古い記録もある */
+  tranMapping?: CollectStat;
   /** storageに入れるため、例外はメッセージだけにする */
   errors: string[];
 }

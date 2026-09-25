@@ -28,6 +28,7 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     statements,
     autoTransfers,
     regularTransfers,
+    tranMapping,
     comments,
     deletions,
     syncConfig,
@@ -41,6 +42,7 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     store.loadStatements(),
     store.loadAutoTransfers(),
     store.loadRegularTransfers(),
+    store.loadTranMapping(),
     store.loadComments(),
     store.loadDeletions(),
     store.loadSyncConfig(),
@@ -55,6 +57,7 @@ async function loadDashboardData(store: HistoryStore): Promise<DashboardData> {
     statements,
     autoTransfers,
     regularTransfers,
+    tranMapping,
     comments,
     deletions,
     syncConfig,
@@ -178,6 +181,7 @@ interface StoredState {
   ledger: LedgerData;
   autoTransfers: DashboardData["autoTransfers"];
   regularTransfers: DashboardData["regularTransfers"];
+  tranMapping: DashboardData["tranMapping"];
   syncedAt: number | null;
   lastCollect: DashboardData["lastCollect"];
 }
@@ -188,25 +192,29 @@ function sameAsShown(app: AppContext, stored: StoredState): boolean {
     JSON.stringify(stored.ledger) === JSON.stringify(currentLedger(app.data)) &&
     JSON.stringify(stored.autoTransfers) === JSON.stringify(app.data.autoTransfers) &&
     JSON.stringify(stored.regularTransfers) === JSON.stringify(app.data.regularTransfers) &&
+    JSON.stringify(stored.tranMapping) === JSON.stringify(app.data.tranMapping) &&
     JSON.stringify(stored.lastCollect) === JSON.stringify(app.data.lastCollect)
   );
 }
 
 async function loadStoredState(store: HistoryStore): Promise<StoredState> {
-  const [ledger, autoTransfers, regularTransfers, syncedAt, lastCollect] = await Promise.all([
-    store.loadLedger(),
-    store.loadAutoTransfers(),
-    store.loadRegularTransfers(),
-    store.loadLastSyncedAt(),
-    store.loadLastCollect(),
-  ]);
-  return { ledger, autoTransfers, regularTransfers, syncedAt, lastCollect };
+  const [ledger, autoTransfers, regularTransfers, tranMapping, syncedAt, lastCollect] =
+    await Promise.all([
+      store.loadLedger(),
+      store.loadAutoTransfers(),
+      store.loadRegularTransfers(),
+      store.loadTranMapping(),
+      store.loadLastSyncedAt(),
+      store.loadLastCollect(),
+    ]);
+  return { ledger, autoTransfers, regularTransfers, tranMapping, syncedAt, lastCollect };
 }
 
 function applyStored(app: AppContext, stored: StoredState): void {
   applyLedger(app.data, stored.ledger);
   app.data.autoTransfers = stored.autoTransfers;
   app.data.regularTransfers = stored.regularTransfers;
+  app.data.tranMapping = stored.tranMapping;
   app.data.lastSyncedAt = stored.syncedAt;
   app.data.lastCollect = stored.lastCollect;
 }
