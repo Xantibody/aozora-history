@@ -6,6 +6,7 @@ import { HistoryStore } from "./storage.ts";
 import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { StorageArea } from "./storage.ts";
+import type { TranMapping } from "../domain/tran-mapping.ts";
 
 function fakeStorage(): StorageArea {
   const data = new Map<string, unknown>();
@@ -67,6 +68,16 @@ const regularTransfers: RegularTransferSetting[] = [
   },
 ];
 
+const tranMapping: TranMapping = {
+  atmWithdrawal: "133331",
+  atmDeposit: "133331",
+  debitWithdrawal: "133331",
+  directDebit: "133805",
+  sweepDebit: "133331",
+  fee: "133331",
+  interest: "133331",
+};
+
 /** 成否を差し替えられる最小のAPIクライアント */
 function fakeClient(overrides: Partial<BankApiClient> = {}): BankApiClient {
   return {
@@ -75,6 +86,7 @@ function fakeClient(overrides: Partial<BankApiClient> = {}): BankApiClient {
     spAccountStatement: () => Promise.resolve(accountStatements),
     autoTransfers: () => Promise.resolve(autoTransfers),
     regularTransfers: () => Promise.resolve(regularTransfers),
+    tranMapping: () => Promise.resolve(tranMapping),
     ...overrides,
   } as BankApiClient;
 }
@@ -110,6 +122,7 @@ describe("collectFromBank", () => {
       accountStatements: { count: 1, saved: true },
       autoTransfers: { count: 1, saved: true },
       regularTransfers: { count: 1, saved: true },
+      tranMapping: { count: 1, saved: true },
       errors: [],
     });
     await expect(store.loadSnapshots()).resolves.toStrictEqual([{ takenAt: 42, ...snapshot }]);
@@ -119,6 +132,26 @@ describe("collectFromBank", () => {
     ]);
     await expect(store.loadAutoTransfers()).resolves.toStrictEqual(autoTransfers);
     await expect(store.loadRegularTransfers()).resolves.toStrictEqual(regularTransfers);
+  });
+
+  it("入出金の設定も記録する", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 42);
+
+    const result = await collectFromBank(store, fakeClient(), () => 42);
+
+    expect(result.tranMapping).toStrictEqual({ count: 1, saved: true });
+    await expect(store.loadTranMapping()).resolves.toStrictEqual(tranMapping);
+  });
+
+  it("入出金の設定が取れなくても、他の記録は残す", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 42);
+    const client = fakeClient({ tranMapping: () => Promise.reject(new Error("HTTP 404")) });
+
+    const result = await collectFromBank(store, client, () => 42);
+
+    expect(result.tranMapping).toStrictEqual({ count: null, saved: false });
+    expect(result.balances.saved).toBe(true);
+    expect(result.errors).toHaveLength(1);
   });
 
   // 定額自動振込だけが取れなくても、残りは今までどおり記録できる

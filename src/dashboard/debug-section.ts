@@ -49,6 +49,7 @@ function statRows(report: CollectReport): HTMLElement[] {
     ...(report.regularTransfers === undefined
       ? []
       : [statRow("定額自動振込の契約", report.regularTransfers)]),
+    ...(report.tranMapping === undefined ? [] : [statRow("入出金の設定", report.tranMapping)]),
     ...report.errors.map((message) => errorBlock(message)),
   ];
 }

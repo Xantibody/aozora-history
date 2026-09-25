@@ -47,6 +47,8 @@ export interface CollectResult {
   accountStatements: Collected;
   autoTransfers: Collected;
   regularTransfers: Collected;
+  /** 入出金の設定。1件の設定なので、取れればcountは1 */
+  tranMapping: Collected;
   /** 一部だけ失敗することがあるため、起きたエラーはまとめて返す */
   errors: unknown[];
 }
@@ -84,6 +86,11 @@ async function collectRegularTransfers(
 ): Promise<Collected> {
   const parsed = await client.regularTransfers();
   return { count: parsed.length, saved: await store.recordRegularTransfers(parsed) };
+}
+
+async function collectTranMapping(store: HistoryStore, client: BankApiClient): Promise<Collected> {
+  const parsed = await client.tranMapping();
+  return { count: 1, saved: await store.recordTranMapping(parsed) };
 }
 
 function addCount(left: number | null, right: number | null): number | null {
@@ -146,7 +153,7 @@ function reasonsOf(results: PromiseSettledResult<unknown>[]): unknown[] {
 }
 
 /**
- * ログイン済みのタブと同じセッションで残高・明細・定額自動振替の設定を取り込む。
+ * ログイン済みのタブと同じセッションで残高・明細・定額自動振替や入出金の設定を取り込む。
  * それぞれ独立して取りに行き、1つが失敗しても他は記録する
  */
 export async function collectFromBank(
@@ -163,18 +170,21 @@ export async function collectFromBank(
       accountStatements: NOT_FETCHED,
       autoTransfers: NOT_FETCHED,
       regularTransfers: NOT_FETCHED,
+      tranMapping: NOT_FETCHED,
       errors: [],
     };
   }
   // 未ログインのページで何度も問い合わせに行かないよう、成否によらず先に印を付ける
   await store.markCollected();
 
-  const [balances, statements, autoTransfers, regularTransfers] = await Promise.allSettled([
-    collectBalances(store, client, now),
-    collectStatements(store, client),
-    collectAutoTransfers(store, client),
-    collectRegularTransfers(store, client),
-  ]);
+  const [balances, statements, autoTransfers, regularTransfers, tranMapping] =
+    await Promise.allSettled([
+      collectBalances(store, client, now),
+      collectStatements(store, client),
+      collectAutoTransfers(store, client),
+      collectRegularTransfers(store, client),
+      collectTranMapping(store, client),
+    ]);
   // 口座別明細は口座一覧が要るため、残高が取れてから
   const accountStatements = await collectAccountStatements(
     store,
@@ -189,8 +199,9 @@ export async function collectFromBank(
     accountStatements: onlyCollected(accountStatements),
     autoTransfers: settled(autoTransfers),
     regularTransfers: settled(regularTransfers),
+    tranMapping: settled(tranMapping),
     errors: [
-      ...reasonsOf([balances, statements, autoTransfers, regularTransfers]),
+      ...reasonsOf([balances, statements, autoTransfers, regularTransfers, tranMapping]),
       ...accountStatements.errors,
     ],
   };

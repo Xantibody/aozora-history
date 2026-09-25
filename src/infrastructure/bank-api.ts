@@ -4,11 +4,13 @@ import {
   parseRegularTransfers,
   parseSpAccountBalances,
   parseSpAccountStatement,
+  parseTranMappingTypes,
 } from "../domain/api-parser.ts";
 import type { AccountsSnapshot } from "../domain/parser.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
+import type { TranMapping } from "../domain/tran-mapping.ts";
 import { describeJson } from "../domain/diagnostics.ts";
 
 const BANK_ORIGIN = "https://bank.gmo-aozora.com";
@@ -174,6 +176,20 @@ export class BankApiClient {
     const path = "transfers/regularly-contracts";
     const json = await this.get(path);
     const parsed = parseRegularTransfers(json);
+    if (parsed === null) {
+      throw BankApiClient.unexpected(path, json);
+    }
+    return parsed;
+  }
+
+  /**
+   * つかいわけ口座の入出金の設定(ATM・デビット・口座振替などをどの口座で受けるか)。
+   * 画面「つかいわけ口座設定」が開いたときに読むものと同じで、パラメータは無い
+   */
+  public async tranMapping(): Promise<TranMapping> {
+    const path = "sp-accounts/tran-mapping-types";
+    const json = await this.get(path);
+    const parsed = parseTranMappingTypes(json);
     if (parsed === null) {
       throw BankApiClient.unexpected(path, json);
     }

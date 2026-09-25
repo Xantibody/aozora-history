@@ -2,6 +2,7 @@ import type { AccountsSnapshot, SubAccount } from "./parser.ts";
 import type { AutoTransferSetting } from "./auto-transfer.ts";
 import type { RegularTransferSetting } from "./regular-transfer.ts";
 import type { StatementEntry } from "./statement.ts";
+import type { TranMapping } from "./tran-mapping.ts";
 
 /**
  * 銀行サイトが内部で使っているJSON API のレスポンスを、この拡張の記録に変換する。
@@ -252,4 +253,29 @@ export function parseAutoTransfers(json: unknown): AutoTransferSetting[] | null 
     settings.push(setting);
   }
   return settings;
+}
+
+/** 振り分け先の口座ID。未設定は空文字で返りうるので、無いものとして扱う */
+function toAccountId(value: unknown): string | null {
+  const id = toText(value);
+  return id === null || id === "" ? null : id;
+}
+
+/**
+ * GET /v1/sp-accounts/tran-mapping-types のレスポンス。取れなければnull。
+ * 口座の一覧が付いてこなければ、別の形のレスポンスとみなす
+ */
+export function parseTranMappingTypes(json: unknown): TranMapping | null {
+  if (!isRecord(json) || !Array.isArray(json.spAccountList)) {
+    return null;
+  }
+  return {
+    atmWithdrawal: toAccountId(json.spAccountIdForAtmWithdrawal),
+    atmDeposit: toAccountId(json.spAccountIdForAtmDeposit),
+    debitWithdrawal: toAccountId(json.spAccountIdForDebitWithdrawal),
+    directDebit: toAccountId(json.spAccountIdForDirectDebit),
+    sweepDebit: toAccountId(json.spAccountIdForSweepDebit),
+    fee: toAccountId(json.spAccountIdForFee),
+    interest: toAccountId(json.spAccountIdForInterest),
+  };
 }
