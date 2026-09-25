@@ -36,7 +36,10 @@ const logRank = (entry: LogEntry): number => (entry.kind === "snapshot" ? 1 : 0)
 export interface LogInput {
   snapshots: BalanceSnapshot[];
   transfers: TransferRecord[];
-  /** 代表口座の明細。つかいわけ口座の明細は外部入出金の摘要に使うので入れない */
+  /**
+   * 取り込んだ明細すべて。行として並べるのは代表口座の明細だけで、
+   * つかいわけ口座の明細は代表口座の明細がどの口座の動きかを読むのに使う
+   */
   statements: StatementEntry[];
   /** 明細は起算日しか持たないため、その日のどの時刻に置くかは呼び出し側が決める */
   placeAt: (valueDate: string) => number | null;
@@ -52,14 +55,61 @@ interface PlacedStatement {
   statement: StatementEntry;
   at: number;
   account?: StatementScope;
+  /** 残高変動のどれかを説明済みか。口座が先に分かっていても、残高変動との対応は別に持つ */
+  bound: boolean;
+}
+
+/** 口座IDから口座名を引く。名前は変えられるので、新しいスナップショットのものを採る */
+function accountNames(snapshots: BalanceSnapshot[]): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const snapshot of snapshots.toSorted((left, right) => left.takenAt - right.takenAt)) {
+    for (const account of snapshot.accounts) {
+      names.set(account.id, account.name);
+    }
+  }
+  return names;
+}
+
+/** 口座別明細が指す口座がちょうど1つなら、その口座ID */
+function soleAccount(statements: StatementEntry[]): string | null {
+  const accounts = new Set(statements.flatMap((line) => line.accountId ?? []));
+  const [accountId] = accounts;
+  return accounts.size === 1 && accountId !== undefined ? accountId : null;
+}
+
+/**
+ * 代表口座の明細と同じ出来事を記録した、つかいわけ口座の明細の口座。
+ *
+ * 代表口座の残高はつかいわけ口座の合計なので、代表口座の明細1件には必ず
+ * どれかの口座の明細が同じ日・同じ金額で対になる。残高変動との突き合わせと違い、
+ * スナップショットの間隔に左右されない。
+ *
+ * 同じ日・同じ金額が複数の口座にあれば摘要の一致で絞る。それでも口座が
+ * 1つに決まらなければ付けない(推測で別の口座の動きにしない)
+ */
+function scopeFromAccountStatements(
+  statement: StatementEntry,
+  statements: StatementEntry[],
+  names: Map<string, string>,
+): StatementScope | undefined {
+  const pairs = statements.filter(
+    (line) => line.valueDate === statement.valueDate && line.amount === statement.amount,
+  );
+  const sameRemark = pairs.filter((line) => line.remark === statement.remark);
+  const accountId = soleAccount(pairs) ?? soleAccount(sameRemark);
+  return accountId === null
+    ? undefined
+    : { accountId, accountName: names.get(accountId) ?? accountId };
 }
 
 function placeStatements(input: LogInput): PlacedStatement[] {
+  const names = accountNames(input.snapshots);
   const placed: PlacedStatement[] = [];
   for (const statement of primaryStatements(input.statements)) {
     const at = input.placeAt(statement.valueDate);
     if (at !== null) {
-      placed.push({ statement, at });
+      const account = scopeFromAccountStatements(statement, input.statements, names);
+      placed.push({ statement, at, account, bound: false });
     }
   }
   return placed;
@@ -69,6 +119,7 @@ const sameSign = (left: number, right: number): boolean => left > 0 === right > 
 
 /**
  * その残高変動の区間にあって、まだどの残高変動にも結び付いていない明細。
+ * 口座別明細で口座が分かっている明細は、その口座の残高変動にだけ結び付ける。
  *
  * 見るのは置いた時刻ではなく起算日。並びを整えるために日の終わりへ寄せても、
  * どの残高変動を説明する明細かという読みは変わらないため
@@ -76,7 +127,8 @@ const sameSign = (left: number, right: number): boolean => left > 0 === right > 
 function freeLines(placed: PlacedStatement[], change: BalanceChange): PlacedStatement[] {
   return placed.filter(
     (line) =>
-      line.account === undefined &&
+      !line.bound &&
+      (line.account === undefined || line.account.accountId === change.accountId) &&
       startOfDay(line.at) >= startOfDay(change.fromTakenAt) &&
       startOfDay(line.at) <= change.toTakenAt,
   );
@@ -121,7 +173,8 @@ function foldExplained(changes: BalanceChange[], placed: PlacedStatement[]): Set
     for (const change of changes.filter((candidate) => !folded.has(candidate))) {
       const lines = match(placed, change);
       for (const line of lines) {
-        line.account = { accountId: change.accountId, accountName: change.accountName };
+        line.account ??= { accountId: change.accountId, accountName: change.accountName };
+        line.bound = true;
       }
       if (lines.length > 0) {
         folded.add(change);

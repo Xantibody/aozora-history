@@ -45,6 +45,10 @@ const atmWithdrawal: StatementEntry = {
   remark: "ATM セブン銀行",
 };
 
+function scoped(statement: StatementEntry, accountId: string): StatementEntry {
+  return { ...statement, accountId };
+}
+
 function entries(statements: StatementEntry[]): LogEntry[] {
   return logEntries({ snapshots, transfers: [], statements, placeAt: dayStart });
 }
@@ -168,6 +172,74 @@ describe("logEntries", () => {
     });
 
     expect(kinds(log)).toStrictEqual(["statement"]);
+  });
+
+  describe("口座別明細との照合", () => {
+    /** 残高変動を作らない台帳。スナップショットの差分からは口座を補えない */
+    const single: BalanceSnapshot[] = [
+      {
+        takenAt: new Date(2026, 6, 16, 9, 0).getTime(),
+        updatedAt: null,
+        accounts: [
+          { id: "133331", name: "01: お財布", balance: 120_000 },
+          { id: "133332", name: "02: 積立", balance: 50_000 },
+        ],
+      },
+    ];
+
+    function scopesOf(statements: StatementEntry[]): StatementLine["account"][] {
+      const log = logEntries({ snapshots: single, transfers: [], statements, placeAt: dayStart });
+      return statementLines(log).map((line) => line.account);
+    }
+
+    it("同じ日・同じ金額の口座別明細が1件あれば、その口座の動きとして読む", () => {
+      const statements = [atmWithdrawal, scoped({ ...atmWithdrawal, entryNumber: "3" }, "133332")];
+
+      expect(scopesOf(statements)).toStrictEqual([
+        { accountId: "133332", accountName: "02: 積立" },
+      ]);
+    });
+
+    it("同じ日・同じ金額が複数の口座にあれば、摘要が同じ方を採る", () => {
+      const statements = [
+        atmWithdrawal,
+        scoped({ ...atmWithdrawal, entryNumber: "3", remark: "カード引落" }, "133331"),
+        scoped({ ...atmWithdrawal, entryNumber: "4" }, "133332"),
+      ];
+
+      expect(scopesOf(statements)).toStrictEqual([
+        { accountId: "133332", accountName: "02: 積立" },
+      ]);
+    });
+
+    it("摘要でも絞れなければ口座を付けない(どちらの金か決められない)", () => {
+      const statements = [
+        atmWithdrawal,
+        scoped({ ...atmWithdrawal, entryNumber: "3" }, "133331"),
+        scoped({ ...atmWithdrawal, entryNumber: "4" }, "133332"),
+      ];
+
+      expect(scopesOf(statements)).toStrictEqual([undefined]);
+    });
+
+    it("同じ口座で同じ日・同じ金額が重なっても、その口座の動きとして読む", () => {
+      const second = { ...atmWithdrawal, entryNumber: "0002", balance: 80_000 };
+      const statements = [
+        atmWithdrawal,
+        second,
+        scoped({ ...atmWithdrawal, entryNumber: "3" }, "133332"),
+        scoped({ ...second, entryNumber: "4" }, "133332"),
+      ];
+      const scope = { accountId: "133332", accountName: "02: 積立" };
+
+      expect(scopesOf(statements)).toStrictEqual([scope, scope]);
+    });
+
+    it("口座別明細で口座が付いた明細も、その口座の残高変動と二重に並べない", () => {
+      const statements = [atmWithdrawal, scoped({ ...atmWithdrawal, entryNumber: "3" }, "133331")];
+
+      expect(kinds(entries(statements))).toStrictEqual(["statement"]);
+    });
   });
 
   it("残高変動で説明できない明細は残す(取り込みの穴を隠さない)", () => {
