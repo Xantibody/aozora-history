@@ -5,6 +5,7 @@ import type { Comments } from "../domain/comments.ts";
 import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "../infrastructure/r2sync.ts";
+import type { TranMapping } from "../domain/tran-mapping.ts";
 
 /**
  * 画面に出す記録一式と、画面からの操作の受け口。
@@ -22,6 +23,8 @@ export interface DashboardData {
   autoTransfers: AutoTransferSetting[];
   /** 外部の口座への定額自動振込の契約。銀行APIから取得したもの */
   regularTransfers: RegularTransferSetting[];
+  /** つかいわけ口座の入出金の設定。まだ一度も取り込めていなければnull */
+  tranMapping: TranMapping | null;
   comments: Comments;
   deletions: Record<string, number>;
   syncConfig: SyncConfig | null;

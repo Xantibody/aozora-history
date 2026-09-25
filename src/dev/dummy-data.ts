@@ -30,6 +30,8 @@ export interface DummyData {
   ledger: LedgerData;
   autoTransfers: AutoTransferSetting[];
   regularTransfers: RegularTransferSetting[];
+  /** 型は定数から取る(このファイルは依存の数が上限に来ている) */
+  tranMapping: typeof TRAN_MAPPING | null;
   syncConfig: SyncConfig | null;
   lastCollect: CollectReport;
   debugMode: boolean;
@@ -73,6 +75,17 @@ const REGULAR_TRANSFER: RegularTransferSetting = {
   amount: 95_000,
   active: true,
   groupName: "家賃",
+};
+
+/** 入出金の設定。口座振替(下の電気料金など)だけ生活費で受け、他はお財布 */
+const TRAN_MAPPING = {
+  atmWithdrawal: WALLET.id,
+  atmDeposit: WALLET.id,
+  debitWithdrawal: WALLET.id,
+  directDebit: LIVING.id,
+  sweepDebit: WALLET.id,
+  fee: WALLET.id,
+  interest: WALLET.id,
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -532,6 +545,7 @@ export function dummyData(scenario: Scenario, now: number): DummyData {
     },
     autoTransfers: empty ? [] : [AUTO_TRANSFER],
     regularTransfers: empty ? [] : [REGULAR_TRANSFER],
+    tranMapping: empty ? null : TRAN_MAPPING,
     syncConfig: empty ? null : SYNC_CONFIG,
     lastCollect: collectReport(now, statements.length),
     debugMode: true,

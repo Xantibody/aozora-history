@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BalanceSnapshot } from "./ledger.ts";
 import type { LogEntry } from "./log.ts";
 import type { StatementEntry } from "./statement.ts";
+import type { TranMapping } from "./tran-mapping.ts";
 import { logEntries } from "./log.ts";
 
 /** "yyyy-MM-dd" をローカル0時に。ダッシュボードが渡しているものと同じ役 */
@@ -37,12 +38,43 @@ const snapshots: BalanceSnapshot[] = [
   },
 ];
 
+/** 同じ区間に2つの口座がどちらも20,000円ずつ減った台帳 */
+const twoAccounts: BalanceSnapshot[] = [
+  {
+    takenAt: new Date(2026, 6, 16, 9, 0).getTime(),
+    updatedAt: null,
+    accounts: [
+      { id: "133331", name: "01: お財布", balance: 120_000 },
+      { id: "133332", name: "02: 積立", balance: 50_000 },
+    ],
+  },
+  {
+    takenAt: new Date(2026, 6, 16, 21, 0).getTime(),
+    updatedAt: null,
+    accounts: [
+      { id: "133331", name: "01: お財布", balance: 100_000 },
+      { id: "133332", name: "02: 積立", balance: 30_000 },
+    ],
+  },
+];
+
 const atmWithdrawal: StatementEntry = {
   entryNumber: "0001",
   valueDate: "2026-07-16",
   amount: -20_000,
   balance: 100_000,
   remark: "ATM セブン銀行",
+};
+
+/** どの入出金も振り分けていない設定。テストごとに1項目だけ埋めて使う */
+const noMapping: TranMapping = {
+  atmWithdrawal: null,
+  atmDeposit: null,
+  debitWithdrawal: null,
+  directDebit: null,
+  sweepDebit: null,
+  fee: null,
+  interest: null,
 };
 
 function scoped(statement: StatementEntry, accountId: string): StatementEntry {
@@ -106,24 +138,6 @@ describe("logEntries", () => {
   });
 
   it("複数口座の動きが同じ区間に重なったら畳まない(どちらの金か決められない)", () => {
-    const twoAccounts: BalanceSnapshot[] = [
-      {
-        takenAt: new Date(2026, 6, 16, 9, 0).getTime(),
-        updatedAt: null,
-        accounts: [
-          { id: "133331", name: "01: お財布", balance: 120_000 },
-          { id: "133332", name: "02: 積立", balance: 50_000 },
-        ],
-      },
-      {
-        takenAt: new Date(2026, 6, 16, 21, 0).getTime(),
-        updatedAt: null,
-        accounts: [
-          { id: "133331", name: "01: お財布", balance: 100_000 },
-          { id: "133332", name: "02: 積立", balance: 30_000 },
-        ],
-      },
-    ];
     // 同額の出金が2件。どの明細がどちらの口座のものかは読み取れない
     const statements: StatementEntry[] = [
       atmWithdrawal,
@@ -139,6 +153,27 @@ describe("logEntries", () => {
 
     expect(kinds(log).filter((kind) => kind === "external")).toHaveLength(2);
     expect(kinds(log).filter((kind) => kind === "statement")).toHaveLength(2);
+  });
+
+  it("重なっても、入出金の設定で口座が分かれる明細なら設定の口座の残高変動と畳む", () => {
+    // ATM出金はお財布、口座振替は積立から出る設定。どちらの残高変動も20,000円減
+    const directDebit = { ...atmWithdrawal, entryNumber: "0002", remark: "ﾗｸﾃﾝｶ-ﾄﾞｻ-ﾋﾞｽ" };
+
+    const log = logEntries({
+      snapshots: twoAccounts,
+      transfers: [],
+      statements: [atmWithdrawal, directDebit],
+      placeAt: dayStart,
+      tranMapping: { ...noMapping, atmWithdrawal: "133331", directDebit: "133332" },
+    });
+
+    expect(
+      statementLines(log).map((line) => [line.statement.remark, line.account?.accountId]),
+    ).toStrictEqual([
+      ["ATM セブン銀行", "133331"],
+      ["ﾗｸﾃﾝｶ-ﾄﾞｻ-ﾋﾞｽ", "133332"],
+    ]);
+    expect(kinds(log)).not.toContain("external");
   });
 
   it("日の終わりに置いた明細は、同じ日の振替より新しい順で先に並ぶ", () => {
@@ -187,8 +222,17 @@ describe("logEntries", () => {
       },
     ];
 
-    function scopesOf(statements: StatementEntry[]): StatementLine["account"][] {
-      const log = logEntries({ snapshots: single, transfers: [], statements, placeAt: dayStart });
+    function scopesOf(
+      statements: StatementEntry[],
+      tranMapping: TranMapping | null = null,
+    ): StatementLine["account"][] {
+      const log = logEntries({
+        snapshots: single,
+        transfers: [],
+        statements,
+        placeAt: dayStart,
+        tranMapping,
+      });
       return statementLines(log).map((line) => line.account);
     }
 
@@ -220,6 +264,31 @@ describe("logEntries", () => {
       ];
 
       expect(scopesOf(statements)).toStrictEqual([undefined]);
+    });
+
+    it("絞れないときは、入出金の設定が指す口座が候補にあればそれを採る", () => {
+      const statements = [
+        atmWithdrawal,
+        scoped({ ...atmWithdrawal, entryNumber: "3" }, "133331"),
+        scoped({ ...atmWithdrawal, entryNumber: "4" }, "133332"),
+      ];
+
+      expect(scopesOf(statements, { ...noMapping, atmWithdrawal: "133332" })).toStrictEqual([
+        { accountId: "133332", accountName: "02: 積立" },
+      ]);
+    });
+
+    it("設定が指す口座に口座別明細の裏付けが無ければ、設定だけでは付けない", () => {
+      // 設定は今のものしか取れない。明細の日には別の口座に向いていたかもしれない
+      const statements = [
+        atmWithdrawal,
+        scoped({ ...atmWithdrawal, entryNumber: "3" }, "133331"),
+        scoped({ ...atmWithdrawal, entryNumber: "4" }, "133332"),
+      ];
+
+      expect(scopesOf(statements, { ...noMapping, atmWithdrawal: "133333" })).toStrictEqual([
+        undefined,
+      ]);
     });
 
     it("同じ口座で同じ日・同じ金額が重なっても、その口座の動きとして読む", () => {

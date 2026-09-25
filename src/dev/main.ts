@@ -19,6 +19,9 @@ async function seed(fake: FakeBrowser, data: DummyData): Promise<void> {
   await store.replaceLedger(data.ledger);
   await store.recordAutoTransfers(data.autoTransfers);
   await store.recordRegularTransfers(data.regularTransfers);
+  if (data.tranMapping !== null) {
+    await store.recordTranMapping(data.tranMapping);
+  }
   await store.recordLastCollect(data.lastCollect);
   await store.saveDebugMode(data.debugMode);
   if (data.syncConfig !== null) {

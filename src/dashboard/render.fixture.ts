@@ -159,6 +159,7 @@ export function data(overrides: Partial<DashboardData> = {}): DashboardData {
     statements: [],
     autoTransfers: [],
     regularTransfers: [],
+    tranMapping: null,
     comments: {},
     deletions: {},
     syncConfig: null,

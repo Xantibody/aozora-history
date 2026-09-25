@@ -1,6 +1,8 @@
 import type { BalanceChange, BalanceSnapshot, TransferRecord } from "./ledger.ts";
 import type { StatementEntry } from "./statement.ts";
+import type { TranMapping } from "./tran-mapping.ts";
 import { detectBalanceChanges } from "./ledger.ts";
+import { mappedAccount } from "./tran-mapping.ts";
 import { primaryStatements } from "./statement.ts";
 
 /** その明細を、どのつかいわけ口座の動きとして読むか */
@@ -43,6 +45,8 @@ export interface LogInput {
   statements: StatementEntry[];
   /** 明細は起算日しか持たないため、その日のどの時刻に置くかは呼び出し側が決める */
   placeAt: (valueDate: string) => number | null;
+  /** つかいわけ口座の入出金の設定。取り込めていなければ無い */
+  tranMapping?: TranMapping | null;
 }
 
 /** 起算日は日単位なので、区間の始まりもその日の0時まで広げて見る */
@@ -57,6 +61,8 @@ interface PlacedStatement {
   account?: StatementScope;
   /** 残高変動のどれかを説明済みか。口座が先に分かっていても、残高変動との対応は別に持つ */
   bound: boolean;
+  /** 入出金の設定のとおりなら受けたはずの口座。決め手にだけ使う */
+  mapped: string | null;
 }
 
 /** 口座IDから口座名を引く。名前は変えられるので、新しいスナップショットのものを採る */
@@ -84,22 +90,21 @@ function soleAccount(statements: StatementEntry[]): string | null {
  * どれかの口座の明細が同じ日・同じ金額で対になる。残高変動との突き合わせと違い、
  * スナップショットの間隔に左右されない。
  *
- * 同じ日・同じ金額が複数の口座にあれば摘要の一致で絞る。それでも口座が
- * 1つに決まらなければ付けない(推測で別の口座の動きにしない)
+ * 同じ日・同じ金額が複数の口座にあれば摘要の一致で絞る。それでも決まらなければ、
+ * 入出金の設定が指す口座がその中にあるときだけそれを採る。設定は今のものしか
+ * 取れないため、口座別明細に裏付けの無い口座は採らない(推測で別の口座の動きにしない)
  */
-function scopeFromAccountStatements(
+function accountFromStatements(
   statement: StatementEntry,
   statements: StatementEntry[],
-  names: Map<string, string>,
-): StatementScope | undefined {
+  mapped: string | null,
+): string | null {
   const pairs = statements.filter(
     (line) => line.valueDate === statement.valueDate && line.amount === statement.amount,
   );
   const sameRemark = pairs.filter((line) => line.remark === statement.remark);
-  const accountId = soleAccount(pairs) ?? soleAccount(sameRemark);
-  return accountId === null
-    ? undefined
-    : { accountId, accountName: names.get(accountId) ?? accountId };
+  const confirmed = pairs.some((line) => line.accountId === mapped) ? mapped : null;
+  return soleAccount(pairs) ?? soleAccount(sameRemark) ?? confirmed;
 }
 
 function placeStatements(input: LogInput): PlacedStatement[] {
@@ -108,8 +113,16 @@ function placeStatements(input: LogInput): PlacedStatement[] {
   for (const statement of primaryStatements(input.statements)) {
     const at = input.placeAt(statement.valueDate);
     if (at !== null) {
-      const account = scopeFromAccountStatements(statement, input.statements, names);
-      placed.push({ statement, at, account, bound: false });
+      const mapped =
+        input.tranMapping === undefined || input.tranMapping === null
+          ? null
+          : mappedAccount(input.tranMapping, statement);
+      const accountId = accountFromStatements(statement, input.statements, mapped);
+      const account =
+        accountId === null
+          ? undefined
+          : { accountId, accountName: names.get(accountId) ?? accountId };
+      placed.push({ statement, at, account, bound: false, mapped });
     }
   }
   return placed;
@@ -134,12 +147,19 @@ function freeLines(placed: PlacedStatement[], change: BalanceChange): PlacedStat
   );
 }
 
-/** 1件だけで金額がぴたりと合う明細。同額が2件あればどちらとも言えないので選ばない */
+/**
+ * 1件だけで金額がぴたりと合う明細。同額が2件あれば、入出金の設定がこの口座を
+ * 指す明細が1件に絞れるときだけそれを選び、絞れなければどちらとも言えないので選ばない
+ */
 function singleMatch(placed: PlacedStatement[], change: BalanceChange): PlacedStatement[] {
   const exact = freeLines(placed, change).filter(
     (line) => line.statement.amount === change.externalDelta,
   );
-  return exact.length === 1 ? exact : [];
+  if (exact.length === 1) {
+    return exact;
+  }
+  const mapped = exact.filter((line) => line.mapped === change.accountId);
+  return mapped.length === 1 ? mapped : [];
 }
 
 /** 区間内の同じ向きの明細を合わせてちょうど説明できるなら、その全部 */
