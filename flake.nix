@@ -15,8 +15,8 @@
     let
       # NOTE: url and hash are auto-updated by .github/workflows/update-flake-amo.yml
       # (empty until the first release is published on AMO)
-      amoUrl = "https://addons.mozilla.org/firefox/downloads/file/4996154/aozora_history-0.13.0.xpi";
-      amoHash = "sha256-aPnts8X3+CdtDxR4q68jNZSwfX0vOs8SCl0q3TGBlIA=";
+      amoUrl = "https://addons.mozilla.org/firefox/downloads/file/5057361/aozora_history-0.14.0.xpi";
+      amoHash = "sha256-dsGsd8ER4TM/wnh44b0HZBga00VwjsS7qz9TZKwr7yw=";
     in
     flake-utils.lib.eachDefaultSystem (
       system:
