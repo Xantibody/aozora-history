@@ -6,10 +6,13 @@ import type { LogEntry } from "../domain/log.ts";
 import type { MemoField } from "./memo-field.ts";
 import type { RenderContext } from "./context.ts";
 import type { SwipeHandle } from "./swipe-delete.ts";
-import type { TransferRecord } from "../domain/ledger.ts";
+import { balanceLine } from "./balance-line.ts";
 import { icon } from "./icons.ts";
 import { isDetected } from "../domain/reconcile.ts";
 import { logTitle } from "./log-title.ts";
+
+/** 振替の記録。型の参照だけのためにモジュールを増やさない */
+type TransferRecord = Extract<LogEntry, { kind: "transfer" }>["transfer"];
 
 export type TransactionEntry = Extract<LogEntry, { kind: "transfer" | "external" | "statement" }>;
 
@@ -102,7 +105,7 @@ function transactionMain(
     "flex items-center gap-3 px-3.5 py-3 sm:gap-[18px] sm:px-[18px] sm:py-[15px]",
   );
   const body = el("div", "flex min-w-0 flex-1 flex-col gap-[5px]");
-  body.append(logTitle(ctx, entry), memoRow(memo, entry));
+  body.append(logTitle(ctx, entry), ...balanceLine(entry), memoRow(memo, entry));
   main.append(
     timeCell(`time w-11 shrink-0 text-xs tabular-nums max-sm:hidden ${INK_WEAK}`, entry),
     body,

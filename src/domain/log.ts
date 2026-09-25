@@ -11,6 +11,12 @@ interface StatementScope {
   accountName: string;
 }
 
+/** その取引の前後で、口座の残高がいくらからいくらになったか */
+export interface AccountBalance {
+  before: number;
+  after: number;
+}
+
 /**
  * カードログの1行。振替・外部入出金・代表口座の明細・残高記録のいずれか。
  *
@@ -19,9 +25,20 @@ interface StatementScope {
  * ひとつの時系列に並べる
  */
 export type LogEntry =
-  | { kind: "transfer"; at: number; transfer: TransferRecord }
+  | {
+      kind: "transfer";
+      at: number;
+      transfer: TransferRecord;
+      balances: { from?: AccountBalance; to?: AccountBalance };
+    }
   | { kind: "external"; at: number; change: BalanceChange }
-  | { kind: "statement"; at: number; statement: StatementEntry; account?: StatementScope }
+  | {
+      kind: "statement";
+      at: number;
+      statement: StatementEntry;
+      account?: StatementScope;
+      balance?: AccountBalance;
+    }
   | { kind: "snapshot"; at: number; snapshot: BalanceSnapshot; total: number };
 
 function snapshotEntry(snapshot: BalanceSnapshot): LogEntry {
@@ -204,6 +221,57 @@ function foldExplained(changes: BalanceChange[], placed: PlacedStatement[]): Set
   return folded;
 }
 
+/**
+ * 口座別明細から読む、その取引の前後の口座残高。
+ *
+ * 残高記録(スナップショット)は取った時点の値しか持たず、あいだに取引が
+ * 重なると途中の残高が分からない。口座別明細は1件ごとに取引後の残高を持つ。
+ * 同じ日・同じ金額が同じ口座に2件あると、どちらの残高か決められないので出さない
+ */
+function balanceFrom(
+  statements: StatementEntry[],
+  accountId: string,
+  movement: { valueDate: string; amount: number },
+): AccountBalance | undefined {
+  const lines = statements.filter(
+    (line) =>
+      line.accountId === accountId &&
+      line.valueDate === movement.valueDate &&
+      line.amount === movement.amount,
+  );
+  const [line] = lines;
+  return lines.length === 1 && line !== undefined
+    ? { before: line.balance - line.amount, after: line.balance }
+    : undefined;
+}
+
+function statementEntry(statements: StatementEntry[], placed: PlacedStatement): LogEntry {
+  const { statement, at, account } = placed;
+  const balance =
+    account === undefined ? undefined : balanceFrom(statements, account.accountId, statement);
+  return { kind: "statement", at, statement, account, balance };
+}
+
+/** 起算日の月・日の桁数 */
+const DATE_PART_WIDTH = 2;
+
+const pad = (value: number): string => String(value).padStart(DATE_PART_WIDTH, "0");
+
+/** 端末の時刻での起算日 (yyyy-MM-dd)。振替の記録時刻を明細の日付に揃える */
+function valueDateOf(ms: number): string {
+  const date = new Date(ms);
+  return [String(date.getFullYear()), pad(date.getMonth() + 1), pad(date.getDate())].join("-");
+}
+
+function transferEntry(statements: StatementEntry[], transfer: TransferRecord): LogEntry {
+  const valueDate = valueDateOf(transfer.transferredAt);
+  const balances = {
+    from: balanceFrom(statements, transfer.from.id, { valueDate, amount: -transfer.amount }),
+    to: balanceFrom(statements, transfer.to.id, { valueDate, amount: transfer.amount }),
+  };
+  return { kind: "transfer", at: transfer.transferredAt, transfer, balances };
+}
+
 export function logEntries(input: LogInput): LogEntry[] {
   const changes = detectBalanceChanges(input.snapshots, input.transfers).filter(
     (change) => change.externalDelta !== 0,
@@ -212,15 +280,11 @@ export function logEntries(input: LogInput): LogEntry[] {
   const folded = foldExplained(changes, placed);
 
   const entries: LogEntry[] = [
-    ...input.transfers.map(
-      (tr): LogEntry => ({ kind: "transfer", at: tr.transferredAt, transfer: tr }),
-    ),
+    ...input.transfers.map((transfer) => transferEntry(input.statements, transfer)),
     ...changes
       .filter((change) => !folded.has(change))
       .map((change): LogEntry => ({ kind: "external", at: change.toTakenAt, change })),
-    ...placed.map(
-      ({ statement, at, account }): LogEntry => ({ kind: "statement", at, statement, account }),
-    ),
+    ...placed.map((line) => statementEntry(input.statements, line)),
     ...input.snapshots.map((sn) => snapshotEntry(sn)),
   ];
   return entries.toSorted((left, right) => right.at - left.at || logRank(left) - logRank(right));

@@ -176,6 +176,29 @@ describe("logEntries", () => {
     expect(kinds(log)).not.toContain("external");
   });
 
+  it("振替は、出金側と入金側の口座別明細から両方の口座の前後の残高を読む", () => {
+    // 振替を2件続けると、残高記録には2件を合わせた後の残高しか残らない
+    const transfer = {
+      transferredAt: new Date(2026, 6, 16, 10, 0).getTime(),
+      from: { id: "133331", name: "01: お財布" },
+      to: { id: "133332", name: "02: 積立" },
+      amount: 5000,
+    };
+    const statements = [
+      scoped({ ...atmWithdrawal, amount: -5000, balance: 115_000, remark: "ﾌﾘｶｴ" }, "133331"),
+      scoped({ ...atmWithdrawal, amount: 5000, balance: 55_000, remark: "ﾌﾘｶｴ" }, "133332"),
+    ];
+
+    const log = logEntries({ snapshots: [], transfers: [transfer], statements, placeAt: dayStart });
+
+    expect(log.find((entry) => entry.kind === "transfer")).toMatchObject({
+      balances: {
+        from: { before: 120_000, after: 115_000 },
+        to: { before: 50_000, after: 55_000 },
+      },
+    });
+  });
+
   it("日の終わりに置いた明細は、同じ日の振替より新しい順で先に並ぶ", () => {
     // 0時に置くと、後から取り込んだ入出金がその日の最初の出来事として
     // 振替の下に沈む。起きた順としては読めない
@@ -241,6 +264,21 @@ describe("logEntries", () => {
 
       expect(scopesOf(statements)).toStrictEqual([
         { accountId: "133332", accountName: "02: 積立" },
+      ]);
+    });
+
+    it("対になった口座別明細の残高から、その口座の取引前と取引後の残高を読む", () => {
+      // 代表口座の明細の残高は全口座の合計なので、口座ごとの残高は口座別明細にしか無い
+      const pair = scoped({ ...atmWithdrawal, entryNumber: "3", balance: 30_000 }, "133332");
+      const log = logEntries({
+        snapshots: single,
+        transfers: [],
+        statements: [atmWithdrawal, pair],
+        placeAt: dayStart,
+      });
+
+      expect(statementLines(log).map((line) => line.balance)).toStrictEqual([
+        { before: 50_000, after: 30_000 },
       ]);
     });
 
