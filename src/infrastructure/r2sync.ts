@@ -123,6 +123,34 @@ export class R2Client {
   }
 }
 
+// AIDEV-NOTE: 順序まで含めた文字列比較。マージは並びを揃えるので同じ内容なら一致し、
+// 取りこぼしても余計な書き込みが1回増えるだけで記録は壊れない
+function sameLedger(left: LedgerData, right: LedgerData): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+interface SyncSides {
+  merged: LedgerData;
+  latest: LedgerData;
+  remote: LedgerData | null;
+}
+
+/** マージ結果を、それと食い違う側にだけ書き戻す */
+async function writeBack(
+  store: HistoryStore,
+  client: R2Client,
+  { merged, latest, remote }: SyncSides,
+): Promise<void> {
+  // 書き込みはstorage.onChangedを鳴らし、backgroundの自動同期をもう一度走らせる
+  if (!sameLedger(merged, latest)) {
+    await store.replaceLedger(merged);
+  }
+  // 同じ内容の書き直しはClass A操作を消費するだけなので省く
+  if (remote === null || !sameLedger(merged, remote)) {
+    await client.upload(merged);
+  }
+}
+
 /** ローカルとR2をマージし、両方へ書き戻す */
 export async function syncWithR2(store: HistoryStore, client: R2Client): Promise<LedgerData> {
   const local = await store.loadLedger();
@@ -131,8 +159,7 @@ export async function syncWithR2(store: HistoryStore, client: R2Client): Promise
   // ダウンロード待ちの間に増えた記録をreplaceLedgerで消さないよう、最新のローカルと再マージする
   const latest = await store.loadLedger();
   const merged = mergeLedgers(remoteMerged, latest);
-  await store.replaceLedger(merged);
-  await client.upload(merged);
+  await writeBack(store, client, { merged, latest, remote });
   await store.markSynced();
   return merged;
 }

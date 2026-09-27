@@ -1,7 +1,7 @@
 import type { FetchLike, SyncConfig } from "./r2sync.ts";
+import { HistoryStore, LEDGER_KEYS } from "./storage.ts";
 import { R2Client, parseSyncConfigJson, syncWithR2 } from "./r2sync.ts";
 import { describe, expect, it } from "vitest";
-import { HistoryStore } from "./storage.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { StorageArea } from "./storage.ts";
 
@@ -210,6 +210,36 @@ describe("syncWithR2", () => {
 
     expect(merged).toStrictEqual(emptyLedger);
     expect(JSON.parse(requests[1].body!)).toStrictEqual(emptyLedger);
+  });
+
+  it("R2がすでにマージ結果と同じならPUTしない", async () => {
+    const store = new HistoryStore(fakeStorage());
+    await store.replaceLedger(remoteLedger);
+    const { fetchFn, requests } = fakeFetch([{ status: 200, body: JSON.stringify(remoteLedger) }]);
+
+    await syncWithR2(store, client(fetchFn));
+
+    expect(requests.map((request) => request.method)).toStrictEqual(["GET"]);
+  });
+
+  it("ローカルがすでにマージ結果と同じなら台帳を書き直さない", async () => {
+    const storage = fakeStorage();
+    const store = new HistoryStore(storage);
+    await store.replaceLedger(remoteLedger);
+    const writtenKeys: string[] = [];
+    const { set } = storage;
+    storage.set = (items): Promise<void> => {
+      writtenKeys.push(...Object.keys(items));
+      return set(items);
+    };
+    const { fetchFn } = fakeFetch([{ status: 200, body: JSON.stringify(remoteLedger) }]);
+
+    await syncWithR2(store, client(fetchFn));
+
+    // 台帳の書き込みはstorage.onChangedを鳴らし、backgroundの自動同期をもう一度走らせる
+    expect(
+      writtenKeys.filter((key) => (LEDGER_KEYS as readonly string[]).includes(key)),
+    ).toStrictEqual([]);
   });
 
   it("ダウンロード待ちの間に記録された振替を消さずに同期する", async () => {
