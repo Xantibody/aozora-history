@@ -1,7 +1,7 @@
-import type { FetchLike, SyncConfig } from "./r2sync.ts";
+import type { FetchLike, FetchResponse, SyncConfig } from "./r2sync.ts";
+import { HistoryStore, LEDGER_KEYS } from "./storage.ts";
 import { R2Client, parseSyncConfigJson, syncWithR2 } from "./r2sync.ts";
 import { describe, expect, it } from "vitest";
-import { HistoryStore } from "./storage.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { StorageArea } from "./storage.ts";
 
@@ -38,7 +38,17 @@ interface Request {
   body?: string;
 }
 
-function fakeFetch(responses: { status: number; body?: string }[]): {
+interface FakeResponse {
+  status: number;
+  body?: string;
+  etag?: string;
+}
+
+function headersOf(etag?: string): FetchResponse["headers"] {
+  return { get: (name) => (name.toLowerCase() === "etag" ? (etag ?? null) : null) };
+}
+
+function fakeFetch(responses: FakeResponse[]): {
   fetchFn: FetchLike;
   requests: Request[];
 } {
@@ -49,6 +59,7 @@ function fakeFetch(responses: { status: number; body?: string }[]): {
     return Promise.resolve({
       status: res.status,
       ok: res.status >= 200 && res.status < 300,
+      headers: headersOf(res.etag),
       text: () => Promise.resolve(res.body ?? ""),
     });
   };
@@ -79,6 +90,7 @@ function gatedFetch(gate: Promise<void>): { fetchFn: FetchLike; requests: Reques
     return {
       status,
       ok: status >= 200 && status < 300,
+      headers: headersOf(),
       text: () => Promise.resolve(""),
     };
   };
@@ -104,11 +116,14 @@ function client(fetchFn: FetchLike): R2Client {
 
 describe("R2Client", () => {
   it("バケットとキーからURLを組み立てて署名付きGETする", async () => {
-    const { fetchFn, requests } = fakeFetch([{ status: 200, body: JSON.stringify(remoteLedger) }]);
+    const { fetchFn, requests } = fakeFetch([
+      { status: 200, body: JSON.stringify(remoteLedger), etag: '"v1"' },
+    ]);
 
-    const data = await client(fetchFn).download();
+    const remote = await client(fetchFn).download();
 
-    expect(data).toStrictEqual(remoteLedger);
+    // ETagは書き戻すときに、読んだ版から変わっていないことの条件に使う
+    expect(remote).toStrictEqual({ data: remoteLedger, etag: '"v1"' });
     expect(requests[0].url).toBe(
       "https://abc123.r2.cloudflarestorage.com/aozora/aozora-history.json",
     );
@@ -146,11 +161,27 @@ describe("R2Client", () => {
   it("アップロードはJSONボディをPUTする", async () => {
     const { fetchFn, requests } = fakeFetch([{ status: 200 }]);
 
-    await client(fetchFn).upload(remoteLedger);
+    await client(fetchFn).upload(remoteLedger, null);
 
     expect(requests[0].method).toBe("PUT");
     expect(JSON.parse(requests[0].body!)).toStrictEqual(remoteLedger);
     expect(requests[0].headers["content-type"]).toBe("application/json");
+  });
+
+  it("読んだ版があれば、その版から変わっていないときだけ書くようIf-Matchを付ける", async () => {
+    const { fetchFn, requests } = fakeFetch([{ status: 200 }]);
+
+    await client(fetchFn).upload(remoteLedger, { data: remoteLedger, etag: '"v1"' });
+
+    expect(requests[0].headers["if-match"]).toBe('"v1"');
+  });
+
+  it("R2に未作成だったなら、その間に他端末が作っていたら書かないようIf-None-Matchを付ける", async () => {
+    const { fetchFn, requests } = fakeFetch([{ status: 200 }]);
+
+    await client(fetchFn).upload(remoteLedger, null);
+
+    expect(requests[0].headers["if-none-match"]).toBe("*");
   });
 });
 
@@ -185,6 +216,54 @@ describe("syncWithR2", () => {
     expect(JSON.parse(requests[1].body!)).toStrictEqual(merged);
   });
 
+  it("読んでから書くまでに他端末が書いていたら、取り直してマージし直す", async () => {
+    const store = new HistoryStore(fakeStorage());
+    const localTransfer = {
+      transferredAt: 5,
+      from: { id: "100", name: "お財布" },
+      to: { id: "101", name: "積立" },
+      amount: 1000,
+    };
+    const otherTransfer = { ...localTransfer, transferredAt: 6, amount: 2000 };
+    await store.recordTransfer(localTransfer);
+    const { fetchFn, requests } = fakeFetch([
+      { status: 200, body: JSON.stringify(emptyLedger), etag: '"v1"' },
+      { status: 412 },
+      {
+        status: 200,
+        body: JSON.stringify({ ...emptyLedger, transfers: [otherTransfer] }),
+        etag: '"v2"',
+      },
+      { status: 200 },
+    ]);
+
+    const merged = await syncWithR2(store, client(fetchFn));
+
+    expect(merged.transfers).toStrictEqual([localTransfer, otherTransfer]);
+    expect(requests.map((request) => request.method)).toStrictEqual(["GET", "PUT", "GET", "PUT"]);
+    expect(requests[3].headers["if-match"]).toBe('"v2"');
+    expect(JSON.parse(requests[3].body!)).toStrictEqual(merged);
+  });
+
+  it("他端末との書き込みの重なりが続いたら、諦めて同期失敗にする", async () => {
+    const store = new HistoryStore(fakeStorage(), () => 777);
+    await store.recordTransfer({
+      transferredAt: 5,
+      from: { id: "100", name: "お財布" },
+      to: { id: "101", name: "積立" },
+      amount: 1000,
+    });
+    const conflicted: FakeResponse[] = [
+      { status: 200, body: JSON.stringify(emptyLedger), etag: '"v1"' },
+      { status: 412 },
+    ];
+    const { fetchFn, requests } = fakeFetch([...conflicted, ...conflicted, ...conflicted]);
+
+    await expect(syncWithR2(store, client(fetchFn))).rejects.toThrow("重なり続けた");
+    expect(requests).toHaveLength(6);
+    await expect(store.loadLastSyncedAt()).resolves.toBeNull();
+  });
+
   it("同期が完了したら最終同期時刻を記録する", async () => {
     const store = new HistoryStore(fakeStorage(), () => 777);
     const { fetchFn } = fakeFetch([{ status: 404 }, { status: 200 }]);
@@ -210,6 +289,36 @@ describe("syncWithR2", () => {
 
     expect(merged).toStrictEqual(emptyLedger);
     expect(JSON.parse(requests[1].body!)).toStrictEqual(emptyLedger);
+  });
+
+  it("R2がすでにマージ結果と同じならPUTしない", async () => {
+    const store = new HistoryStore(fakeStorage());
+    await store.replaceLedger(remoteLedger);
+    const { fetchFn, requests } = fakeFetch([{ status: 200, body: JSON.stringify(remoteLedger) }]);
+
+    await syncWithR2(store, client(fetchFn));
+
+    expect(requests.map((request) => request.method)).toStrictEqual(["GET"]);
+  });
+
+  it("ローカルがすでにマージ結果と同じなら台帳を書き直さない", async () => {
+    const storage = fakeStorage();
+    const store = new HistoryStore(storage);
+    await store.replaceLedger(remoteLedger);
+    const writtenKeys: string[] = [];
+    const { set } = storage;
+    storage.set = (items): Promise<void> => {
+      writtenKeys.push(...Object.keys(items));
+      return set(items);
+    };
+    const { fetchFn } = fakeFetch([{ status: 200, body: JSON.stringify(remoteLedger) }]);
+
+    await syncWithR2(store, client(fetchFn));
+
+    // 台帳の書き込みはstorage.onChangedを鳴らし、backgroundの自動同期をもう一度走らせる
+    expect(
+      writtenKeys.filter((key) => (LEDGER_KEYS as readonly string[]).includes(key)),
+    ).toStrictEqual([]);
   });
 
   it("ダウンロード待ちの間に記録された振替を消さずに同期する", async () => {

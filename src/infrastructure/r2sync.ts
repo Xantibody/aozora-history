@@ -57,15 +57,42 @@ export function parseSyncConfigJson(text: string): SyncConfig {
 export interface FetchResponse {
   status: number;
   ok: boolean;
+  headers: { get: (name: string) => string | null };
   text: () => Promise<string>;
 }
 
+/** R2上の台帳と、それを読んだときの版(ETag) */
+export interface RemoteLedger {
+  data: LedgerData;
+  etag: string | null;
+}
+
 const HTTP_NOT_FOUND = 404;
+const HTTP_PRECONDITION_FAILED = 412;
 
 export type FetchLike = (
   url: string,
   init: { method: string; headers: Record<string, string>; body?: string },
 ) => Promise<FetchResponse>;
+
+/**
+ * 読んだ版から変わっていないときだけ書く条件。他端末の書き込みを上書きで消さないため。
+ * ETagが取れなかったときは条件を付けられないので、従来どおり上書きする
+ */
+function preconditionOf(base: RemoteLedger | null): Record<string, string> {
+  if (base === null) {
+    return { "if-none-match": "*" };
+  }
+  return base.etag === null ? {} : { "if-match": base.etag };
+}
+
+/** conflict: 読んだ版の後に他端末が書いていたため、書かなかった */
+type UploadResult = "stored" | "conflict";
+
+interface RequestOptions {
+  body?: string;
+  headers?: Record<string, string>;
+}
 
 export class R2Client {
   private readonly config: SyncConfig;
@@ -80,7 +107,8 @@ export class R2Client {
     this.now = now;
   }
 
-  private async request(method: string, body?: string): Promise<FetchResponse> {
+  private async request(method: string, options: RequestOptions = {}): Promise<FetchResponse> {
+    const { body, headers: extraHeaders } = options;
     const { accountId, bucket, objectKey } = this.config;
     const url = new URL(`https://${accountId}.r2.cloudflarestorage.com/${bucket}/${objectKey}`);
     const payloadHash = await sha256Hex(body ?? "");
@@ -90,6 +118,7 @@ export class R2Client {
       headers: {
         "x-amz-content-sha256": payloadHash,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...extraHeaders,
       },
       payloadHash,
       accessKeyId: this.config.accessKeyId,
@@ -102,7 +131,7 @@ export class R2Client {
   }
 
   /** 同期データが未作成(404)ならnullを返す */
-  public async download(): Promise<LedgerData | null> {
+  public async download(): Promise<RemoteLedger | null> {
     const res = await this.request("GET");
     if (res.status === HTTP_NOT_FOUND) {
       return null;
@@ -112,27 +141,86 @@ export class R2Client {
     }
     // オブジェクトキーの指定ミスなどで別のデータが置かれていても、
     // マージ経由でローカルの記録を壊さないよう検証してから取り込む
-    return parseLedgerJson(await res.text());
+    return { data: parseLedgerJson(await res.text()), etag: res.headers.get("etag") };
   }
 
-  public async upload(data: LedgerData): Promise<void> {
-    const res = await this.request("PUT", JSON.stringify(data));
+  /** base は書き戻しの元にした版。R2がその版のままのときだけ書く */
+  public async upload(data: LedgerData, base: RemoteLedger | null): Promise<UploadResult> {
+    const res = await this.request("PUT", {
+      body: JSON.stringify(data),
+      headers: preconditionOf(base),
+    });
+    if (res.status === HTTP_PRECONDITION_FAILED) {
+      return "conflict";
+    }
     if (!res.ok) {
       throw new Error(`R2への保存に失敗しました (HTTP ${res.status})`);
     }
+    return "stored";
   }
 }
 
-/** ローカルとR2をマージし、両方へ書き戻す */
-export async function syncWithR2(store: HistoryStore, client: R2Client): Promise<LedgerData> {
+// AIDEV-NOTE: 順序まで含めた文字列比較。マージは並びを揃えるので同じ内容なら一致し、
+// 取りこぼしても余計な書き込みが1回増えるだけで記録は壊れない
+function sameLedger(left: LedgerData, right: LedgerData): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+interface SyncSides {
+  merged: LedgerData;
+  latest: LedgerData;
+  remote: RemoteLedger | null;
+}
+
+/** マージ結果を、それと食い違う側にだけ書き戻す */
+async function writeBack(
+  store: HistoryStore,
+  client: R2Client,
+  { merged, latest, remote }: SyncSides,
+): Promise<UploadResult> {
+  // 書き込みはstorage.onChangedを鳴らし、backgroundの自動同期をもう一度走らせる
+  if (!sameLedger(merged, latest)) {
+    await store.replaceLedger(merged);
+  }
+  // 同じ内容の書き直しはClass A操作を消費するだけなので省く
+  if (remote === null || !sameLedger(merged, remote.data)) {
+    return client.upload(merged, remote);
+  }
+  return "stored";
+}
+
+/** 他端末の同期と重なり続けたときに諦めるまでの試行回数 */
+const MAX_SYNC_ATTEMPTS = 3;
+
+/** R2を読み、ローカルとマージする */
+async function readAndMerge(store: HistoryStore, client: R2Client): Promise<SyncSides> {
   const local = await store.loadLedger();
   const remote = await client.download();
-  const remoteMerged = remote === null ? local : mergeLedgers(local, remote);
+  const remoteMerged = remote === null ? local : mergeLedgers(local, remote.data);
   // ダウンロード待ちの間に増えた記録をreplaceLedgerで消さないよう、最新のローカルと再マージする
   const latest = await store.loadLedger();
-  const merged = mergeLedgers(remoteMerged, latest);
-  await store.replaceLedger(merged);
-  await client.upload(merged);
+  return { merged: mergeLedgers(remoteMerged, latest), latest, remote };
+}
+
+async function syncAttempt(
+  store: HistoryStore,
+  client: R2Client,
+  attemptsLeft: number,
+): Promise<LedgerData> {
+  const sides = await readAndMerge(store, client);
+  const result = await writeBack(store, client, sides);
+  if (result === "conflict") {
+    if (attemptsLeft <= 1) {
+      throw new Error("他端末の同期と重なり続けたため、R2へ保存できませんでした");
+    }
+    // 他端末の書き込みを取り込み直す。ローカルへ書いた分は和集合なので次の回でも残る
+    return syncAttempt(store, client, attemptsLeft - 1);
+  }
   await store.markSynced();
-  return merged;
+  return sides.merged;
+}
+
+/** ローカルとR2をマージし、両方へ書き戻す */
+export function syncWithR2(store: HistoryStore, client: R2Client): Promise<LedgerData> {
+  return syncAttempt(store, client, MAX_SYNC_ATTEMPTS);
 }
