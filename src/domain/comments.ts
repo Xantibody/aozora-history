@@ -16,6 +16,14 @@ export interface CommentEntry {
 
 export type Comments = Record<string, CommentEntry>;
 
+/** tombstone化(fix/comment-deletion-sync)以前に保存された旧形式のコメントを移行する */
+export function migrateComment(value: unknown): CommentEntry {
+  if (typeof value === "string") {
+    return { text: value, updatedAt: 0 };
+  }
+  return value as CommentEntry;
+}
+
 /** 表示用のコメント本文。未設定・削除済みは空文字 */
 export function commentText(comments: Comments, key: string): string {
   return comments[key]?.text ?? "";

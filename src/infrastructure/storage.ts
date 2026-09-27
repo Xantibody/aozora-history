@@ -1,15 +1,15 @@
 import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
-import type { CommentEntry, Comments } from "../domain/comments.ts";
 import { appendSnapshot, transferKey } from "../domain/ledger.ts";
+import { migrateComment, transferCommentKey } from "../domain/comments.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
+import type { Comments } from "../domain/comments.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
 import type { SyncConfig } from "./r2sync.ts";
 import type { TranMapping } from "../domain/tran-mapping.ts";
 import { mergeStatements } from "../domain/statement.ts";
-import { transferCommentKey } from "../domain/comments.ts";
 
 export type { Comments } from "../domain/comments.ts";
 
@@ -52,14 +52,6 @@ export const LEDGER_KEYS = [
   COMMENTS_KEY,
   DELETIONS_KEY,
 ] as const;
-
-/** tombstone化(fix/comment-deletion-sync)以前に保存された旧形式のコメントを移行する */
-function migrateComment(value: unknown): CommentEntry {
-  if (typeof value === "string") {
-    return { text: value, updatedAt: 0 };
-  }
-  return value as CommentEntry;
-}
 
 export function addTransfer(
   transfers: TransferRecord[],
