@@ -192,7 +192,7 @@ describe("HistoryStoreの最終同期時刻", () => {
   it("markSyncedで現在時刻を記録する", async () => {
     const store = new HistoryStore(fakeStorage(), () => 777);
 
-    await store.markSynced();
+    await store.markSynced(null);
 
     await expect(store.loadLastSyncedAt()).resolves.toBe(777);
   });

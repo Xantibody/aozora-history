@@ -1,15 +1,15 @@
 import type { BalanceSnapshot, TransferRecord } from "../domain/ledger.ts";
-import type { CommentEntry, Comments } from "../domain/comments.ts";
+import type { SyncConfig, SyncedVersion } from "./r2sync.ts";
 import { appendSnapshot, transferKey } from "../domain/ledger.ts";
+import { migrateComment, transferCommentKey } from "../domain/comments.ts";
 import type { AutoTransferSetting } from "../domain/auto-transfer.ts";
 import type { CollectReport } from "../domain/diagnostics.ts";
+import type { Comments } from "../domain/comments.ts";
 import type { LedgerData } from "../domain/merge.ts";
 import type { RegularTransferSetting } from "../domain/regular-transfer.ts";
 import type { StatementEntry } from "../domain/statement.ts";
-import type { SyncConfig } from "./r2sync.ts";
 import type { TranMapping } from "../domain/tran-mapping.ts";
 import { mergeStatements } from "../domain/statement.ts";
-import { transferCommentKey } from "../domain/comments.ts";
 
 export type { Comments } from "../domain/comments.ts";
 
@@ -43,6 +43,8 @@ export const LAST_COLLECT_KEY = "lastCollectReport";
 export const LAST_SYNCED_KEY = "lastSyncedAt";
 /** 最後に銀行APIから取得した時刻。同上の理由でLEDGER_KEYSに含めない */
 export const LAST_COLLECTED_KEY = "lastCollectedAt";
+/** 最後に同期したR2の版。同上の理由でLEDGER_KEYSに含めない */
+const SYNCED_VERSION_KEY = "syncedVersion";
 
 /** 台帳本体を構成するstorageキー。同期のトリガー判定に使う */
 export const LEDGER_KEYS = [
@@ -52,14 +54,6 @@ export const LEDGER_KEYS = [
   COMMENTS_KEY,
   DELETIONS_KEY,
 ] as const;
-
-/** tombstone化(fix/comment-deletion-sync)以前に保存された旧形式のコメントを移行する */
-function migrateComment(value: unknown): CommentEntry {
-  if (typeof value === "string") {
-    return { text: value, updatedAt: 0 };
-  }
-  return value as CommentEntry;
-}
 
 export function addTransfer(
   transfers: TransferRecord[],
@@ -268,8 +262,14 @@ export class HistoryStore {
     return (items[LAST_SYNCED_KEY] as number | undefined) ?? null;
   }
 
-  public async markSynced(): Promise<void> {
-    await this.storage.set({ [LAST_SYNCED_KEY]: this.now() });
+  /** version は次の同期で読まずに書くための版。わからなければnull */
+  public async markSynced(version: SyncedVersion | null): Promise<void> {
+    await this.storage.set({ [LAST_SYNCED_KEY]: this.now(), [SYNCED_VERSION_KEY]: version });
+  }
+
+  public async loadSyncedVersion(): Promise<SyncedVersion | null> {
+    const items = await this.storage.get(SYNCED_VERSION_KEY);
+    return (items[SYNCED_VERSION_KEY] as SyncedVersion | null | undefined) ?? null;
   }
 
   public async loadLastCollectedAt(): Promise<number | null> {

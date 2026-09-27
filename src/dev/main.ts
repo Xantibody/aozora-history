@@ -26,7 +26,7 @@ async function seed(fake: FakeBrowser, data: DummyData): Promise<void> {
   await store.saveDebugMode(data.debugMode);
   if (data.syncConfig !== null) {
     await store.saveSyncConfig(data.syncConfig);
-    await store.markSynced();
+    await store.markSynced(null);
   }
 }
 

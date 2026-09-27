@@ -79,15 +79,30 @@ export type FetchLike = (
  * 読んだ版から変わっていないときだけ書く条件。他端末の書き込みを上書きで消さないため。
  * ETagが取れなかったときは条件を付けられないので、従来どおり上書きする
  */
-function preconditionOf(base: RemoteLedger | null): Record<string, string> {
+function preconditionOf(base: BaseVersion | null): Record<string, string> {
   if (base === null) {
     return { "if-none-match": "*" };
   }
   return base.etag === null ? {} : { "if-match": base.etag };
 }
 
-/** conflict: 読んだ版の後に他端末が書いていたため、書かなかった */
-type UploadResult = "stored" | "conflict";
+/** 最後に同期したR2の版と、そのときの台帳の内容 */
+export interface SyncedVersion {
+  /** 同期先。設定が変わったら別の版として扱う */
+  target: string;
+  etag: string;
+  /** 台帳のJSONのSHA-256 */
+  digest: string;
+}
+
+/** 書き込みの元にしたR2の版 */
+type BaseVersion = Pick<RemoteLedger, "etag">;
+
+/**
+ * etag: 書けた。書いた版(応答から取れなければnull)
+ * conflict: 読んだ版の後に他端末が書いていたため、書かなかった
+ */
+type UploadResult = { etag: string | null } | "conflict";
 
 interface RequestOptions {
   body?: string;
@@ -105,6 +120,12 @@ export class R2Client {
     this.config = config;
     this.fetchFn = fetchFn;
     this.now = now;
+  }
+
+  /** 同期先。覚えた版が同じ同期先のものか確かめるのに使う */
+  public get target(): string {
+    const { accountId, bucket, objectKey } = this.config;
+    return `${accountId}/${bucket}/${objectKey}`;
   }
 
   private async request(method: string, options: RequestOptions = {}): Promise<FetchResponse> {
@@ -145,7 +166,7 @@ export class R2Client {
   }
 
   /** base は書き戻しの元にした版。R2がその版のままのときだけ書く */
-  public async upload(data: LedgerData, base: RemoteLedger | null): Promise<UploadResult> {
+  public async upload(data: LedgerData, base: BaseVersion | null): Promise<UploadResult> {
     const res = await this.request("PUT", {
       body: JSON.stringify(data),
       headers: preconditionOf(base),
@@ -156,7 +177,7 @@ export class R2Client {
     if (!res.ok) {
       throw new Error(`R2への保存に失敗しました (HTTP ${res.status})`);
     }
-    return "stored";
+    return { etag: res.headers.get("etag") };
   }
 }
 
@@ -186,7 +207,22 @@ async function writeBack(
   if (remote === null || !sameLedger(merged, remote.data)) {
     return client.upload(merged, remote);
   }
-  return "stored";
+  return { etag: remote.etag };
+}
+
+function digestOf(ledger: LedgerData): Promise<string> {
+  return sha256Hex(JSON.stringify(ledger));
+}
+
+/** 次の同期で読まずに書けるよう、R2の版とその内容を覚える */
+async function finishSync(
+  store: HistoryStore,
+  client: R2Client,
+  { data, etag }: RemoteLedger,
+): Promise<void> {
+  await store.markSynced(
+    etag === null ? null : { target: client.target, etag, digest: await digestOf(data) },
+  );
 }
 
 /** 他端末の同期と重なり続けたときに諦めるまでの試行回数 */
@@ -216,11 +252,43 @@ async function syncAttempt(
     // 他端末の書き込みを取り込み直す。ローカルへ書いた分は和集合なので次の回でも残る
     return syncAttempt(store, client, attemptsLeft - 1);
   }
-  await store.markSynced();
+  await finishSync(store, client, { data: sides.merged, etag: result.etag });
   return sides.merged;
 }
 
 /** ローカルとR2をマージし、両方へ書き戻す */
 export function syncWithR2(store: HistoryStore, client: R2Client): Promise<LedgerData> {
   return syncAttempt(store, client, MAX_SYNC_ATTEMPTS);
+}
+
+/** 覚えた版を条件にローカルを書く。その版の後に他端末が書いていたらnull */
+async function pushOverVersion(
+  store: HistoryStore,
+  client: R2Client,
+  version: SyncedVersion,
+): Promise<LedgerData | null> {
+  const local = await store.loadLedger();
+  if ((await digestOf(local)) === version.digest) {
+    return local;
+  }
+  const result = await client.upload(local, { etag: version.etag });
+  if (result === "conflict") {
+    return null;
+  }
+  await finishSync(store, client, { data: local, etag: result.etag });
+  return local;
+}
+
+/**
+ * 記録をR2へ送る。R2が前回同期した版のままなら、その中身はすべてローカルに
+ * 取り込み済みなので、読まずにローカルをそのまま書ける。版がわからないときと、
+ * その版の後に他端末が書いていたときだけ、読んでマージする
+ */
+// AIDEV-NOTE: ローカルは和集合のマージと削除のtombstoneでしか変わらず、同期した内容を
+// 失わない。これが崩れる書き換え(マージせずに台帳を差し替える等)を足すと、R2の記録を消す
+export async function pushToR2(store: HistoryStore, client: R2Client): Promise<LedgerData> {
+  const version = await store.loadSyncedVersion();
+  const pushed =
+    version?.target === client.target ? await pushOverVersion(store, client, version) : null;
+  return pushed ?? syncWithR2(store, client);
 }

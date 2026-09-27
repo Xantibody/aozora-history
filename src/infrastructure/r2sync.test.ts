@@ -1,6 +1,6 @@
 import type { FetchLike, FetchResponse, SyncConfig } from "./r2sync.ts";
 import { HistoryStore, LEDGER_KEYS } from "./storage.ts";
-import { R2Client, parseSyncConfigJson, syncWithR2 } from "./r2sync.ts";
+import { R2Client, parseSyncConfigJson, pushToR2, syncWithR2 } from "./r2sync.ts";
 import { describe, expect, it } from "vitest";
 import type { LedgerData } from "../domain/merge.ts";
 import type { StorageArea } from "./storage.ts";
@@ -171,7 +171,7 @@ describe("R2Client", () => {
   it("読んだ版があれば、その版から変わっていないときだけ書くようIf-Matchを付ける", async () => {
     const { fetchFn, requests } = fakeFetch([{ status: 200 }]);
 
-    await client(fetchFn).upload(remoteLedger, { data: remoteLedger, etag: '"v1"' });
+    await client(fetchFn).upload(remoteLedger, { etag: '"v1"' });
 
     expect(requests[0].headers["if-match"]).toBe('"v1"');
   });
@@ -341,6 +341,134 @@ describe("syncWithR2", () => {
     await expect(store.loadTransfers()).resolves.toHaveLength(1);
     const putRequest = requests.find((request) => request.method === "PUT");
     expect(JSON.parse(putRequest!.body!).transfers).toHaveLength(1);
+  });
+});
+
+describe("pushToR2", () => {
+  const localTransfer = {
+    transferredAt: 5,
+    from: { id: "100", name: "お財布" },
+    to: { id: "101", name: "積立" },
+    amount: 1000,
+  };
+
+  /** 一度同期を済ませ、R2 の版 "v1" を覚えた状態の store */
+  async function syncedStore(): Promise<HistoryStore> {
+    const store = new HistoryStore(fakeStorage());
+    const { fetchFn } = fakeFetch([{ status: 404 }, { status: 200, etag: '"v1"' }]);
+    await pushToR2(store, client(fetchFn));
+    return store;
+  }
+
+  it("前回同期した版を知らなければ、読んでマージしてから書く", async () => {
+    const store = new HistoryStore(fakeStorage());
+    const { fetchFn, requests } = fakeFetch([{ status: 404 }, { status: 200, etag: '"v1"' }]);
+
+    await pushToR2(store, client(fetchFn));
+
+    expect(requests.map((request) => request.method)).toStrictEqual(["GET", "PUT"]);
+  });
+
+  it("前回同期した版を知っていれば、読まずにその版を条件に書く", async () => {
+    const store = await syncedStore();
+    await store.recordTransfer(localTransfer);
+    const { fetchFn, requests } = fakeFetch([{ status: 200, etag: '"v2"' }]);
+
+    await pushToR2(store, client(fetchFn));
+
+    expect(requests.map((request) => request.method)).toStrictEqual(["PUT"]);
+    expect(requests[0].headers["if-match"]).toBe('"v1"');
+    expect(JSON.parse(requests[0].body!).transfers).toStrictEqual([localTransfer]);
+  });
+
+  it("書いた版を覚え、次はその版を条件に書く", async () => {
+    const store = await syncedStore();
+    await store.recordTransfer(localTransfer);
+    await pushToR2(store, client(fakeFetch([{ status: 200, etag: '"v2"' }]).fetchFn));
+    await store.recordTransfer({ ...localTransfer, transferredAt: 6 });
+    const { fetchFn, requests } = fakeFetch([{ status: 200, etag: '"v3"' }]);
+
+    await pushToR2(store, client(fetchFn));
+
+    expect(requests[0].headers["if-match"]).toBe('"v2"');
+  });
+
+  it("前回同期したときから記録が変わっていなければ、何も送らない", async () => {
+    const store = await syncedStore();
+    const { fetchFn, requests } = fakeFetch([]);
+
+    await pushToR2(store, client(fetchFn));
+
+    expect(requests).toHaveLength(0);
+  });
+
+  it("その版の後に他端末が書いていたら、読んでマージし直す", async () => {
+    const store = await syncedStore();
+    await store.recordTransfer(localTransfer);
+    const otherTransfer = { ...localTransfer, transferredAt: 6, amount: 2000 };
+    const { fetchFn, requests } = fakeFetch([
+      { status: 412 },
+      {
+        status: 200,
+        body: JSON.stringify({ ...emptyLedger, transfers: [otherTransfer] }),
+        etag: '"v2"',
+      },
+      { status: 200, etag: '"v3"' },
+    ]);
+
+    const merged = await pushToR2(store, client(fetchFn));
+
+    expect(requests.map((request) => request.method)).toStrictEqual(["PUT", "GET", "PUT"]);
+    expect(merged.transfers).toStrictEqual([localTransfer, otherTransfer]);
+  });
+
+  it("同期先の設定が変わったら、覚えた版を使わない", async () => {
+    const store = await syncedStore();
+    await store.recordTransfer(localTransfer);
+    const { fetchFn, requests } = fakeFetch([{ status: 404 }, { status: 200 }]);
+
+    await pushToR2(
+      store,
+      new R2Client({ ...config, bucket: "other" }, fetchFn, () => new Date(Date.UTC(2026, 6, 10))),
+    );
+
+    expect(requests.map((request) => request.method)).toStrictEqual(["GET", "PUT"]);
+  });
+
+  it("書いた版がわからなかったら、次は読んでから書く", async () => {
+    const store = await syncedStore();
+    await store.recordTransfer(localTransfer);
+    await pushToR2(store, client(fakeFetch([{ status: 200 }]).fetchFn));
+    await store.recordTransfer({ ...localTransfer, transferredAt: 6 });
+    const { fetchFn, requests } = fakeFetch([{ status: 404 }, { status: 200 }]);
+
+    await pushToR2(store, client(fetchFn));
+
+    expect(requests.map((request) => request.method)).toStrictEqual(["GET", "PUT"]);
+  });
+
+  it("R2へ書かずに済んだ同期でも、読んだ版を覚える", async () => {
+    const store = new HistoryStore(fakeStorage());
+    await store.replaceLedger(remoteLedger);
+    const unchanged = fakeFetch([
+      { status: 200, body: JSON.stringify(remoteLedger), etag: '"v1"' },
+    ]);
+    await syncWithR2(store, client(unchanged.fetchFn));
+    await store.recordTransfer(localTransfer);
+    const { fetchFn, requests } = fakeFetch([{ status: 200, etag: '"v2"' }]);
+
+    await pushToR2(store, client(fetchFn));
+
+    expect(requests[0].headers["if-match"]).toBe('"v1"');
+  });
+
+  it("書き込みが済んだら最終同期時刻を記録する", async () => {
+    const store = await syncedStore();
+    await store.recordTransfer(localTransfer);
+
+    await pushToR2(store, client(fakeFetch([{ status: 200, etag: '"v2"' }]).fetchFn));
+
+    await expect(store.loadLastSyncedAt()).resolves.not.toBeNull();
   });
 });
 
