@@ -1,4 +1,4 @@
-import { R2Client, syncWithR2 } from "./infrastructure/r2sync.ts";
+import { R2Client, pushToR2 } from "./infrastructure/r2sync.ts";
 import { AutoSync } from "./infrastructure/autosync.ts";
 import type { FetchLike } from "./infrastructure/r2sync.ts";
 import { HistoryStore } from "./infrastructure/storage.ts";
@@ -11,7 +11,7 @@ const fetchFn: FetchLike = (url, init) => fetch(url, init);
 const store = new HistoryStore(browser.storage.local);
 const autoSync = new AutoSync(store, {
   runSync: (config): Promise<LedgerData> =>
-    syncWithR2(store, new R2Client(config, fetchFn, () => new Date())),
+    pushToR2(store, new R2Client(config, fetchFn, () => new Date())),
   delayMs: SYNC_DELAY_MS,
   onError: (_error): void => {
     /* empty */
